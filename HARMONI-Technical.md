@@ -76,7 +76,10 @@ D:\AI Vs Programe\HARMONI\          ← rename from Krumum
 │   │   ├── instruments.js
 │   │   ├── quick-drop.js
 │   │   ├── classroom-materials.js
-│   │   └── student-app.js
+│   │   ├── student-app.js           ← Student module (main)
+│   │   ├── student-classroom.js     ← Student Classroom (ห้องเรียนออนไลน์)
+│   │   ├── student-quiz.js          ← Quiz/test taking UI
+│   │   └── student-assignment.js    ← Assignment submit + review
 │   └── lib/                          ← CDN fallback (optional)
 ├── functions/
 │   ├── _middleware.js                 ← auth check + CORS + CSP
@@ -131,6 +134,12 @@ D:\AI Vs Programe\HARMONI\          ← rename from Krumum
 │       ├── instruments.js
 │       ├── quick-drops.js
 │       ├── classroom-materials.js
+│       ├── classroom-posts.js       ← CRUD โพสต์ห้องเรียน
+│       ├── assignments.js           ← Assignment mgmt + grading
+│       ├── assignment-submissions.js
+│       ├── quiz-attempts.js         ← Quiz attempt + auto-grade
+│       ├── post-comments.js
+│       ├── student-feed.js          ← Student-facing feed API
 │       ├── notifications.js
 │       ├── backups.js
 │       ├── ai.js                      ← AI Router endpoint
@@ -143,7 +152,7 @@ D:\AI Vs Programe\HARMONI\          ← rename from Krumum
 
 ---
 
-## 3. Database Schema — 68 Tables, 12 Groups
+## 3. Database Schema — 74 Tables, 13 Groups
 
 ### Pattern (จาก Note Chord SoulCiety)
 - PK: `TEXT` (UUID v4 via `crypto.randomUUID()`)
@@ -222,9 +231,15 @@ cross_links, backups, notifications, drive_files,
 student_alerts, evidence_pool
 ```
 
+### Group 13: STUDENT CLASSROOM (6 tables)
+```
+classroom_posts, assignments, assignment_submissions,
+quiz_attempts, post_comments, student_notifications
+```
+
 > **Full schema with columns** → Section 3.1 ด้านล่าง
 
-### 3.1 Full Column Schema (SQL — 68 Tables)
+### 3.1 Full Column Schema (SQL — 74 Tables)
 
 ```sql
 -- ==================== GROUP 1: AUTH & CONFIG (14) ====================
@@ -605,6 +620,15 @@ CREATE TABLE tests (
   total_score REAL,
   time_limit_minutes INTEGER,
   instructions TEXT,
+  is_published INTEGER DEFAULT 0,
+  allow_review INTEGER DEFAULT 0,        -- นร.ดูเฉลยหลังส่งได้?
+  shuffle_questions INTEGER DEFAULT 0,
+  shuffle_choices INTEGER DEFAULT 0,
+  max_attempts INTEGER DEFAULT 1,
+  show_score_immediately INTEGER DEFAULT 1,
+  passing_score REAL,                    -- คะแนนผ่าน (NULL = ไม่กำหนด)
+  available_from TEXT,                   -- เปิดให้ทำเมื่อ
+  available_until TEXT,                  -- ปิดเมื่อ
   ai_generated INTEGER DEFAULT 0,
   created_at TEXT
 );
@@ -612,10 +636,17 @@ CREATE TABLE test_questions (
   id TEXT PRIMARY KEY,
   test_id TEXT NOT NULL,
   question_number INTEGER NOT NULL,
-  question_type TEXT CHECK(question_type IN ('multiple_choice','true_false','short_answer','essay')),
+  question_type TEXT CHECK(question_type IN (
+    'multiple_choice','multiple_select','true_false',
+    'short_answer','essay','matching','ordering',
+    'fill_blank','audio_record'
+  )),
   question_text TEXT NOT NULL,
-  choices TEXT,                        -- JSON: [string, ...] for MC
-  correct_answer TEXT,
+  choices TEXT,                        -- JSON: [string, ...] for MC/MS
+  correct_answer TEXT,                 -- string | JSON array (MS/ordering)
+  matching_pairs TEXT,                 -- JSON: [{left,right}] for matching
+  correct_order TEXT,                  -- JSON: [item,...] for ordering
+  media_url TEXT,                      -- รูป/เสียงประกอบคำถาม
   score REAL NOT NULL,
   bloom_level TEXT,                    -- 'remember'|'understand'|'apply'|'analyze'|'evaluate'|'create'
   difficulty TEXT CHECK(difficulty IN ('easy','medium','hard')),
@@ -628,9 +659,11 @@ CREATE TABLE test_responses (
   teacher_id TEXT NOT NULL,
   answers TEXT,                        -- JSON: {question_id: answer}
   total_score REAL,
+  started_at TEXT,
   submitted_at TEXT,
+  time_spent_seconds INTEGER,
   graded_at TEXT,
-  graded_by TEXT CHECK(graded_by IN ('auto','teacher'))
+  graded_by TEXT CHECK(graded_by IN ('auto','teacher','ai_assisted'))
 );
 CREATE TABLE scores (
   id TEXT PRIMARY KEY,
@@ -1078,6 +1111,108 @@ CREATE TABLE evidence_pool (
   auto_collected INTEGER DEFAULT 1,
   created_at TEXT
 );
+
+-- ==================== GROUP 13: STUDENT CLASSROOM (6) ====================
+-- ระบบห้องเรียนออนไลน์คล้าย Google Classroom แต่ built-in + ดีกว่า
+CREATE TABLE classroom_posts (
+  id TEXT PRIMARY KEY,
+  teacher_id TEXT NOT NULL,
+  subject_classroom_id TEXT NOT NULL,  -- วิชา+ห้อง ของเทอมนี้
+  post_type TEXT NOT NULL CHECK(post_type IN ('announcement','material','assignment','quiz','poll','discussion')),
+  title TEXT NOT NULL,
+  content TEXT,                        -- HTML content (sanitized)
+  attachments TEXT,                    -- JSON: [{name,url,mime_type,size}]
+  is_pinned INTEGER DEFAULT 0,
+  is_published INTEGER DEFAULT 1,
+  scheduled_at TEXT,                   -- NULL = post now, otherwise schedule
+  due_date TEXT,                       -- for assignments/quizzes
+  max_score REAL,                      -- for assignments
+  test_id TEXT,                        -- link to tests table (for quiz post_type)
+  allow_late INTEGER DEFAULT 0,
+  late_penalty_percent REAL DEFAULT 0, -- e.g. 10 = -10% per day
+  poll_options TEXT,                   -- JSON: [{text,votes:0}] for poll type
+  sort_order INTEGER,
+  created_at TEXT,
+  updated_at TEXT
+);
+CREATE TABLE assignments (
+  id TEXT PRIMARY KEY,
+  post_id TEXT NOT NULL,               -- link to classroom_posts
+  teacher_id TEXT NOT NULL,
+  assignment_type TEXT CHECK(assignment_type IN ('file_upload','text_entry','url_link','audio_record','mixed')),
+  rubric_id TEXT,                      -- link to assessment_tools for rubric grading
+  group_assignment INTEGER DEFAULT 0,
+  max_file_size_mb INTEGER DEFAULT 10,
+  allowed_file_types TEXT,             -- JSON: ['pdf','docx','jpg','mp3','mp4'] or NULL=all
+  instructions_detail TEXT,            -- extended instructions (Markdown)
+  created_at TEXT
+);
+CREATE TABLE assignment_submissions (
+  id TEXT PRIMARY KEY,
+  assignment_id TEXT NOT NULL,
+  post_id TEXT NOT NULL,
+  student_id TEXT NOT NULL,
+  submission_text TEXT,                -- for text_entry
+  submission_url TEXT,                 -- for url_link
+  file_urls TEXT,                      -- JSON: [{name,url,mime_type,size}]
+  audio_url TEXT,                      -- for audio recording
+  status TEXT DEFAULT 'submitted' CHECK(status IN ('draft','submitted','returned','graded')),
+  score REAL,
+  max_score REAL,
+  rubric_scores TEXT,                  -- JSON: {criterion_id: score} if rubric grading
+  feedback TEXT,
+  feedback_audio_url TEXT,             -- voice feedback from teacher
+  graded_at TEXT,
+  submitted_at TEXT,
+  resubmitted_at TEXT,
+  attempt_count INTEGER DEFAULT 1,
+  is_late INTEGER DEFAULT 0,
+  late_days REAL DEFAULT 0
+);
+CREATE TABLE quiz_attempts (
+  id TEXT PRIMARY KEY,
+  test_id TEXT NOT NULL,
+  post_id TEXT,                        -- link to classroom_posts (NULL if standalone)
+  student_id TEXT NOT NULL,
+  attempt_number INTEGER DEFAULT 1,
+  answers TEXT,                        -- JSON: {question_id: {answer, is_correct, score}}
+  total_score REAL,
+  max_score REAL,
+  started_at TEXT,
+  submitted_at TEXT,
+  time_spent_seconds INTEGER,
+  auto_graded INTEGER DEFAULT 0,
+  manually_graded INTEGER DEFAULT 0,
+  graded_at TEXT,
+  feedback TEXT
+);
+CREATE TABLE post_comments (
+  id TEXT PRIMARY KEY,
+  post_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,               -- teacher or student
+  user_role TEXT CHECK(user_role IN ('teacher','student')),
+  parent_comment_id TEXT,              -- NULL = top-level, otherwise reply
+  content TEXT NOT NULL,
+  attachments TEXT,                    -- JSON: [{name,url}]
+  is_private INTEGER DEFAULT 0,        -- private comment to teacher only
+  created_at TEXT,
+  updated_at TEXT
+);
+CREATE TABLE student_notifications (
+  id TEXT PRIMARY KEY,
+  student_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  notification_type TEXT CHECK(notification_type IN (
+    'new_post','assignment_due','quiz_available','grade_released',
+    'feedback','comment_reply','announcement'
+  )),
+  related_post_id TEXT,
+  related_module TEXT,
+  is_read INTEGER DEFAULT 0,
+  created_at TEXT,
+  expires_at TEXT
+);
 ```
 
 ---
@@ -1314,6 +1449,17 @@ CREATE INDEX idx_perf_activity ON performances(activity_id, semester_id);
 -- Work Hours
 CREATE INDEX idx_wh_teacher_sem ON work_hours(teacher_id, semester_id);
 CREATE INDEX idx_wh_category ON work_hours(category);
+
+-- Student Classroom
+CREATE INDEX idx_cposts_sc ON classroom_posts(subject_classroom_id);
+CREATE INDEX idx_cposts_teacher ON classroom_posts(teacher_id, post_type);
+CREATE INDEX idx_cposts_due ON classroom_posts(due_date);
+CREATE INDEX idx_asub_assignment ON assignment_submissions(assignment_id, student_id);
+CREATE INDEX idx_asub_status ON assignment_submissions(status);
+CREATE INDEX idx_quiz_test_student ON quiz_attempts(test_id, student_id);
+CREATE INDEX idx_pcomments_post ON post_comments(post_id);
+CREATE INDEX idx_snotif_student ON student_notifications(student_id, is_read);
+CREATE INDEX idx_snotif_expires ON student_notifications(expires_at);
 ```
 
 ---
@@ -1454,6 +1600,7 @@ INSERT INTO award_types (id, name, tier, icon, sort_order) VALUES
 | ประเภทเอกสาร | `document_types` | template+form structure |
 | ข้อมูลรน. | `app_settings` (school_*) | ชื่อ/ที่อยู่/ผอ./logo |
 | ข้อมูลครู | `teacher_profiles` | ชื่อ/ตำแหน่ง/คศ. |
+| โพสต์ห้องเรียน | `classroom_posts` | ประกาศ/สื่อ/งาน/quiz/poll/อภิปราย |
 
 ---
 
@@ -1484,7 +1631,7 @@ INSERT INTO award_types (id, name, tier, icon, sort_order) VALUES
 | 19 | เอกสารราชการ | E | documents · document_types · 28 templates · AI ช่วยกรอก |
 | 20 | Quick Drop + วัสดุ | E | quick_drops · AI categorize · classroom_materials |
 | 21 | เครื่องดนตรี | E | instruments · rehearsals · performances |
-| 22 | Student Module | F | student.html · activity_members · ชุมนุม · วงสตริง |
+| 22 | Student Classroom | F | student.html · classroom_posts · assignments · quiz_attempts · ห้องเรียนออนไลน์ · แบบทดสอบ 9 รูปแบบ · ตรวจ+ให้คะแนน · ชุมนุม · วงสตริง |
 | 23 | งานประจำชั้น | E | homeroom_assignments · sdq_screenings · home_visits · care_records · iep_plans |
 | 24 | ปกเอกสาร | E | cover_templates · design_data · preview · PDF |
 | 25 | ระบบ | E | attendance_zones · GPS check-in · notifications · backups · offline sync |
@@ -1638,6 +1785,30 @@ Group F (Classroom นักเรียน):
 | `/api/homeroom-assignments` | ✓ `?semester_id=` | ✓ | — | ✓ |
 | `/api/attendance-zones` | ✓ `?classroom_id=` | ✓ | ✓ | ✓ |
 | `/api/student-submissions` | ✓ `?lesson_plan_id=&student_id=` | ✓ | ✓ | ✓ |
+| **Student Classroom — Teacher APIs** | | | | |
+| `/api/classroom-posts` | ✓ `?subject_classroom_id=&type=` | ✓ | — | — |
+| `/api/classroom-posts/:id` | ✓ | — | ✓ | ✓ |
+| `/api/classroom-posts/:id/publish` | — | ✓ toggle | — | — |
+| `/api/assignments` | ✓ `?post_id=` | ✓ | ✓ | — |
+| `/api/assignment-submissions` | ✓ `?assignment_id=&student_id=` | — | — | — |
+| `/api/assignment-submissions/:id/grade` | — | ✓ `{score,feedback}` | — | — |
+| `/api/assignment-submissions/:id/return` | — | ✓ return for revision | — | — |
+| `/api/assignment-submissions/bulk-grade` | — | ✓ `[{id,score,feedback}]` | — | — |
+| `/api/quiz-attempts` | ✓ `?test_id=&student_id=` | — | — | — |
+| `/api/quiz-attempts/:id/grade` | — | ✓ manual grade essay/audio | — | — |
+| `/api/post-comments` | ✓ `?post_id=` | ✓ | ✓ | ✓ |
+| **Student Classroom — Student APIs** | | | | |
+| `/api/student/feed` | ✓ `?subject_classroom_id=` all posts for student | — | — | — |
+| `/api/student/assignments/:post_id` | ✓ assignment detail + my submission | — | — | — |
+| `/api/student/assignments/:post_id/submit` | — | ✓ `{text,files,url,audio}` | — | — |
+| `/api/student/assignments/:post_id/resubmit` | — | ✓ | — | — |
+| `/api/student/quizzes/:post_id/start` | — | ✓ → `{attempt_id, questions}` | — | — |
+| `/api/student/quizzes/:attempt_id/submit` | — | ✓ `{answers}` → auto-grade | — | — |
+| `/api/student/quizzes/:attempt_id/review` | ✓ review answers + feedback | — | — | — |
+| `/api/student/grades` | ✓ `?semester_id=` my scores + grades | — | — | — |
+| `/api/student/notifications` | ✓ `?unread=1` | — | ✓ mark read | — |
+| `/api/student/comments/:post_id` | ✓ | ✓ add | — | – |
+| `/api/student/profile` | ✓ | — | ✓ avatar + contact | — |
 | `/api/drive/auth` | ✓ get auth URL | ✓ exchange code | — | — |
 
 ---
@@ -1777,4 +1948,161 @@ SESSION_SECRET = ""
 
 ---
 
-*Last updated: 13 มีนาคม 2569 — schema, phase map, API map, evidence logic ครบสมบูรณ์*
+## 16. Student Classroom Module (ห้องเรียนออนไลน์)
+
+> คล้าย Google Classroom แต่ built-in + ดีกว่า — ไม่ต้องเปิดแอปอื่น
+
+### 16.1 Student Login + Auth
+
+- **Register**: ครูสร้าง account ให้นร. หรือ นร.ลงทะเบียนเอง (`/api/auth/register-student`)
+  - Required: `student_code` + `password` + ชื่อ-นามสกุล
+  - ระบบจะเทียบกับ `students` table ว่ามีอยู่จริง → link `user_id`
+  - Password: PBKDF2 เหมือนครู
+- **Login**: `student_code + password` → session token (role=`student`)
+- **Session**: เหมือนครู แต่ middleware เช็ค role → student เข้าถึง `/api/student/*` เท่านั้น
+
+### 16.2 Student SPA (`student.html`)
+
+**หน้าหลักของนักเรียน:**
+
+| แท็บ | ชื่อ | รายละเอียด |
+|-----|------|----------|
+| 1 | หน้าหลัก (Feed) | โพสต์ทั้งหมดจากทุกวิชา เรียงใหม่สุด + filter ตามวิชา |
+| 2 | งานที่ได้รับ | รายการงาน + due date + status (pending/submitted/graded) |
+| 3 | แบบทดสอบ | รายการแบบทดสอบที่เปิดให้ทำ + กำลังทำอยู่ |
+| 4 | คะแนนของฉัน | คะแนนทุกวิชา + เกรด + คุณลักษณะ |
+| 5 | ชุมนุม/วงดนตรี | กิจกรรมที่เข้าร่วม + ตำแหน่ง |
+| 6 | แจ้งเตือน | งานใหม่ + due ใกล้ + คะแนนออก |
+| 7 | โปรไฟล์ | รูป + ข้อมูลส่วนตัว |
+
+### 16.3 Quiz Engine — 9 รูปแบบคำถาม
+
+| # | Type | รายละเอียด | Auto-grade? |
+|---|------|----------|-------------|
+| 1 | `multiple_choice` | 4 ตัวเลือก เลือก 1 ข้อ | ✓ |
+| 2 | `multiple_select` | เลือกได้หลายข้อ (คะแนนบางส่วน partial credit) | ✓ |
+| 3 | `true_false` | ถูก/ผิด | ✓ |
+| 4 | `short_answer` | ตอบสั้น (เทียบกับคำตอบที่กำหนด, case-insensitive) | ✓ |
+| 5 | `essay` | เขียนยาว rich text + file แนบ | ✗ ครูตรวจ |
+| 6 | `matching` | จับคู่ ซ้าย-ขวา (drag-drop) | ✓ |
+| 7 | `ordering` | เรียงลำดับ (drag-drop) | ✓ |
+| 8 | `fill_blank` | เติมคำในช่องว่าง (ใช้ `___` เป็น placeholder) | ✓ |
+| 9 | `audio_record` | อัดเสียงตอบ (เช่น ร้องเพลง, เล่นดนตรี, อ่านโน้ต) | ✗ ครูตรวจ |
+
+### 16.4 Auto-Grade Logic
+
+```javascript
+// ตรวจอัตโนมัติ (functions/api/quiz-attempts.js)
+function autoGrade(questions, answers) {
+  let total = 0;
+  const results = {};
+
+  for (const q of questions) {
+    const ans = answers[q.id];
+    let score = 0;
+    let isCorrect = false;
+
+    switch (q.question_type) {
+      case 'multiple_choice':
+      case 'true_false':
+        isCorrect = ans === q.correct_answer;
+        score = isCorrect ? q.score : 0;
+        break;
+
+      case 'multiple_select':
+        const correct = JSON.parse(q.correct_answer);
+        const selected = Array.isArray(ans) ? ans : [];
+        const correctCount = selected.filter(a => correct.includes(a)).length;
+        const wrongCount = selected.filter(a => !correct.includes(a)).length;
+        // Partial credit: +1 per correct, -0.5 per wrong, min 0
+        score = Math.max(0, (correctCount - wrongCount * 0.5) / correct.length * q.score);
+        isCorrect = correctCount === correct.length && wrongCount === 0;
+        break;
+
+      case 'short_answer':
+        const acceptedAnswers = JSON.parse(q.correct_answer); // array of accepted
+        isCorrect = acceptedAnswers.some(a =>
+          a.trim().toLowerCase() === (ans || '').trim().toLowerCase()
+        );
+        score = isCorrect ? q.score : 0;
+        break;
+
+      case 'matching':
+        const pairs = JSON.parse(q.matching_pairs);
+        const userPairs = typeof ans === 'object' ? ans : {};
+        let matchCount = 0;
+        pairs.forEach(p => { if (userPairs[p.left] === p.right) matchCount++; });
+        score = (matchCount / pairs.length) * q.score;
+        isCorrect = matchCount === pairs.length;
+        break;
+
+      case 'ordering':
+        const correctOrder = JSON.parse(q.correct_order);
+        const userOrder = Array.isArray(ans) ? ans : [];
+        isCorrect = JSON.stringify(correctOrder) === JSON.stringify(userOrder);
+        score = isCorrect ? q.score : 0;
+        break;
+
+      case 'fill_blank':
+        const blanks = JSON.parse(q.correct_answer); // [{blank_index, accepted:[...]}]
+        const userBlanks = typeof ans === 'object' ? ans : {};
+        let blankCorrect = 0;
+        blanks.forEach(b => {
+          if (b.accepted.some(a => a.trim().toLowerCase() === (userBlanks[b.blank_index] || '').trim().toLowerCase()))
+            blankCorrect++;
+        });
+        score = (blankCorrect / blanks.length) * q.score;
+        isCorrect = blankCorrect === blanks.length;
+        break;
+
+      case 'essay':
+      case 'audio_record':
+        // ไม่ auto-grade — รอครูตรวจ
+        score = null;
+        isCorrect = null;
+        break;
+    }
+
+    results[q.id] = { answer: ans, is_correct: isCorrect, score };
+    if (score !== null) total += score;
+  }
+
+  return { results, total, hasManualGrading: Object.values(results).some(r => r.score === null) };
+}
+```
+
+### 16.5 คุณสมบัติที่ดีกว่า Google Classroom
+
+| Feature | Google Classroom | HARMONI Student Classroom |
+|---------|-----------------|---------------------------|
+| โพสต์/ประกาศ | ✓ | ✓ + Pin + Schedule + Poll |
+| สั่งงาน | ✓ file + link | ✓ file + link + text + audio record |
+| แบบทดสอบ | MC + short + essay | 9 รูปแบบรวม matching + ordering + audio |
+| Auto-grade | ✓ MC only | ✓ MC + MS + TF + short + matching + ordering + fill |
+| Rubric grading | ✓ | ✓ + link จาก assessment_tools ที่สร้างไว้ |
+| คะแนนลงแผน | ✗ manual | ✓ อัตโนมัติลง scores table → grade_results |
+| Voice feedback | ✗ | ✓ ครูอัดเสียง feedback ได้ |
+| AI สร้างข้อสอบ | ✗ | ✓ AI สร้างข้อสอบ 9 รูปแบบ + Bloom + IOC |
+| Resubmit | ✓ | ✓ + attempt tracking + late penalty |
+| Timer quiz | ✓ | ✓ + shuffle + max attempts + schedule window |
+| Comment/ซักถาม | ✓ | ✓ + private comment + thread replies |
+| ดูคะแนนรวม | ✗ (แยกวิชา) | ✓ หน้าเดียวรวมทุกวิชา + เกรด + คุณลักษณะ |
+| Music-specific | ✗ | ✓ อัดเสียงตอบ (ร้องเพลง/เล่นดนตรี/อ่านโน้ต) |
+| Offline | ✗ | ✓ PWA + IndexedDB sync |
+| Mobile-first | ✓ | ✓ mobile-first responsive |
+| Poll/โหวต | ✗ | ✓ โหวตในโพสต์ |
+
+### 16.6 Flow คะแนนลงแผนอัตโนมัติ
+
+```
+ครูให้คะแนนงาน/quiz
+  → assignment_submissions.status = 'graded' OR quiz_attempts.graded_at IS NOT NULL
+  → auto INSERT INTO scores (คะแนนรายข้อลง scores table)
+  → เมื่อครูกด "Compute Grade"
+  → /api/grade-results/compute → คำนวณจาก scores + grade_configs → grade_results
+  → นร.เห็นเกรดทันที (student_notifications)
+```
+
+---
+
+*Last updated: 13 มีนาคม 2569 — schema 74 tables, Student Classroom module added, quiz 9 types, auto-grade logic*

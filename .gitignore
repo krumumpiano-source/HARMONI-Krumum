@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.wrangler/
+
+# Environment
+.env
+.env.local
+.dev.vars
+
+# OS
+Thumbs.db
+.DS_Store
+
+# IDE
+.vscode/settings.json
+*.swp
+*.swo
+
+# Cloudflare
+.mf/

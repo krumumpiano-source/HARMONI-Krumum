@@ -1,0 +1,983 @@
+﻿<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HARMONI — โครงสร้างการคิดและออกแบบระบบ</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sarabun:ital,wght@0,300;0,400;0,600;0,700;0,800;1,300;1,400&display=swap');
+
+  :root {
+    --pri: #1a237e;
+    --pri2: #3949ab;
+    --pri3: #7986cb;
+    --acc: #ff6f00;
+    --acc2: #ffa726;
+    --bg: #ffffff;
+    --txt: #212121;
+    --txt2: #616161;
+    --txt3: #9e9e9e;
+    --bdr: #e0e0e0;
+    --hl: #e8eaf6;
+    --ok: #2e7d32;
+    --warn: #f57f17;
+    --red: #c62828;
+    --ai: #7c4dff;
+    --ai2: #b388ff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Sarabun', sans-serif;
+    font-size: 15px;
+    line-height: 1.75;
+    color: var(--txt);
+    background: #f0f0f5;
+  }
+
+  .doc { max-width: 210mm; margin: 0 auto; background: white; }
+
+  /* ===== COVER ===== */
+  .cover {
+    height: 297mm;
+    background: linear-gradient(160deg, #0d1b4a 0%, #1a237e 35%, #283593 60%, #1565c0 100%);
+    color: white;
+    display: flex; flex-direction: column;
+    justify-content: center; align-items: center; text-align: center;
+    padding: 40px; position: relative; overflow: hidden;
+  }
+  .cover::before {
+    content: ''; position: absolute; top: -40%; right: -20%;
+    width: 70%; height: 140%;
+    background: radial-gradient(ellipse, rgba(255,255,255,0.04) 0%, transparent 70%);
+    transform: rotate(-15deg);
+  }
+  .cover .notes-bg {
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 200px; opacity: 0.03; letter-spacing: 40px;
+    font-family: serif;
+  }
+  .cover .icon { font-size: 90px; margin-bottom: 16px; filter: drop-shadow(0 4px 15px rgba(0,0,0,0.3)); }
+  .cover .title { font-size: 60px; font-weight: 800; letter-spacing: 14px; }
+  .cover .full { font-size: 15px; letter-spacing: 3px; opacity: 0.75; margin: 8px 0 24px; }
+  .cover .bar { width: 100px; height: 3px; background: var(--acc); border-radius: 2px; margin: 0 auto 24px; }
+  .cover .sub { font-size: 22px; opacity: 0.95; margin-bottom: 6px; }
+  .cover .sub2 { font-size: 16px; opacity: 0.7; max-width: 520px; margin-bottom: 60px; }
+  .cover .info { position: absolute; bottom: 90px; font-size: 14px; opacity: 0.6; line-height: 2; }
+  .cover .ver { position: absolute; bottom: 35px; font-size: 12px; opacity: 0.4; }
+
+  /* ===== PAGES ===== */
+  .pg {
+    padding: 22mm 20mm 16mm; position: relative;
+  }
+
+  .pg + .pg {
+    border-top: 3px solid var(--hl);
+  }
+
+  .pg-head {
+    border-bottom: 3px solid var(--pri); padding-bottom: 6px; margin-bottom: 22px;
+    display: flex; justify-content: space-between; align-items: flex-end;
+  }
+  .pg-head h1 { font-size: 24px; color: var(--pri); }
+  .pg-head .pn { font-size: 12px; color: var(--txt3); }
+  .pg-foot {
+    position: absolute; bottom: 14mm; left: 20mm; right: 20mm;
+    text-align: center; font-size: 10px; color: #bbb;
+    border-top: 1px solid #eee; padding-top: 6px;
+  }
+
+  h2 { font-size: 19px; color: var(--pri); margin: 22px 0 10px; border-bottom: 2px solid var(--hl); padding-bottom: 4px; }
+  h3 { font-size: 16px; color: var(--pri2); margin: 16px 0 6px; }
+  h4 { font-size: 14px; font-weight: 700; margin: 10px 0 4px; }
+  p { margin-bottom: 8px; }
+  ul, ol { margin: 6px 0 6px 18px; }
+  li { margin-bottom: 3px; }
+
+  /* ===== NAME BREAKDOWN ===== */
+  .nm-box {
+    background: linear-gradient(135deg, #e8eaf6 0%, #c5cae9 100%);
+    border-radius: 14px; padding: 24px; margin: 16px 0;
+    border-left: 5px solid var(--pri);
+  }
+  .nm-box h3 { color: var(--pri); margin-top: 0; }
+  .letters { display: flex; gap: 0; justify-content: center; flex-wrap: wrap; margin: 14px 0; }
+  .lt { text-align: center; padding: 8px 4px; min-width: 100px; }
+  .lt .ch { font-size: 44px; font-weight: 800; color: var(--pri); line-height: 1; }
+  .lt .wd { font-size: 12px; color: var(--pri2); font-weight: 600; margin-top: 2px; }
+  .lt .mn { font-size: 10px; color: var(--txt2); }
+
+  /* ===== BOXES ===== */
+  .bx { border-radius: 10px; padding: 14px 18px; margin: 10px 0; }
+  .bx.hl { background: var(--hl); }
+  .bx.acc { background: #fff3e0; border-left: 4px solid var(--acc); }
+  .bx.ok { background: #e8f5e9; border-left: 4px solid var(--ok); }
+  .bx.warn { background: #fffde7; border-left: 4px solid var(--warn); }
+  .bx.ai { background: #ede7f6; border-left: 4px solid var(--ai); }
+  .bx.red { background: #fce4ec; border-left: 4px solid var(--red); }
+
+  /* ===== MIND MAP NODES ===== */
+  .mind { display: flex; flex-direction: column; align-items: center; margin: 16px 0; }
+  .mind-root {
+    background: var(--pri); color: white; padding: 12px 28px;
+    border-radius: 50px; font-size: 18px; font-weight: 700;
+    box-shadow: 0 3px 12px rgba(26,35,126,0.3);
+  }
+  .mind-line { width: 3px; height: 20px; background: var(--pri3); }
+  .mind-branch { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .mind-node {
+    background: white; border: 2px solid var(--pri3);
+    border-radius: 12px; padding: 10px 16px; text-align: center;
+    min-width: 120px; font-size: 13px; position: relative;
+  }
+  .mind-node::before {
+    content: ''; position: absolute; top: -12px; left: 50%;
+    width: 2px; height: 12px; background: var(--pri3);
+  }
+  .mind-node strong { display: block; color: var(--pri); font-size: 14px; }
+  .mind-node.ai { border-color: var(--ai); }
+  .mind-node.ai strong { color: var(--ai); }
+  .mind-node.acc { border-color: var(--acc); }
+  .mind-node.acc strong { color: var(--acc); }
+  .mind-node.ok { border-color: var(--ok); }
+  .mind-node.ok strong { color: var(--ok); }
+
+  /* ===== THINKING CARDS ===== */
+  .think {
+    border: 2px solid var(--bdr); border-radius: 12px;
+    padding: 14px 18px; margin: 10px 0; position: relative;
+  }
+  .think .q {
+    position: absolute; top: -12px; left: 16px;
+    background: var(--pri); color: white;
+    padding: 2px 12px; border-radius: 8px;
+    font-size: 12px; font-weight: 600;
+  }
+  .think .q.why { background: var(--acc); }
+  .think .q.how { background: var(--ok); }
+  .think .q.what { background: var(--ai); }
+  .think .q.rule { background: var(--red); }
+  .think .a { padding-top: 6px; }
+
+  /* ===== FLOW ===== */
+  .flow { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 10px 0; flex-wrap: wrap; }
+  .fb {
+    padding: 7px 14px; border-radius: 10px; font-size: 12px;
+    font-weight: 600; text-align: center; color: white; min-width: 70px;
+  }
+  .fb.p { background: var(--pri); }
+  .fb.p2 { background: var(--pri2); }
+  .fb.a { background: var(--acc); }
+  .fb.g { background: var(--ok); }
+  .fb.ai { background: var(--ai); }
+  .fb.r { background: var(--red); }
+  .fb.br { background: #795548; }
+  .fb.tl { background: #00897b; }
+  .fa { color: var(--pri); font-weight: 700; font-size: 16px; }
+
+  /* ===== 2 COLUMNS ===== */
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 10px 0; }
+
+  /* ===== GRID STATS ===== */
+  .stats { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin: 12px 0; }
+  .stat {
+    border: 2px solid var(--bdr); border-radius: 10px;
+    padding: 12px; text-align: center;
+  }
+  .stat .n { font-size: 30px; font-weight: 800; color: var(--pri); line-height: 1.2; }
+  .stat .l { font-size: 11px; color: var(--txt2); }
+
+  /* ===== PILLAR CARDS ===== */
+  .pillars { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin: 12px 0; }
+  .pillar {
+    border-radius: 12px; padding: 14px; text-align: center;
+    color: white; position: relative; overflow: hidden;
+  }
+  .pillar::after {
+    content: ''; position: absolute; top: -20px; right: -20px;
+    width: 60px; height: 60px; border-radius: 50%;
+    background: rgba(255,255,255,0.1);
+  }
+  .pillar .pi { font-size: 32px; margin-bottom: 6px; }
+  .pillar .pt { font-size: 15px; font-weight: 700; }
+  .pillar .pd { font-size: 11px; opacity: 0.85; margin-top: 4px; }
+
+  /* ===== LAYER DIAGRAM ===== */
+  .layers { margin: 14px 0; }
+  .layer {
+    padding: 10px 16px; margin: 4px 0; border-radius: 8px;
+    display: flex; align-items: center; gap: 12px;
+    color: white; font-size: 13px;
+  }
+  .layer .li { font-size: 22px; }
+  .layer .lt2 { font-weight: 700; min-width: 140px; }
+
+  /* ===== PRIORITY GROUPS ===== */
+  .grp {
+    border: 2px solid var(--bdr); border-radius: 10px;
+    padding: 10px 14px; margin: 8px 0;
+  }
+  .grp .gt { font-weight: 700; color: var(--pri); font-size: 13px; }
+  .grp .gp { font-size: 12px; color: var(--txt); }
+  .grp .gr { font-size: 11px; color: var(--txt2); font-style: italic; }
+  .grp.a { border-left: 5px solid var(--red); }
+  .grp.b { border-left: 5px solid #e65100; }
+  .grp.c { border-left: 5px solid #f9a825; }
+  .grp.d { border-left: 5px solid var(--ok); }
+  .grp.e { border-left: 5px solid #1565c0; }
+  .grp.f { border-left: 5px solid #6a1b9a; }
+
+  /* ===== CYCLE DIAGRAM ===== */
+  .cycle {
+    display: flex; align-items: center; justify-content: center;
+    gap: 0; margin: 14px auto; max-width: 600px;
+  }
+  .cy-node {
+    width: 100px; height: 100px; border-radius: 50%;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    color: white; font-weight: 700; font-size: 13px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    position: relative; z-index: 1;
+  }
+  .cy-node .ci { font-size: 22px; }
+  .cy-arrow {
+    font-size: 24px; color: var(--pri3); margin: 0 -8px; z-index: 0;
+  }
+
+  /* ===== CHECK LIST ===== */
+  .ck { list-style: none; margin-left: 0; }
+  .ck li::before { content: '✓'; color: var(--ok); font-weight: 700; margin-right: 8px; }
+
+  /* ===== TINY TABLE ===== */
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 12px; }
+  th { background: var(--pri); color: white; padding: 6px 8px; text-align: left; font-size: 11px; }
+  td { padding: 5px 8px; border-bottom: 1px solid var(--bdr); vertical-align: top; }
+  tr:nth-child(even) { background: #fafafa; }
+  th.ai-h { background: var(--ai); }
+
+  /* ===== WATERMARK (กันคัดลอก) ===== */
+  .watermark {
+    position: fixed;
+    top: -50%; left: -50%;
+    width: 200%; height: 200%;
+    pointer-events: none;
+    z-index: 9999;
+    display: flex; flex-direction: column;
+    justify-content: center; align-items: center;
+    gap: 160px;
+    transform: rotate(-35deg);
+    overflow: hidden;
+  }
+  .watermark .wm-row {
+    white-space: nowrap;
+    font-size: 22px;
+    font-weight: 700;
+    color: rgba(26, 35, 126, 0.12);
+    letter-spacing: 8px;
+    font-family: 'Sarabun', sans-serif;
+  }
+  .watermark .wm-row:nth-child(even) {
+    margin-left: 200px;
+    font-size: 18px;
+    color: rgba(26, 35, 126, 0.09);
+    letter-spacing: 6px;
+  }
+
+  /* ===== PRINT ===== */
+  @media print {
+    body {
+      background: white;
+      margin: 0; padding: 0;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .doc { max-width: none; }
+
+    .cover {
+      height: 100vh;
+      break-after: page;
+      page-break-after: always;
+    }
+
+    /* แต่ละ section เริ่มหน้าใหม่เสมอ */
+    .pg {
+      padding: 0 0 6mm;
+      border-top: none !important;
+    }
+
+    .pg-head {
+      break-before: page;
+      page-break-before: always;
+      padding-top: 3mm;
+      margin-bottom: 10px;
+    }
+
+    /* เฉพาะ card เล็กๆ เท่านั้นที่ห้ามตัด */
+    .think { break-inside: avoid; page-break-inside: avoid; }
+    .grp   { break-inside: avoid; page-break-inside: avoid; }
+
+    /* ห้าม heading หลุดท้ายหน้าโดยไม่มีเนื้อหา */
+    h2 { break-after: avoid; page-break-after: avoid; }
+
+    .pg-foot { display: none; }
+
+    /* Watermark on every printed page */
+    .watermark {
+      position: fixed;
+      top: -50%; left: -50%;
+      width: 200%; height: 200%;
+    }
+    .watermark .wm-row {
+      font-size: 24px;
+      color: rgba(26, 35, 126, 0.13);
+    }
+    .watermark .wm-row:nth-child(even) {
+      font-size: 20px;
+      color: rgba(26, 35, 126, 0.10);
+    }
+  }
+  @page { size: A4; margin: 15mm 16mm; }
+</style>
+</head>
+<body>
+<div class="doc">
+
+<!-- ===================== COVER ===================== -->
+<div class="cover">
+  <div class="notes-bg">♪ ♫ ♩ ♬ ♪ ♫ ♩</div>
+  <div class="icon">🎵</div>
+  <div class="title">HARMONI</div>
+  <div class="full">Holistic Approach to Revolutionary Music Organization &amp; New Innovation</div>
+  <div class="bar"></div>
+  <div class="sub">โครงสร้างการคิดและออกแบบระบบ</div>
+  <div class="sub2">เอกสารอธิบายแนวคิด ที่มา เหตุผล และวิธีคิดทุกมิติ<br>ของระบบบริหารจัดการงานครูดนตรีอัจฉริยะ</div>
+  <div class="info">
+    นายพงศธร โพธิแก้ว<br>
+    กลุ่มสาระการเรียนรู้ศิลปะ(ดนตรี)<br>
+    โรงเรียนพะเยาพิทยาคม<br>
+    สำนักงานเขตพื้นที่การศึกษามัธยมศึกษาพะเยา
+  </div>
+  <div class="ver">v3 — มีนาคม 2569</div>
+</div>
+
+<!-- ===================== PAGE 1: ชื่อ HARMONI ===================== -->
+<div class="pg">
+  <div class="pg-head"><h1>1 — ที่มาและความหมายของชื่อ “HARMONI”</h1><span class="pn">1</span></div>
+
+  <div class="nm-box">
+    <h3>🎼 HARMONI = ตัวย่อ 7 ตัวอักษร ที่ทุกตัวมีความหมาย</h3>
+    <div class="letters">
+      <div class="lt"><div class="ch">H</div><div class="wd">Holistic</div><div class="mn">องค์รวม ครบทุกมิติ</div></div>
+      <div class="lt"><div class="ch">A</div><div class="wd">Approach</div><div class="mn">แนวทาง วิธีการ</div></div>
+      <div class="lt"><div class="ch">R</div><div class="wd">Revolutionary</div><div class="mn">ปฏิวัติ เปลี่ยนแปลง</div></div>
+      <div class="lt"><div class="ch">M</div><div class="wd">Music</div><div class="mn">ดนตรี</div></div>
+      <div class="lt"><div class="ch">O</div><div class="wd">Organization</div><div class="mn">จัดระบบ บริหาร</div></div>
+      <div class="lt"><div class="ch">N</div><div class="wd">New</div><div class="mn">ใหม่ ทันสมัย</div></div>
+      <div class="lt"><div class="ch">I</div><div class="wd">Innovation</div><div class="mn">นวัตกรรม</div></div>
+    </div>
+    <p style="text-align:center;font-size:16px;"><strong>= "แนวทางองค์รวมสู่การปฏิวัติระบบจัดการงานดนตรีและนวัตกรรมใหม่"</strong></p>
+  </div>
+
+  <div class="think" style="margin-top:20px;">
+    <div class="q why">เหตุผลในการเลือกชื่อ</div>
+    <div class="a">
+      <p><strong>HARMONI</strong> พ้องเสียงกับ <strong>"Harmony"</strong> — คำสำคัญที่สุดในดนตรี</p>
+      <div class="cols">
+        <div class="bx hl">
+          <h4>🎵 Harmony ในดนตรี</h4>
+          <p>"เสียงประสาน" — การนำเสียงหลายเสียงมาผสมผสานกัน จนเกิดเป็นบทเพลงที่ไพเราะ งดงาม</p>
+        </div>
+        <div class="bx hl">
+          <h4>💼 Harmony ในระบบ HARMONI</h4>
+          <p>"ความกลมกลืน" — การนำงานสอน วัดผล วิจัย PA SAR เอกสาร ดูแลผู้เรียน มารวมกันในที่เดียว อย่างลงตัว</p>
+        </div>
+      </div>
+      <p style="text-align:center;color:var(--pri);font-weight:700;">"เมื่อทุกงานประสานเป็นหนึ่ง... เหมือนเสียงดนตรีที่กลมกลืน"</p>
+    </div>
+  </div>
+
+  <h2>🧭 แนวคิดหลักในการออกแบบ</h2>
+  <div class="think">
+    <div class="q">สภาพปัญหา</div>
+    <div class="a">
+      <p>ผู้สอนดนตรีมีภาระงานที่หลากหลายและกระจัดกระจายในหลายมิติ: แผนการสอนจัดเก็บในไฟล์ Word การบันทึกการสอนจดในสมุด ผลการเรียนอยู่ใน Excel เอกสาร PA อยู่ในแฟ้มแยก งานวิจัยอยู่อีกที่หนึ่ง บันทึกการเยี่ยมบ้านอยู่ในอุปกรณ์สื่อสาร และชั่วโมงสอนจดมือ — <strong>ทุกภารกิจแยกส่วนออกจากกัน ไม่มีการเชื่อมโยง ต้องดำเนินการซ้ำซ้อน สิ้นเปลืองเวลา</strong></p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="q how">แนวทางการแก้ไข</div>
+    <div class="a">
+      <p>พัฒนา<strong>ระบบบูรณาการที่รวบรวมทุกภารกิจไว้ในที่เดียว</strong> — ข้อมูลจากการจัดการเรียนการสอนกลายเป็น evidence ของ PA โดยอัตโนมัติ ผลคะแนนผู้เรียนกลายเป็นข้อมูลการวิจัย บันทึกหลังสอนกลายเป็น Log Book — <strong>บันทึกข้อมูลเพียงครั้งเดียว สามารถนำไปใช้ประโยชน์ได้ในทุกโมดูล</strong></p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="q what">ผลที่คาดหวัง</div>
+    <div class="a">
+      <p><strong>ผู้สอนดนตรีเพียงคนเดียว</strong> บริหารจัดการภารกิจทุกด้านได้ในระบบเดียว ลดภาระงานเอกสาร 70% มีระบบปัญญาประดิษฐ์ช่วยดำเนินการ 22 จุด เก็บ evidence อัตโนมัติ และติดตามความพร้อม คศ.4 แบบ Real-time</p>
+    </div>
+  </div>
+
+  <div class="pg-foot">HARMONI — โครงสร้างการคิดและออกแบบระบบ</div>
+</div>
+
+<!-- ===================== PAGE 2: 3 เสาหลัก ===================== -->
+<div class="pg">
+  <div class="pg-head"><h1>2 — สามเสาหลัก: เป้าหมายของระบบ</h1><span class="pn">2</span></div>
+
+  <div class="pillars">
+    <div class="pillar" style="background:linear-gradient(135deg,#1a237e,#3949ab);">
+      <div class="pi">🏆</div>
+      <div class="pt">คศ.4 (ครูเชี่ยวชาญ)</div>
+      <div class="pd">เก็บ evidence อัตโนมัติ<br>PA1/PA2 + วิจัย + นวัตกรรม<br>ติดตามความพร้อมแบบ Real-time</div>
+    </div>
+    <div class="pillar" style="background:linear-gradient(135deg,#1b5e20,#43a047);">
+      <div class="pi">🎓</div>
+      <div class="pt">ผู้เรียนมีคุณภาพ</div>
+      <div class="pd">วัดผลครบมิติ<br>Early Warning ผู้เรียนกลุ่มเสี่ยง<br>AI วิเคราะห์ข้อมูลรายคน</div>
+    </div>
+    <div class="pillar" style="background:linear-gradient(135deg,#e65100,#ff9800);">
+      <div class="pi">⚡</div>
+      <div class="pt">ประสิทธิภาพ</div>
+      <div class="pd">AI ช่วยร่าง 22 จุด<br>Export 7 รูปแบบพร้อมใช้<br>บันทึกข้อมูลเพียงครั้งเดียว นำไปใช้ได้ทุกโมดูล</div>
+    </div>
+  </div>
+
+  <h2>🧩 หลักการคิด "Holistic" — ทุกอย่างเชื่อมกัน</h2>
+  <div class="mind">
+    <div class="mind-root">🎵 HARMONI</div>
+    <div class="mind-line"></div>
+    <div class="mind-branch">
+      <div class="mind-node"><strong>📚 สอน</strong>โครงสร้าง → แผน<br>→ จัดการเรียนการสอน → บันทึก</div>
+      <div class="mind-node"><strong>📊 วัดผล</strong>Rubric → ข้อสอบ<br>→ คะแนน → เกรด</div>
+      <div class="mind-node ai"><strong>🤖 AI ช่วย</strong>22 จุด ร่าง+วิเคราะห์<br>ครูตัดสินใจเสมอ</div>
+      <div class="mind-node ok"><strong>📋 PA+วิจัย</strong>PA1/PA2 + วิจัย<br>+ SAR + นวัตกรรม</div>
+      <div class="mind-node acc"><strong>🏠 ดูแลช่วยเหลือผู้เรียน</strong>SDQ + เยี่ยมบ้าน<br>+ ดูแล 5 ขั้น + IEP</div>
+    </div>
+  </div>
+
+  <div class="bx acc">
+    <h4>💡 แนวคิดสำคัญ: "งานวันนี้ = evidence ของวันพรุ่ง"</h4>
+    <p>ทุกครั้งที่ครูทำงานในระบบ (สอน, เยี่ยมบ้าน, PLC, วิจัย) → ระบบเก็บเป็น Evidence อัตโนมัติ → พอถึงเวลาเขียน PA2 → AI ดึง evidence มาจัดให้ → <strong>ไม่ต้องหาเอกสารอีก</strong></p>
+  </div>
+
+  <h2>🔑 กฎเหล็ก 4 ข้อ (Core Rules)</h2>
+  <div class="cols">
+    <div class="think">
+      <div class="q rule">กฎ 1: NO HARDCODE</div>
+      <div class="a">
+        <p>ทุกค่าที่อาจเปลี่ยนได้ ต้องตั้งค่าได้ผ่าน Settings UI :<br>
+        วิชา, ห้อง, ชุมนุม, เกรด, คุณลักษณะ, สมรรถนะ, รางวัล, ข้อมูลโรงเรียน</p>
+        <p><em>เหตุผล: เมื่อย้ายโรงเรียน เปลี่ยนวิชา เปลี่ยนเทอม ไม่ต้องแก้โค้ด</em></p>
+      </div>
+    </div>
+    <div class="think">
+      <div class="q rule">กฎ 2: NO-PHONE STUDENTS</div>
+      <div class="a">
+        <p>แอปพลิเคชันสำหรับผู้เรียนเป็นเพียง "ทางเลือกเพื่อความสะดวก" มิใช่ "ข้อบังคับ" :<br>
+        <p>ผู้สอนสามารถดำเนินการแทนผู้เรียนได้ครบถ้วน — การเช็คชื่อ การส่งงาน การกรอกข้อสอบ ทุกฟังก์ชัน</p>
+        <p><em>เหตุผล: ผู้เรียนในระดับมัธยมศึกษาตอนต้นหลายคนไม่มีอุปกรณ์สื่อสาร ไม่ละเลยผู้เรียนรายใด</em></p>
+      </div>
+    </div>
+    <div class="think">
+      <div class="q rule">กฎ 3: MULTI-TEACHER READY</div>
+      <div class="a">
+        <p>ทุก data table มี teacher_id — แม้ตอนนี้ใช้ครูคนเดียว ก็รองรับครูหลายคนในอนาคต</p>
+        <p><em>เหตุผล: คิดระยะยาว ไม่ต้อง refactor ทีหลัง</em></p>
+      </div>
+    </div>
+    <div class="think">
+      <div class="q rule">กฎ 4: AI COMPLETENESS CHECK</div>
+      <div class="a">
+        <p>ทุกหน้าที่มีปุ่ม "ส่ง" → AI ตรวจความสมบูรณ์ก่อน : แผนครบหัวข้อ? วิจัยครบส่วน? ก่อนส่งจริง</p>
+        <p><em>เหตุผล: ป้องกันส่งงานไม่ครบ ลดข้อผิดพลาด</em></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="pg-foot">HARMONI — โครงสร้างการคิดและออกแบบระบบ</div>
+</div>
+
+<!-- ===================== PAGE 3: วิธีคิดเรื่อง AI ===================== -->
+<div class="pg">
+  <div class="pg-head"><h1>3 — วิธีคิดเรื่อง AI: "ผู้ช่วย ไม่ใช่ผู้ทำ"</h1><span class="pn">3</span></div>
+
+  <div class="think">
+    <div class="q why">ความจำเป็นในการประยุกต์ใช้ปัญญาประดิษฐ์</div>
+    <div class="a">
+      <p>ผู้สอนใช้เวลากว่า <strong>70% ไปกับการจัดทำเอกสาร</strong> (แผนการสอน งานวิจัย PA SAR บันทึกหลังสอน และรายงาน) ในขณะที่สิ่งสำคัญที่สุดคือ <strong>“การจัดการเรียนการสอนจริง”</strong> — ระบบปัญญาประดิษฐ์เข้ามาช่วย “ร่างเอกสาร” เพื่อให้ผู้สอนมีเวลาในการจัดการเรียนรู้มากขึ้น</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="q how">กลไกการทำงานของระบบปัญญาประดิษฐ์</div>
+    <div class="a">
+      <div class="bx ai">
+        <h4>หลักการ: 1 Router + 22 ผู้เชี่ยวชาญเฉพาะทาง</h4>
+        <p>ไม่ได้ใช้ AI ตัวเดียวทำทุกอย่าง — แต่มี 22 "ผู้เชี่ยวชาญ" แยกกัน แต่ละตัวรู้เฉพาะเรื่องของตัวเอง</p>
+      </div>
+      <div class="flow" style="margin-top:10px;">
+        <div class="fb p">ครูกดปุ่ม "AI ช่วย"</div>
+        <span class="fa">→</span>
+        <div class="fb ai">AI Router เลือกผู้เชี่ยวชาญ</div>
+        <span class="fa">→</span>
+        <div class="fb p2">ส่ง Prompt เฉพาะทาง<br>+ ข้อมูลเฉพาะ</div>
+        <span class="fa">→</span>
+        <div class="fb a">AI ร่าง</div>
+        <span class="fa">→</span>
+        <div class="fb g">ครูตรวจ+แก้<br>ก่อนบันทึก</div>
+      </div>
+    </div>
+  </div>
+
+  <h2>🎯 ตัวอย่าง: AI ไม่ได้เป็น "คนเดียว" ทำทุกอย่าง</h2>
+  <div class="cols">
+    <div class="bx ai" style="font-size:13px;">
+      <h4>เมื่อครูกด "AI ช่วย" ที่แผนการสอน</h4>
+      <p>AI ได้รับ Prompt:</p>
+      <p><em>"คุณเป็น<strong>ผู้เชี่ยวชาญแผนการสอนดนตรี</strong><br>ตัวชี้วัด: ศ 2.1 ม.1/1<br>เนื้อหา: จังหวะพื้นฐาน<br>รูปแบบ: 5E"</em></p>
+      <p>→ AI <strong>เห็นแค่นี้</strong> ไม่รู้เรื่อง PA ไม่รู้เรื่องเกรด</p>
+    </div>
+    <div class="bx ai" style="font-size:13px;">
+      <h4>เมื่อครูกด "AI ช่วย" ที่ร่าง PA1</h4>
+      <p>AI ได้รับ Prompt คนละชุด:</p>
+      <p><em>"คุณเป็น<strong>ที่ปรึกษาวิทยฐานะ</strong><br>ตำแหน่ง: ครูชำนาญการ<br>กลุ่มสาระ: ศิลปะ<br>ภาระงาน: สอน 12 ชม./สัปดาห์"</em></p>
+      <p>→ AI <strong>ไม่เห็นแผนการสอน</strong> เห็นแค่ข้อมูล PA</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="q why">เหตุผลในการแยก Prompt เฉพาะทาง</div>
+    <div class="a">
+      <p><strong>ป้องกันความคลาดเคลื่อนของผลลัพธ์จากปัญญาประดิษฐ์</strong> — หากส่งข้อมูลทั้งหมดรวมกัน ระบบ AI อาจนำข้อมูลผลการเรียนไปใส่ในแผนการสอน หรือนำข้อมูลการเยี่ยมบ้านไปปรากฏในงานวิจัย — การแยก Prompt ทำให้ระบบ AI มุ่งเน้นเฉพาะเรื่องที่เกี่ยวข้อง</p>
+    </div>
+  </div>
+
+  <h2>⚡ สองโหมดการใช้งาน AI</h2>
+  <div class="cols">
+    <div class="bx" style="background:#ede7f6; border-left:4px solid var(--ai);">
+      <h4>⚡ Quick AI — กดปุ่มเดียว</h4>
+      <p><strong>เมื่อไหร่?</strong> เมื่อข้อมูลพร้อมแล้ว แค่ต้องการให้ AI ประมวลผล</p>
+      <p><strong>ตัวอย่าง:</strong></p>
+      <ul style="font-size:13px;">
+        <li>ขัดเกลาบันทึกหลังสอน (ข้อความดิบมีแล้ว)</li>
+        <li>วิเคราะห์ข้อสอบ (คำตอบผู้เรียนมีแล้ว)</li>
+        <li>วิเคราะห์ผลเกรด (คะแนนมีแล้ว)</li>
+        <li>Early Warning (ข้อมูลรวมมีแล้ว)</li>
+      </ul>
+      <p style="font-size:12px;color:var(--ai);"><strong>รวม 8 งาน</strong> — ประมวลผลอัตโนมัติด้วยการกดปุ่มเพียงครั้งเดียว</p>
+    </div>
+    <div class="bx" style="background:#e8eaf6; border-left:4px solid var(--pri2);">
+      <h4>💬 Chat AI — สนทนาโต้ตอบ</h4>
+      <p><strong>เมื่อไหร่?</strong> เมื่อต้องการให้ AI คิดด้วย สร้างสรรค์ให้ หรือมีทางเลือกหลายทาง</p>
+      <p><strong>ตัวอย่าง:</strong></p>
+      <ul style="font-size:13px;">
+        <li>ร่างแผนการสอน (เปลี่ยนกิจกรรมได้?)</li>
+        <li>สร้าง Rubric (เพิ่มเกณฑ์อีก?)</li>
+        <li>ร่าง PA1 (ปรับภาษาอีก?)</li>
+        <li>ร่าง SAR (เพิ่มข้อมูลส่วนไหน?)</li>
+      </ul>
+      <p style="font-size:12px;color:var(--pri2);"><strong>รวม 14 งาน</strong> — สนทนาวนจนพอใจ</p>
+    </div>
+  </div>
+
+  <div class="bx warn">
+    <h4>🛡️ ความปลอดภัย AI — 4 กฎเหล็ก</h4>
+    <ul class="ck" style="font-size:13px;">
+      <li><strong>ภาษาไทยราชการเท่านั้น</strong> — AI ตอบภาษาไทย ใช้ศัพท์ทางการ</li>
+      <li><strong>ห้ามสร้างข้อมูลนอกเหนือจากที่ได้รับ</strong> — ใช้เฉพาะข้อมูลที่กำหนด ป้องกัน Hallucination</li>
+      <li><strong>Anonymized</strong> — ไม่ส่งชื่อจริง/เลขประจำตัวผู้เรียนไป AI เด็ดขาด</li>
+      <li><strong>ผู้สอนเป็นผู้ตัดสินใจขั้นสุดท้าย</strong> — ระบบ AI ไม่เขียนลงฐานข้อมูลโดยตรง ผู้สอนสามารถปรับแก้ได้เสมอ</li>
+    </ul>
+  </div>
+
+  <div class="pg-foot">HARMONI — โครงสร้างการคิดและออกแบบระบบ</div>
+</div>
+
+<!-- ===================== PAGE 4: วงจรการสอน ===================== -->
+<div class="pg">
+  <div class="pg-head"><h1>4 — วงจรการจัดการเรียนรู้: แกนหลักของกระบวนการ</h1><span class="pn">4</span></div>
+
+  <div class="think">
+    <div class="q">หลักการและแนวคิด</div>
+    <div class="a">
+      <p>กระบวนการจัดการเรียนรู้มิใช่เพียง “การวางแผน → การจัดการสอน → การสิ้นสุด” — แต่เป็น <strong>วงจร PDCA</strong> ที่ทุกรอบทำให้ดีขึ้น : Plan → Do → Check → Act → Plan ใหม่ที่ดีกว่า</p>
+    </div>
+  </div>
+
+  <div class="cycle">
+    <div class="cy-node" style="background:var(--pri);"><div class="ci">📋</div>Plan<br><small>เขียนแผน</small></div>
+    <div class="cy-arrow">→</div>
+    <div class="cy-node" style="background:var(--ok);"><div class="ci">🎵</div>Do<br><small>จัดการเรียนการสอน</small></div>
+    <div class="cy-arrow">→</div>
+    <div class="cy-node" style="background:var(--acc);"><div class="ci">📝</div>Check<br><small>บันทึกผล</small></div>
+    <div class="cy-arrow">→</div>
+    <div class="cy-node" style="background:var(--ai);"><div class="ci">🔄</div>Act<br><small>AI แนะนำ</small></div>
+    <div class="cy-arrow">→ 🔁</div>
+  </div>
+
+  <h2>📚 3 ชั้นของเนื้อหา: จากใหญ่ไปเล็ก</h2>
+  <div class="layers">
+    <div class="layer" style="background:var(--pri);">
+      <div class="li">📘</div><div class="lt2">โครงสร้างรายวิชา</div>
+      <div>ภาพรวมทั้งเทอม: กี่หน่วย อะไรบ้าง สัดส่วนคะแนน</div>
+    </div>
+    <div class="layer" style="background:var(--pri2); margin-left:20px;">
+      <div class="li">📗</div><div class="lt2">หน่วยการเรียนรู้</div>
+      <div>แต่ละหน่วย: ตัวชี้วัด เนื้อหา จุดประสงค์ ชั่วโมง</div>
+    </div>
+    <div class="layer" style="background:var(--pri3); margin-left:40px;">
+      <div class="li">📄</div><div class="lt2">แผนการสอน</div>
+      <div>แต่ละคาบ: กิจกรรมตามรูปแบบที่เลือก (1 ใน 15 แบบ)</div>
+    </div>
+  </div>
+
+  <h2>🎨 15 รูปแบบการสอน: เลือกได้ไม่จำเจ</h2>
+  <div class="think">
+    <div class="q why">เหตุผลในการกำหนดรูปแบบการจัดการเรียนรู้</div>
+    <div class="a">
+      <p>เนื้อหาแต่ละหัวข้อมีความต้องการวิธีการจัดการเรียนรู้ที่แตกต่างกัน — สอนจังหวะอาจใช้ Dalcroze (เคลื่อนไหว) สอนทฤษฎีอาจใช้ 5E สอนวงดนตรีอาจใช้ Cooperative Learning</p>
+    </div>
+  </div>
+  <div class="cols">
+    <div>
+      <div class="bx" style="background:#e3f2fd;">
+        <h4>🔬 Active Learning (6 แบบ)</h4>
+        <p style="font-size:13px;">5E (Engage-Explore-Explain-Elaborate-Evaluate) • CIPPA • PBL (Problem-Based) • Project-Based • Cooperative (STAD) • Inquiry</p>
+      </div>
+      <div class="bx" style="background:#e0f2f1;">
+        <h4>🔀 ผสมผสาน (4 แบบ)</h4>
+        <p style="font-size:13px;">Flipped Classroom • STEAM • Blended • เศรษฐกิจพอเพียง</p>
+      </div>
+    </div>
+    <div>
+      <div class="bx" style="background:#fce4ec;">
+        <h4>🎵 เฉพาะทางดนตรี (5 แบบ)</h4>
+        <p style="font-size:13px;">Dalcroze (เคลื่อนไหวตามจังหวะ) • Kodály (โน้ตมือ+ร้อง) • Orff Schulwerk (เล่นเครื่องดนตรี) • Suzuki (ฟังก่อนอ่าน) • Gordon (Music Learning Theory)</p>
+      </div>
+      <div class="bx acc">
+        <h4>💡 แต่ละแบบ = Template สำเร็จรูป</h4>
+        <p style="font-size:13px;">เลือกรูปแบบ → ฟอร์มเปลี่ยนตาม → AI ร่างกิจกรรมตาม steps ของรูปแบบนั้น → ครูกรอกเนื้อหา+วัตถุประสงค์ → แผนเสร็จ</p>
+      </div>
+    </div>
+  </div>
+
+  <h2>📝 บันทึกหลังสอน: ข้อมูลดิบ → ภาษาราชการ</h2>
+  <div class="flow">
+    <div class="fb p">ครูเขียนสั้นๆ<br><small>"เด็กๆชอบตีกลอง<br>แต่ยังจับจังหวะไม่ได้"</small></div>
+    <span class="fa">→</span>
+    <div class="fb ai">AI ขัดเกลา<br><small>"ผู้เรียนมีความสนใจในกิจกรรม<br>ตีเครื่องจังหวะ แต่ยังไม่สามารถ<br>ปฏิบัติตามอัตราจังหวะที่กำหนดได้..."</small></div>
+    <span class="fa">→</span>
+    <div class="fb g">ครูตรวจ+แก้<br><small>บันทึก</small></div>
+  </div>
+
+  <div class="pg-foot">HARMONI — โครงสร้างการคิดและออกแบบระบบ</div>
+</div>
+
+<!-- ===================== PAGE 5: วัดผล + ผู้เรียน ===================== -->
+<div class="pg">
+  <div class="pg-head"><h1>5 — การวัดและประเมินผล + การดูแลช่วยเหลือผู้เรียน: ไม่ละเลยผู้เรียนรายใด</h1><span class="pn">5</span></div>
+
+  <div class="think">
+    <div class="q">แนวคิดในการวัดและประเมินผล</div>
+    <div class="a">
+      <p>มิใช่เพียงการตัดสินจาก “คะแนน 80 ได้เกรด 4” — แต่มอง <strong>ทุกมิติ</strong> :<br>
+      คะแนนวิชา + คุณลักษณะอันพึงประสงค์ 8 ข้อ + สมรรถนะ 5 ด้าน + อ่านคิดเขียน → รวมเป็นภาพ 360° ของผู้เรียนแต่ละคน</p>
+    </div>
+  </div>
+
+  <div class="mind">
+    <div class="mind-root">📊 วัดผล 360°</div>
+    <div class="mind-line"></div>
+    <div class="mind-branch">
+      <div class="mind-node"><strong>คะแนนวิชา</strong>Midterm / Final<br>Quiz / Assignment</div>
+      <div class="mind-node"><strong>คุณลักษณะ 8 ข้อ</strong>รักชาติฯ ซื่อสัตย์<br>มีวินัย ใฝ่เรียนรู้ ฯลฯ</div>
+      <div class="mind-node ok"><strong>สมรรถนะ 5 ด้าน</strong>สื่อสาร คิด<br>แก้ปัญหา ใช้ทักษะชีวิต ฯลฯ</div>
+      <div class="mind-node acc"><strong>อ่านคิดเขียน</strong>การอ่าน คิดวิเคราะห์<br>เขียนสื่อความ</div>
+    </div>
+  </div>
+
+  <h2>🚨 Early Warning System: แจ้งเตือนก่อนสาย</h2>
+  <div class="think">
+    <div class="q why">ความจำเป็นของระบบเตือนภัยล่วงหน้า</div>
+    <div class="a">
+      <p>โดยปกติ ผู้สอนมักทราบว่าผู้เรียนมีปัญหาเมื่อ “สถานการณ์เกิดขึ้นแล้ว” — ผลการประเมินตกต่ำ ผลคะแนนเป็น 0 ขาดเรียนสะสม 10 ครั้งแล้ว — ระบบ Early Warning ช่วยให้ <strong>ตรวจพบปัญหาได้ล่วงหน้า และดำเนินการแก้ไขได้ทันท่วงที</strong></p>
+    </div>
+  </div>
+  <div class="flow">
+    <div class="fb p">ข้อมูลหลายแหล่ง<br><small>คะแนน + เช็คชื่อ<br>+ คุณลักษณะ + SDQ</small></div>
+    <span class="fa">→</span>
+    <div class="fb ai">AI วิเคราะห์<br>รายบุคคล</div>
+    <span class="fa">→</span>
+    <div class="fb g" style="font-size:11px;">🟢 ปกติ</div>
+    <div class="fb a" style="font-size:11px;">🟡 เฝ้าระวัง</div>
+    <div class="fb r" style="font-size:11px;">🔴 ต้องช่วยเหลือ</div>
+    <span class="fa">→</span>
+    <div class="fb p2">AI แนะนำ<br>intervention</div>
+  </div>
+
+  <h2>🏠 งานประจำชั้นเรียน: บูรณาการครบถ้วนในระบบเดียว</h2>
+  <div class="think">
+    <div class="q how">แนวทางการบูรณาการ</div>
+    <div class="a">
+      <p>ระบบมิได้สร้างกลไกใหม่เพิ่มเติม — แต่ <strong>นำระบบที่มีอยู่เดิม</strong> (แผนการสอน, ข้อสอบ, คะแนน, เช็คชื่อ) มาบูรณาการโดยเพิ่ม “ประเภท” :<br>
+      โฮมรูม = วิชาที่ subject_type = "homeroom" → ทำได้ทุกอย่างเหมือนวิชาปกติ<br>
+      จริยะ = วิชาที่ subject_type = "ethics" → เขียนแผน สอน วัดผลได้</p>
+    </div>
+  </div>
+  <div class="mind">
+    <div class="mind-root">🏠 งานประจำชั้น</div>
+    <div class="mind-line"></div>
+    <div class="mind-branch" style="gap:8px;">
+      <div class="mind-node" style="min-width:95px;"><strong>โฮมรูม</strong>แผน/สอน/วัดผล<br>ทุกเช้า</div>
+      <div class="mind-node" style="min-width:95px;"><strong>จริยะ</strong>แผน/สอน<br>ประเมินคุณลักษณะ</div>
+      <div class="mind-node ai" style="min-width:95px;"><strong>SDQ</strong>AI วิเคราะห์<br>คัดกรอง 5 subscale</div>
+      <div class="mind-node acc" style="min-width:95px;"><strong>เยี่ยมบ้าน</strong>GPS + Photo<br>AI ขัดเกลา</div>
+      <div class="mind-node ok" style="min-width:95px;"><strong>ดูแล 5 ขั้น</strong>รู้จัก/คัดกรอง<br>ส่งเสริม/ป้องกัน/ส่งต่อ</div>
+      <div class="mind-node" style="min-width:95px;border-color:#795548;"><strong>IEP</strong>แผนการศึกษา<br>ผู้เรียนที่มีความต้องการพิเศษ</div>
+    </div>
+  </div>
+
+  <h2>📱 มุมมองของผู้เรียน: ใช้งานง่าย สะดวก และรองรับอุปกรณ์เคลื่อนที่</h2>
+  <div class="think">
+    <div class="q how">กระบวนการเข้าสู่ระบบของผู้เรียน</div>
+    <div class="a">
+      <div class="flow">
+        <div class="fb p">ครูสร้าง Roster<br><small>ชื่อ+ห้อง+เลขที่</small></div>
+        <span class="fa">→</span>
+        <div class="fb p2">ผู้เรียนลงทะเบียน<br><small>กรอกข้อมูลจับคู่</small></div>
+        <span class="fa">→</span>
+        <div class="fb g">ระบบ Match อัตโนมัติ<br><small>ชื่อ+ห้อง+เลขที่ตรง</small></div>
+        <span class="fa">→</span>
+        <div class="fb a">ตั้ง Password<br><small>ใช้งานได้เลย</small></div>
+      </div>
+      <p style="margin-top:8px;font-size:13px;">⚠️ <strong>กรณีผู้เรียนไม่มีอุปกรณ์สื่อสาร</strong> → ไม่จำเป็นต้องลงทะเบียน → ผู้สอนสามารถดำเนินการแทนได้ครบถ้วน → ข้อมูลมีความสมบูรณ์เทียบเท่ากัน</p>
+    </div>
+  </div>
+
+  <div class="pg-foot">HARMONI — โครงสร้างการคิดและออกแบบระบบ</div>
+</div>
+
+<!-- ===================== PAGE 6: สู่ คศ.4 ===================== -->
+<div class="pg">
+  <div class="pg-head"><h1>6 — เส้นทางสู่ คศ.4: Evidence Auto-Collect</h1><span class="pn">6</span></div>
+
+  <div class="think">
+    <div class="q">สภาพปัญหาก่อนพัฒนาระบบ</div>
+    <div class="a">
+    <p>เมื่อถึงเวลาจัดทำ PA2 ผู้สอนต้อง<strong>รวบรวม evidence</strong>ย้อนหลัง — ภาพถ่ายอยู่ในอุปกรณ์สื่อสาร ใบงานอยู่ในลิ้นชัก บันทึกอยู่ในสมุด ต้องรวบรวมด้วยตนเอง สิ้นเปลืองเวลาหลายสัปดาห์</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="q how">แนวทางการแก้ไขของระบบ HARMONI</div>
+    <div class="a">
+      <p><strong>Evidence Auto-Collect</strong> — ทุกครั้งที่ผู้สอนดำเนินงานในระบบ ระบบจะบันทึกเป็น evidence โดยอัตโนมัติ:</p>
+    </div>
+  </div>
+
+  <table>
+    <thead><tr><th>กิจกรรมที่ผู้สอนดำเนินการ</th><th>→ Evidence ที่ได้อัตโนมัติ</th><th>ใช้กับ PA ส่วนไหน?</th></tr></thead>
+    <tbody>
+      <tr><td>จัดการเรียนการสอน + บันทึกหลังสอน</td><td>หลักฐาน “การจัดการเรียนการสอน” + ภาพ + ผลคะแนนผู้เรียน</td><td>ภาระงานสอน</td></tr>
+      <tr><td>การเยี่ยมบ้านผู้เรียน</td><td>หลักฐาน "ดูแลช่วยเหลือ" + GPS + ภาพ</td><td>ภาระงานสนับสนุน</td></tr>
+      <tr><td>ทำ PLC</td><td>หลักฐาน "พัฒนาตนเอง"</td><td>ภาระงานอื่น</td></tr>
+      <tr><td>ทำวิจัย</td><td>หลักฐาน "วิจัยในชั้นเรียน"</td><td>ข้อตกลง</td></tr>
+      <tr><td>สร้างนวัตกรรม</td><td>หลักฐาน "สร้างนวัตกรรม"</td><td>ประเด็นท้าทาย</td></tr>
+    </tbody>
+  </table>
+
+  <div class="bx ok" style="text-align:center;">
+    <p><strong>เมื่อถึงเวลาจัดทำ PA2</strong> → กดปุ่มเพียงครั้งเดียว → <strong>ระบบ AI ดึง evidence ทั้งหมดมาจัดหมวดหมู่ให้โดยอัตโนมัติ</strong> → ผู้สอนตรวจสอบ ปรับแก้ และเพิ่มเติมตามความเหมาะสม</p>
+  </div>
+
+  <h2>📊 คศ.4 Readiness Dashboard</h2>
+  <div class="think">
+    <div class="q what">องค์ประกอบของแดชบอร์ด</div>
+    <div class="a">
+      <p>แดชบอร์ดที่แสดง<strong>“ระดับความพร้อมต่อการเลื่อนวิทยฐานะในปัจจุบัน”</strong> ดึงข้อมูลจากทุก module มาสรุป:</p>
+      <div class="cols">
+        <div>
+          <ul class="ck" style="font-size:13px;">
+            <li>ชั่วโมงสอน ครบตามเกณฑ์? (progress bar)</li>
+            <li>ชั่วโมงสนับสนุน ครบ? (progress bar)</li>
+            <li>PA1 ส่งแล้ว? PA2 มี evidence กี่%?</li>
+            <li>วิจัยเสร็จ? กี่เรื่อง?</li>
+          </ul>
+        </div>
+        <div>
+          <ul class="ck" style="font-size:13px;">
+            <li>นวัตกรรม? มีเผยแพร่?</li>
+            <li>SAR ส่งแล้ว?</li>
+            <li>PLC? Log Book?</li>
+            <li>รางวัลระดับไหน? (Tier 1-3)</li>
+          </ul>
+        </div>
+      </div>
+      <p style="text-align:center; color:var(--ai); font-weight:700; margin-top:8px;">→ AI สรุป "จุดอ่อน" + แนะนำสิ่งที่ควรทำก่อน เพื่อให้ถึง คศ.4</p>
+    </div>
+  </div>
+
+  <h2>🎯 12 รางวัลที่ติดตามได้</h2>
+  <div class="think">
+    <div class="q why">เหตุผลในการติดตามรางวัล</div>
+    <div class="a">
+      <p>รางวัลแต่ละแบบมี criteria ต่างกัน ต้องเตรียม evidence ต่างกัน ส่งต่างเวลา — ระบบช่วยจัดการ checklist + timeline + สถานะ</p>
+      <div class="cols" style="font-size:12px;">
+        <div>
+          <h4>Tier 1 — ระดับชาติ+ (8 รายการ)</h4>
+          <p>OBEC Awards • คุรุสภา • เจ้าฟ้ามหาจักรี • ครูดีไม่มีอบายมุข • ครูดีศรีนนท์ • ครูต้นแบบ สพฐ. • ครูสอนดี สกว. • ครูผู้สร้างนวัตกรรม</p>
+        </div>
+        <div>
+          <h4>Tier 2 — ระดับเขต (3)</h4>
+          <p>ครูดีเด่นเขตพื้นที่ • ครูดีศรีสพม. • Best Practice</p>
+          <h4>Tier 3 — ระดับโรงเรียน (1)</h4>
+          <p>ครูดีโรงเรียน</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pg-foot">HARMONI — โครงสร้างการคิดและออกแบบระบบ</div>
+</div>
+
+<!-- ===================== PAGE 7: ลำดับความสำคัญ ===================== -->
+<div class="pg">
+  <div class="pg-head"><h1>7 — ลำดับความสำคัญในการพัฒนาระบบ</h1><span class="pn">7</span></div>
+
+  <div class="think">
+    <div class="q why">หลักการจัดลำดับความสำคัญ</div>
+    <div class="a">
+      <p>ระบบประกอบด้วย 25 โมดูล หากดำเนินการพัฒนาพร้อมกันทั้งหมดจะไม่สามารถแล้วเสร็จได้ — จัดลำดับตามหลักการ<strong>“คุณค่าสูงสุดก่อน”</strong> : โมดูลที่สนับสนุนการเลื่อนวิทยฐาน คศ.4 และยกระดับคุณภาพผู้เรียน ต้องได้รับการพัฒนาก่อน</p>
+    </div>
+  </div>
+
+  <div class="grp a">
+    <div class="gt">🅰️ Group A — แกนหลัก คศ.4: หลักฐานการสอน (ทำก่อนสุด)</div>
+    <div class="gp">Phase 1 (โครงสร้างระบบ) → 5 (โครงสร้างรายวิชา) → 6 (แผนการสอน 15 รูปแบบ) → 7 (บันทึกหลังสอน)</div>
+    <div class="gr">❆ ผลที่คาดหวัง: แผนการสอน + บันทึกหลังสอนครบถ้วน = evidence สำคัญสำหรับ คศ.4</div>
+  </div>
+  <div class="grp b">
+    <div class="gt">🅱️ Group B — ผู้เรียนมีคุณภาพ: วัดผลได้</div>
+    <div class="gp">Phase 10 (คะแนน+เกรด+ปพ.5) → 9 (Pre/Post-test) → 8 (Rubric)</div>
+    <div class="gr">❆ ผลที่คาดหวัง: ระบบวัดและประเมินผลครบถ้วน ครอบคลุมคุณลักษณะอันพึงประสงค์ 8 ประการ สมรรถนะ 5 ด้าน และทักษะการอ่าน คิดวิเคราะห์ เขียนสื่อความ</div>
+  </div>
+  <div class="grp c">
+    <div class="gt">🅲 Group C — คศ.4 ครบ: PA + วิจัย + ชั่วโมง</div>
+    <div class="gp">Phase 14 (ว.PA + Evidence Auto-Collect) → 12 (วิจัย) → 17 (Log Book) → 3 (Dashboard คศ.4 Readiness)</div>
+    <div class="gr">❆ ผลที่คาดหวัง: PA1/PA2 ครบถ้วน + วิจัยแล้วเสร็จ + ชั่วโมงครบถ้วน + เห็นความพร้อม คศ.4</div>
+  </div>
+  <div class="grp d">
+    <div class="gt">🅳 Group D — เสริมแกร่ง</div>
+    <div class="gp">Phase 4 (ตารางสอน+ปฏิทิน) → 11 (Analytics + Early Warning) → 13 (SAR) → 2 (Awards 12 รางวัล)</div>
+    <div class="gr">❆ ผลที่คาดหวัง: ระบบแจ้งเตือนผู้เรียนกลุ่มเสี่ยง + SAR + ติดตามรางวัล</div>
+  </div>
+  <div class="grp e">
+    <div class="gt">🅴 Group E — เต็มระบบ</div>
+    <div class="gp">Phase 15 (นวัตกรรม) → 16 (PLC) → 18 (Portfolio) → 23 (งานประจำชั้น) → 18D (GPS เช็คชื่อ) → 19 (เอกสารราชการ) → 24 (ปก) → 21 (เครื่องดนตรี)</div>
+    <div class="gr">❆ ผลที่คาดหวัง: ครอบคลุมทุกภารกิจของผู้สอน</div>
+  </div>
+  <div class="grp f">
+    <div class="gt">🅵 Group F — Classroom นักเรียน</div>
+    <div class="gp">Phase 22 (student.html + ชุมนุมสานฝันด้วยเส้นเสียง + วงสตริง)</div>
+    <div class="gr">❆ ผลที่คาดหวัง: ผู้เรียนสามารถใช้งานผ่านอุปกรณ์เคลื่อนที่ + การจัดการชุมนุม/วงดนตรี</div>
+  </div>
+
+  <h2>📤 การส่งออกข้อมูล: ครบถ้วนพร้อมใช้งาน</h2>
+  <div class="think">
+    <div class="q why">เหตุผลในการกำหนดรูปแบบการส่งออก</div>
+    <div class="a">
+      <p>แต่ละสถานการณ์ต้องการรูปแบบต่างกัน :</p>
+      <ul style="font-size:13px;">
+        <li><strong>PDF</strong> — ส่งผู้บังคับบัญชา พิมพ์ได้เลย</li>
+        <li><strong>Word</strong> — ฟอร์มราชการ หัวกระดาษ/ท้ายกระดาษถูกต้อง</li>
+        <li><strong>Excel</strong> — จัดตาราง สี สูตร สำหรับวิเคราะห์ต่อ</li>
+        <li><strong>CSV</strong> — ข้อมูลดิบ import เข้าระบบอื่น</li>
+        <li><strong>Google Sheets/Docs</strong> — แชร์ทำงานร่วมกัน</li>
+        <li><strong>Print</strong> — พิมพ์จากเครื่องพิมพ์โดยตรง</li>
+      </ul>
+      <p><strong>หลักการ:</strong> ไฟล์ที่ส่งออกต้อง <em>พร้อมใช้งานทันที</em> — จัดหน้ากระดาษ รูปแบบตัวอักษร ตาราง และหัวเอกสารเรียบร้อย ไม่จำเป็นต้องปรับแก้เพิ่มเติม</p>
+    </div>
+  </div>
+
+  <div class="pg-foot">HARMONI — โครงสร้างการคิดและออกแบบระบบ</div>
+</div>
+
+<!-- ===================== PAGE 8: สรุป ===================== -->
+<div class="pg">
+  <div class="pg-head"><h1>8 — สรุป: ภาพรวมทั้งหมดในหน้าเดียว</h1><span class="pn">8</span></div>
+
+  <div class="stats">
+    <div class="stat"><div class="n">25</div><div class="l">Phases (โมดูล)</div></div>
+    <div class="stat"><div class="n">68</div><div class="l">Database Tables</div></div>
+    <div class="stat"><div class="n">22</div><div class="l">AI Prompt Templates</div></div>
+    <div class="stat"><div class="n">7</div><div class="l">Export Formats</div></div>
+  </div>
+
+  <h2>🗺️ แผนผังความคิดรวม</h2>
+  <div class="mind">
+    <div class="mind-root" style="font-size:22px;">🎵 HARMONI</div>
+    <div class="mind-line"></div>
+    <div class="mind-branch" style="gap:6px;">
+      <div class="mind-node"><strong>📚 Group A</strong>สอน<br><small>โครงสร้าง→แผน→บันทึก</small></div>
+      <div class="mind-node ok"><strong>📊 Group B</strong>วัดผล<br><small>คะแนน→ข้อสอบ→Rubric</small></div>
+      <div class="mind-node acc"><strong>📋 Group C</strong>PA+วิจัย<br><small>Evidence→PA→Log Book</small></div>
+      <div class="mind-node ai"><strong>🔧 Group D</strong>เสริม<br><small>ปฏิทิน→Warning→SAR</small></div>
+      <div class="mind-node" style="border-color:#1565c0;"><strong>🌐 Group E</strong>เต็มระบบ<br><small>PLC→Portfolio→เอกสาร</small></div>
+      <div class="mind-node" style="border-color:#6a1b9a;"><strong>📱 Group F</strong>ผู้เรียน<br><small>student.html+ชุมนุม</small></div>
+    </div>
+  </div>
+
+  <h2>💎 แนวคิดหลักที่ต้องจำ</h2>
+  <div class="cols">
+    <div class="bx acc">
+      <h4>🔗 ข้อมูลเชื่อมโยง</h4>
+      <p style="font-size:13px;">บันทึกข้อมูลเพียงครั้งเดียว ใช้งานได้ทุกเมื่อ — การจัดการเรียนการสอน = evidence สำหรับ PA, คะแนน = ข้อมูลการวิจัย, บันทึก = Log Book</p>
+    </div>
+    <div class="bx ai">
+      <h4>🤖 AI = ผู้ช่วย</h4>
+      <p style="font-size:13px;">ระบบปัญญาประดิษฐ์ร่างเนื้อหาเบื้องต้น แต่ผู้สอนเป็นผู้ตัดสินใจขั้นสุดท้ายเสมอ — 22 รูปแบบปัญญาประดิษฐ์เฉพาะทาง ไม่เกิดความผิดพลาด ไม่สร้างข้อมูลอันเป็นเท็จ</p>
+    </div>
+    <div class="bx ok">
+      <h4>⚙️ NO HARDCODE</h4>
+      <p style="font-size:13px;">ค่าพารามิเตอร์ทุกตัวปรับตั้งได้ — การย้ายสถานศึกษา การเปลี่ยนรายวิชา หรือการเปลี่ยนภาคเรียน ไม่จำเป็นต้องแก้ไขโค้ด</p>
+    </div>
+    <div class="bx warn">
+      <h4>📱 สมาร์ทโฟน ≠ บังคับ</h4>
+      <p style="font-size:13px;">ผู้สอนสามารถดำเนินการแทนผู้เรียนได้ครบถ้วนทุกฟังก์ชัน — ไม่มีฟีเจอร์ใดบังคับให้ผู้เรียนต้องเข้าสู่ระบบ</p>
+    </div>
+  </div>
+
+  <h2>✨ ภาพใหญ่</h2>
+  <div class="bx" style="background: linear-gradient(135deg, #e8eaf6 0%, #c5cae9 100%); text-align:center; padding:24px;">
+    <p style="font-size:18px; color:var(--pri); font-weight:700; margin-bottom:4px;">
+      "ผู้สอนดนตรีเพียงคนเดียว... บริหารจัดการภารกิจทุกด้านได้ในระบบเดียว"
+    </p>
+    <p style="font-size:14px; color:var(--txt2);">
+      สอน → วัดผล → วิจัย → PA → SAR → รางวัล → นวัตกรรม → PLC → เอกสาร → ชุมนุม → งานประจำชั้น
+    </p>
+    <p style="font-size:36px; margin:12px 0;">🎵 ♪ ♫ ♩ ♬ 🎵</p>
+    <p style="font-size:15px; color:var(--pri); font-style:italic;">
+      Holistic Approach to Revolutionary Music Organization &amp; New Innovation
+    </p>
+    <p style="font-size:13px; color:var(--txt3); margin-top:10px;">
+      harmoni.pages.dev — พัฒนาสำหรับครูพงศธร โพธิแก้ว — ม.1–2 กลุ่มสาระศิลปะ (ดนตรี)
+    </p>
+  </div>
+
+  <div class="pg-foot">HARMONI — โครงสร้างการคิดและออกแบบระบบ — v3 มีนาคม 2569</div>
+</div>
+
+</div><!-- end .doc -->
+<div class="watermark">
+  <div class="wm-row">HARMONI &nbsp;&nbsp; นายพงศธร โพธิแก้ว &nbsp;&nbsp; สงวนลิขสิทธิ์ &nbsp;&nbsp; ห้ามคัดลอก &nbsp;&nbsp;&nbsp;&nbsp; HARMONI &nbsp;&nbsp; นายพงศธร โพธิแก้ว &nbsp;&nbsp; สงวนลิขสิทธิ์ &nbsp;&nbsp; ห้ามคัดลอก</div>
+  <div class="wm-row">ห้ามคัดลอก &nbsp;&nbsp; HARMONI &nbsp;&nbsp; นายพงศธร โพธิแก้ว &nbsp;&nbsp; สงวนลิขสิทธิ์ &nbsp;&nbsp;&nbsp;&nbsp; ห้ามคัดลอก &nbsp;&nbsp; HARMONI &nbsp;&nbsp; นายพงศธร โพธิแก้ว &nbsp;&nbsp; สงวนลิขสิทธิ์</div>
+  <div class="wm-row">HARMONI &nbsp;&nbsp; สงวนลิขสิทธิ์ &nbsp;&nbsp; นายพงศธร โพธิแก้ว &nbsp;&nbsp; ห้ามคัดลอก &nbsp;&nbsp;&nbsp;&nbsp; HARMONI &nbsp;&nbsp; สงวนลิขสิทธิ์ &nbsp;&nbsp; นายพงศธร โพธิแก้ว &nbsp;&nbsp; ห้ามคัดลอก</div>
+  <div class="wm-row">นายพงศธร โพธิแก้ว &nbsp;&nbsp; HARMONI &nbsp;&nbsp; ห้ามคัดลอก &nbsp;&nbsp; สงวนลิขสิทธิ์ &nbsp;&nbsp;&nbsp;&nbsp; นายพงศธร โพธิแก้ว &nbsp;&nbsp; HARMONI &nbsp;&nbsp; ห้ามคัดลอก &nbsp;&nbsp; สงวนลิขสิทธิ์</div>
+  <div class="wm-row">HARMONI &nbsp;&nbsp; นายพงศธร โพธิแก้ว &nbsp;&nbsp; สงวนลิขสิทธิ์ &nbsp;&nbsp; ห้ามคัดลอก &nbsp;&nbsp;&nbsp;&nbsp; HARMONI &nbsp;&nbsp; นายพงศธร โพธิแก้ว &nbsp;&nbsp; สงวนลิขสิทธิ์ &nbsp;&nbsp; ห้ามคัดลอก</div>
+</div>
+</body>
+</html>

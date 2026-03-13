@@ -9,7 +9,7 @@
 import {
   generateUUID, now, hashPassword, verifyPassword, generateToken,
   success, error, parseBody, dbFirst, dbRun, dbAll
-} from '../_helpers.js';
+} from '../../_helpers.js';
 
 export async function onRequest(context) {
   const { request, env } = context;

@@ -9,7 +9,7 @@
 import {
   generateUUID, now, success, error, parseBody,
   dbAll, dbFirst, dbRun, extractParam, paginate
-} from '../_helpers.js';
+} from '../../_helpers.js';
 
 export async function onRequest(context) {
   const { request, env } = context;

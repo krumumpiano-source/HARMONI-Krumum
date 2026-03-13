@@ -7,7 +7,7 @@
 
 import {
   success, error, dbAll, dbFirst, dbRun, now, extractParam
-} from '../_helpers.js';
+} from '../../_helpers.js';
 
 export async function onRequest(context) {
   const { request, env } = context;

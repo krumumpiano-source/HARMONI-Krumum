@@ -250,6 +250,8 @@ CREATE TABLE users (
   salt TEXT NOT NULL,
   role TEXT NOT NULL CHECK(role IN ('teacher','student')),
   display_name TEXT,
+  is_admin INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'active',
   created_at TEXT,
   updated_at TEXT
 );
@@ -1321,16 +1323,28 @@ const aiPanel = {
 ```
 POST /api/auth/login  { username, password }
 → PBKDF2(password, user.salt, 100000, 256, 'SHA-256')
-→ compare hash → create session token → return { token, role, displayName }
+→ check status: pending → 403 "รอการอนุมัติจากแอดมิน", rejected → 403 "ถูกปฏิเสธ"
+→ compare hash → create session token → return { token, role, displayName, isAdmin }
 ```
 
 ### Session Check (Middleware)
 ```
 _middleware.js:
   Authorization: Bearer <token>
-  → SELECT * FROM sessions WHERE token=? AND expires_at>?
-  → attach user to env.user
+  → SELECT * FROM sessions JOIN users WHERE token=? AND expires_at>?
+  → check teacher status !== 'active' → 403
+  → attach user to env.user (id, role, displayName, sessionId, isAdmin, status)
   → continue or 401
+```
+
+### Teacher Registration & Approval
+```
+1. First teacher: POST /api/setup → is_admin=1, status='active' (becomes admin)
+2. Subsequent teachers: POST /api/auth/register-teacher { username, password, display_name }
+   → status='pending', is_admin=0 → message "รอแอดมินอนุมัติ"
+3. Admin approves: POST /api/admin/approve/:id → status='active'
+4. Admin rejects: POST /api/admin/reject/:id → status='rejected'
+5. Admin deletes: DELETE /api/admin/teachers/:id → removes user + sessions
 ```
 
 ### Student Registration
@@ -1676,16 +1690,23 @@ Group F (Classroom นักเรียน):
 
 ## 13. API Endpoint Map
 
-> Pattern: `Authorization: Bearer <token>` ทุก request (ยกเว้น /api/auth/login, /api/auth/register-student)
+> Pattern: `Authorization: Bearer <token>` ทุก request (ยกเว้น /api/auth/login, /api/auth/register-student, /api/auth/register-teacher)
 > Response: `{ success: true, data: {...} }` หรือ `{ success: false, error: "..." }`
 
 | Endpoint | GET | POST | PUT | DELETE |
 |----------|-----|------|-----|--------|
-| `/api/auth/login` | — | `{username,password}` → `{token,role,displayName}` | — | — |
+| `/api/auth/login` | — | `{username,password}` → `{token,role,displayName,isAdmin}` | — | — |
 | `/api/auth/logout` | — | ✓ | — | — |
-| `/api/auth/me` | ✓ profile | — | — | — |
+| `/api/auth/me` | ✓ profile (incl. is_admin, status) | — | — | — |
 | `/api/auth/register-student` | — | `{student_code,classroom,student_number,first_name,last_name,password}` | — | — |
+| `/api/auth/register-teacher` | — | `{username,password,display_name}` → pending approval | — | — |
 | `/api/auth/change-password` | — | `{old_password,new_password}` | — | — |
+| `/api/setup` | — | `{username,password,display_name}` → first teacher (admin) | — | — |
+| `/api/admin/pending-teachers` | ✓ list pending | — | — | — |
+| `/api/admin/teachers` | ✓ list all teachers | — | — | — |
+| `/api/admin/approve/:id` | — | ✓ approve teacher | — | — |
+| `/api/admin/reject/:id` | — | ✓ reject teacher | — | — |
+| `/api/admin/teachers/:id` | — | — | — | ✓ remove teacher |
 | `/api/settings` | ✓ all keys | — | `{key:value,...}` bulk upsert | — |
 | `/api/semesters` | ✓ list | ✓ create | — | — |
 | `/api/semesters/:id` | ✓ | — | ✓ | ✓ |

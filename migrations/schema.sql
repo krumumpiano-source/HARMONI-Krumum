@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS users (
   salt TEXT NOT NULL,
   role TEXT NOT NULL CHECK(role IN ('teacher','student')),
   display_name TEXT,
+  is_admin INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'active',
   created_at TEXT,
   updated_at TEXT
 );

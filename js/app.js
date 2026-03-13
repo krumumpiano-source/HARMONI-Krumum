@@ -49,6 +49,13 @@ const App = {
     document.getElementById('app').classList.remove('d-none');
     document.getElementById('nav-username').textContent = user.display_name || 'ครู';
 
+    // Show admin sidebar if admin
+    this.isAdmin = user.is_admin === 1 || user.isAdmin === true;
+    if (this.isAdmin) {
+      document.getElementById('sidebar-admin').classList.remove('d-none');
+      this.loadPendingBadge();
+    }
+
     // Load active semester display
     this.loadSemesterLabel();
 
@@ -57,6 +64,19 @@ const App = {
 
     // Navigate to dashboard
     this.navigate('dashboard');
+  },
+
+  async loadPendingBadge() {
+    const res = await API.get('/api/admin/pending-teachers');
+    if (res.success) {
+      const badge = document.getElementById('pending-badge');
+      if (res.data.length > 0) {
+        badge.textContent = res.data.length;
+        badge.classList.remove('d-none');
+      } else {
+        badge.classList.add('d-none');
+      }
+    }
   },
 
   async loadSemesterLabel() {
@@ -117,6 +137,7 @@ const App = {
     const titles = {
       'dashboard': 'แดชบอร์ด',
       'settings': 'ตั้งค่าเริ่มต้น',
+      'admin': 'จัดการครู',
       'course-structure': 'โครงสร้างรายวิชา',
       'lesson-plan': 'แผนการจัดการเรียนรู้',
       'post-lesson': 'บันทึกหลังสอน',
@@ -201,6 +222,42 @@ document.addEventListener('DOMContentLoaded', () => {
       alert.className = 'alert alert-danger';
       alert.textContent = res.error || 'เข้าสู่ระบบไม่สำเร็จ';
       alert.classList.remove('d-none');
+    }
+  });
+
+  // Teacher registration form
+  document.getElementById('register-teacher-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('reg-teacher-btn');
+    const alertEl = document.getElementById('register-teacher-alert');
+    btn.disabled = true;
+    alertEl.classList.add('d-none');
+
+    const username = document.getElementById('reg-teacher-username').value.trim();
+    const displayName = document.getElementById('reg-teacher-displayname').value.trim();
+    const password = document.getElementById('reg-teacher-password').value;
+    const confirm = document.getElementById('reg-teacher-confirm').value;
+
+    if (password !== confirm) {
+      alertEl.className = 'alert alert-danger';
+      alertEl.textContent = 'รหัสผ่านไม่ตรงกัน';
+      alertEl.classList.remove('d-none');
+      btn.disabled = false;
+      return;
+    }
+
+    const res = await API.post('/api/auth/register-teacher', { username, password, display_name: displayName });
+    btn.disabled = false;
+
+    if (res.success) {
+      alertEl.className = 'alert alert-success';
+      alertEl.textContent = res.data.message || 'สมัครสมาชิกสำเร็จ กรุณารอแอดมินอนุมัติ';
+      alertEl.classList.remove('d-none');
+      document.getElementById('register-teacher-form').reset();
+    } else {
+      alertEl.className = 'alert alert-danger';
+      alertEl.textContent = res.error || 'สมัครสมาชิกไม่สำเร็จ';
+      alertEl.classList.remove('d-none');
     }
   });
 
@@ -729,6 +786,134 @@ App.modules['settings'] = {
     if (confirm('ลบห้องเรียนนี้?')) {
       await API.del(`/api/classrooms/${id}`);
       App.navigate('settings');
+    }
+  }
+};
+
+// ==================== Register Admin Module ====================
+
+App.modules['admin'] = {
+  async render(container) {
+    if (!App.isAdmin) {
+      container.innerHTML = '<div class="alert alert-danger">ไม่มีสิทธิ์เข้าถึง</div>';
+      return;
+    }
+
+    container.innerHTML = '<div class="loading"></div>';
+
+    const [pendingRes, teachersRes] = await Promise.all([
+      API.get('/api/admin/pending-teachers'),
+      API.get('/api/admin/teachers')
+    ]);
+
+    const pending = pendingRes.success ? pendingRes.data : [];
+    const teachers = teachersRes.success ? teachersRes.data : [];
+
+    container.innerHTML = `
+      <h4 class="fw-bold mb-4"><i class="bi bi-shield-lock me-2 text-primary"></i>จัดการครู</h4>
+
+      <!-- Pending Teachers -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-semibold">
+          <i class="bi bi-hourglass-split me-2"></i>รอการอนุมัติ
+          ${pending.length > 0 ? `<span class="badge bg-danger ms-2">${pending.length}</span>` : ''}
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0">
+              <thead class="table-light"><tr>
+                <th>ชื่อผู้ใช้</th><th>ชื่อที่แสดง</th><th>สมัครเมื่อ</th><th></th>
+              </tr></thead>
+              <tbody>
+                ${pending.map(t => `
+                <tr>
+                  <td>${DOMPurify.sanitize(t.username)}</td>
+                  <td>${DOMPurify.sanitize(t.display_name || '-')}</td>
+                  <td>${new Date(t.created_at).toLocaleDateString('th-TH')}</td>
+                  <td class="text-end">
+                    <button class="btn btn-sm btn-success me-1" onclick="App.modules.admin.approve('${t.id}')">
+                      <i class="bi bi-check-lg me-1"></i>อนุมัติ
+                    </button>
+                    <button class="btn btn-sm btn-danger" onclick="App.modules.admin.reject('${t.id}')">
+                      <i class="bi bi-x-lg me-1"></i>ปฏิเสธ
+                    </button>
+                  </td>
+                </tr>`).join('')}
+                ${pending.length === 0 ? '<tr><td colspan="4" class="text-muted text-center py-3">ไม่มีครูรออนุมัติ</td></tr>' : ''}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- All Teachers -->
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold">
+          <i class="bi bi-people me-2"></i>ครูทั้งหมด
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0">
+              <thead class="table-light"><tr>
+                <th>ชื่อผู้ใช้</th><th>ชื่อที่แสดง</th><th>สถานะ</th><th>แอดมิน</th><th></th>
+              </tr></thead>
+              <tbody>
+                ${teachers.map(t => {
+                  const statusBadge = t.status === 'active' ? '<span class="badge bg-success">ใช้งาน</span>'
+                    : t.status === 'pending' ? '<span class="badge bg-warning">รออนุมัติ</span>'
+                    : '<span class="badge bg-danger">ปฏิเสธ</span>';
+                  return `
+                <tr>
+                  <td>${DOMPurify.sanitize(t.username)}</td>
+                  <td>${DOMPurify.sanitize(t.display_name || '-')}</td>
+                  <td>${statusBadge}</td>
+                  <td>${t.is_admin ? '<i class="bi bi-shield-check text-primary"></i>' : ''}</td>
+                  <td class="text-end">
+                    ${!t.is_admin ? `<button class="btn btn-sm btn-outline-danger" onclick="App.modules.admin.removeTeacher('${t.id}')"><i class="bi bi-trash"></i></button>` : ''}
+                  </td>
+                </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>`;
+  },
+
+  async approve(id) {
+    const res = await API.post(`/api/admin/approve/${id}`);
+    if (res.success) {
+      App.toast('อนุมัติครูสำเร็จ');
+      App.loadPendingBadge();
+      App.navigate('admin');
+    } else {
+      App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+    }
+  },
+
+  async reject(id) {
+    if (confirm('ปฏิเสธครูคนนี้?')) {
+      const res = await API.post(`/api/admin/reject/${id}`);
+      if (res.success) {
+        App.toast('ปฏิเสธสำเร็จ');
+        App.loadPendingBadge();
+        App.navigate('admin');
+      } else {
+        App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+      }
+    }
+  },
+
+  async removeTeacher(id) {
+    if (confirm('ลบครูคนนี้ออกจากระบบ?')) {
+      const res = await API.del(`/api/admin/teachers/${id}`);
+      if (res.success) {
+        App.toast('ลบครูสำเร็จ');
+        App.loadPendingBadge();
+        App.navigate('admin');
+      } else {
+        App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+      }
     }
   }
 };

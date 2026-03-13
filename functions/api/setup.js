@@ -34,8 +34,8 @@ export async function onRequest(context) {
   const passwordHash = await hashPassword(body.password, salt);
 
   await dbRun(env.DB,
-    'INSERT INTO users (id, username, password_hash, salt, role, display_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [userId, body.username, passwordHash, salt, 'teacher', body.display_name || body.username, now()]
+    'INSERT INTO users (id, username, password_hash, salt, role, display_name, is_admin, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)',
+    [userId, body.username, passwordHash, salt, 'teacher', body.display_name || body.username, 'active', now()]
   );
 
   // Create session

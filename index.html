@@ -22,20 +22,66 @@
         <h3 class="fw-bold text-primary">HARMONI</h3>
         <p class="text-muted small">ระบบจัดการงานสอนดนตรี</p>
       </div>
-      <div id="login-alert" class="alert alert-danger d-none" role="alert"></div>
-      <form id="login-form">
-        <div class="mb-3">
-          <label class="form-label"><i class="bi bi-person me-1"></i>ชื่อผู้ใช้</label>
-          <input type="text" class="form-control" id="login-username" placeholder="username" required autocomplete="username">
+      <!-- Login / Register tabs -->
+      <ul class="nav nav-tabs mb-3" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-login" type="button">
+            <i class="bi bi-box-arrow-in-right me-1"></i>เข้าสู่ระบบ
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-register-teacher" type="button">
+            <i class="bi bi-person-plus me-1"></i>สมัครเป็นครู
+          </button>
+        </li>
+      </ul>
+
+      <div class="tab-content">
+        <!-- Login Tab -->
+        <div class="tab-pane fade show active" id="tab-login">
+          <div id="login-alert" class="alert alert-danger d-none" role="alert"></div>
+          <form id="login-form">
+            <div class="mb-3">
+              <label class="form-label"><i class="bi bi-person me-1"></i>ชื่อผู้ใช้</label>
+              <input type="text" class="form-control" id="login-username" placeholder="username" required autocomplete="username">
+            </div>
+            <div class="mb-3">
+              <label class="form-label"><i class="bi bi-lock me-1"></i>รหัสผ่าน</label>
+              <input type="password" class="form-control" id="login-password" placeholder="••••••" required autocomplete="current-password">
+            </div>
+            <button type="submit" class="btn btn-primary w-100 fw-semibold" id="login-btn">
+              <i class="bi bi-box-arrow-in-right me-1"></i>เข้าสู่ระบบ
+            </button>
+          </form>
         </div>
-        <div class="mb-3">
-          <label class="form-label"><i class="bi bi-lock me-1"></i>รหัสผ่าน</label>
-          <input type="password" class="form-control" id="login-password" placeholder="••••••" required autocomplete="current-password">
+
+        <!-- Teacher Register Tab -->
+        <div class="tab-pane fade" id="tab-register-teacher">
+          <div id="register-teacher-alert" class="alert d-none" role="alert"></div>
+          <form id="register-teacher-form">
+            <div class="mb-3">
+              <label class="form-label"><i class="bi bi-person me-1"></i>ชื่อผู้ใช้</label>
+              <input type="text" class="form-control" id="reg-teacher-username" placeholder="username" required autocomplete="username">
+            </div>
+            <div class="mb-3">
+              <label class="form-label"><i class="bi bi-person-badge me-1"></i>ชื่อที่แสดง</label>
+              <input type="text" class="form-control" id="reg-teacher-displayname" placeholder="ชื่อ-นามสกุล" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label"><i class="bi bi-lock me-1"></i>รหัสผ่าน</label>
+              <input type="password" class="form-control" id="reg-teacher-password" placeholder="อย่างน้อย 6 ตัวอักษร" required minlength="6" autocomplete="new-password">
+            </div>
+            <div class="mb-3">
+              <label class="form-label"><i class="bi bi-lock-fill me-1"></i>ยืนยันรหัสผ่าน</label>
+              <input type="password" class="form-control" id="reg-teacher-confirm" placeholder="••••••" required minlength="6" autocomplete="new-password">
+            </div>
+            <button type="submit" class="btn btn-success w-100 fw-semibold" id="reg-teacher-btn">
+              <i class="bi bi-person-plus me-1"></i>สมัครสมาชิก
+            </button>
+          </form>
         </div>
-        <button type="submit" class="btn btn-primary w-100 fw-semibold" id="login-btn">
-          <i class="bi bi-box-arrow-in-right me-1"></i>เข้าสู่ระบบ
-        </button>
-      </form>
+      </div>
+
       <div class="text-center mt-3">
         <small class="text-muted">นักเรียน? <a href="student.html" class="text-decoration-none">เข้าสู่ระบบนักเรียน</a></small>
       </div>
@@ -78,6 +124,7 @@
         <div class="sidebar-section text-muted small fw-semibold px-3 py-2">หลัก</div>
         <a class="sidebar-link active" data-module="dashboard"><i class="bi bi-speedometer2"></i><span>แดชบอร์ด</span></a>
         <a class="sidebar-link" data-module="settings"><i class="bi bi-gear"></i><span>ตั้งค่าเริ่มต้น</span></a>
+        <a class="sidebar-link d-none" data-module="admin" id="sidebar-admin"><i class="bi bi-shield-lock"></i><span>จัดการครู</span><span class="badge bg-danger ms-auto d-none" id="pending-badge">0</span></a>
 
         <div class="sidebar-section text-muted small fw-semibold px-3 py-2 mt-2">การสอน</div>
         <a class="sidebar-link" data-module="course-structure"><i class="bi bi-diagram-3"></i><span>โครงสร้างรายวิชา</span></a>

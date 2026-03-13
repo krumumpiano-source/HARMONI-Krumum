@@ -1,6 +1,7 @@
 // HARMONI — Auth API
 // POST /api/auth/login
 // POST /api/auth/register-student
+// POST /api/auth/register-teacher
 // POST /api/auth/logout
 // GET  /api/auth/me
 // POST /api/auth/change-password
@@ -24,6 +25,11 @@ export async function onRequest(context) {
   // POST /api/auth/register-student
   if (path === '/api/auth/register-student' && method === 'POST') {
     return handleRegisterStudent(request, env);
+  }
+
+  // POST /api/auth/register-teacher
+  if (path === '/api/auth/register-teacher' && method === 'POST') {
+    return handleRegisterTeacher(request, env);
   }
 
   // POST /api/auth/logout
@@ -64,6 +70,14 @@ async function handleLogin(request, env) {
     return error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง', 401);
   }
 
+  // Check approval status
+  if (user.status === 'pending') {
+    return error('บัญชีของคุณรอการอนุมัติจากแอดมิน', 403);
+  }
+  if (user.status === 'rejected') {
+    return error('บัญชีของคุณถูกปฏิเสธ กรุณาติดต่อแอดมิน', 403);
+  }
+
   // Create session (expire in 7 days)
   const token = generateToken();
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -76,7 +90,8 @@ async function handleLogin(request, env) {
     token,
     role: user.role,
     displayName: user.display_name,
-    userId: user.id
+    userId: user.id,
+    isAdmin: user.is_admin === 1
   });
 }
 
@@ -108,8 +123,8 @@ async function handleRegisterStudent(request, env) {
   const displayName = `${body.first_name} ${body.last_name}`;
 
   await dbRun(env.DB,
-    'INSERT INTO users (id, username, password_hash, salt, role, display_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [userId, body.student_code, passwordHash, salt, 'student', displayName, now()]
+    'INSERT INTO users (id, username, password_hash, salt, role, display_name, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [userId, body.student_code, passwordHash, salt, 'student', displayName, 'active', now()]
   );
 
   // Link student record to user
@@ -134,6 +149,37 @@ async function handleRegisterStudent(request, env) {
   });
 }
 
+async function handleRegisterTeacher(request, env) {
+  const body = await parseBody(request);
+  if (!body || !body.username || !body.password || !body.display_name) {
+    return error('กรุณากรอกชื่อผู้ใช้ รหัสผ่าน และชื่อที่แสดง');
+  }
+
+  if (body.password.length < 6) {
+    return error('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
+  }
+
+  // Check if username already exists
+  const existing = await dbFirst(env.DB,
+    'SELECT id FROM users WHERE username = ?',
+    [body.username]
+  );
+  if (existing) {
+    return error('ชื่อผู้ใช้นี้ถูกใช้แล้ว');
+  }
+
+  const userId = generateUUID();
+  const salt = generateUUID();
+  const passwordHash = await hashPassword(body.password, salt);
+
+  await dbRun(env.DB,
+    'INSERT INTO users (id, username, password_hash, salt, role, display_name, is_admin, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)',
+    [userId, body.username, passwordHash, salt, 'teacher', body.display_name, 'pending', now()]
+  );
+
+  return success({ message: 'สมัครสมาชิกสำเร็จ กรุณารอแอดมินอนุมัติ' });
+}
+
 async function handleLogout(env) {
   if (!env.user) return error('ไม่ได้เข้าสู่ระบบ', 401);
 
@@ -149,7 +195,7 @@ async function handleMe(env) {
   if (!env.user) return error('ไม่ได้เข้าสู่ระบบ', 401);
 
   const user = await dbFirst(env.DB,
-    'SELECT id, username, role, display_name, created_at FROM users WHERE id = ?',
+    'SELECT id, username, role, display_name, is_admin, status, created_at FROM users WHERE id = ?',
     [env.user.id]
   );
 

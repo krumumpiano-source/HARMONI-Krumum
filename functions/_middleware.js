@@ -7,6 +7,7 @@ import { json, error, dbFirst } from './_helpers.js';
 const PUBLIC_PATHS = [
   '/api/auth/login',
   '/api/auth/register-student',
+  '/api/auth/register-teacher',
   '/api/setup'
 ];
 
@@ -59,7 +60,7 @@ export async function onRequest(context) {
     const token = authHeader.slice(7);
     try {
       const session = await dbFirst(env.DB,
-        'SELECT s.*, u.role, u.display_name, u.id as user_id FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.token = ? AND s.expires_at > ?',
+        'SELECT s.*, u.role, u.display_name, u.id as user_id, u.is_admin, u.status FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.token = ? AND s.expires_at > ?',
         [token, new Date().toISOString()]
       );
 
@@ -67,12 +68,19 @@ export async function onRequest(context) {
         return addCors(error('Session หมดอายุ กรุณาเข้าสู่ระบบใหม่', 401));
       }
 
+      // Block pending/rejected teachers
+      if (session.role === 'teacher' && session.status !== 'active') {
+        return addCors(error('บัญชีของคุณรอการอนุมัติจากแอดมิน', 403));
+      }
+
       // Attach user info to env for downstream use
       env.user = {
         id: session.user_id,
         role: session.role,
         displayName: session.display_name,
-        sessionId: session.id
+        sessionId: session.id,
+        isAdmin: session.is_admin === 1,
+        status: session.status
       };
     } catch (e) {
       return addCors(error('เกิดข้อผิดพลาดในการตรวจสอบ session', 500));

@@ -194,18 +194,33 @@ document.addEventListener('DOMContentLoaded', () => {
     const alert = document.getElementById('student-login-alert');
     alert.classList.add('d-none');
 
+    const password = document.getElementById('sr-password').value;
+    const confirm = document.getElementById('sr-confirm').value;
+    if (password !== confirm) {
+      alert.className = 'alert alert-danger';
+      alert.textContent = 'รหัสผ่านไม่ตรงกัน';
+      alert.classList.remove('d-none');
+      return;
+    }
+
     const res = await API.post('/api/auth/register-student', {
       student_code: document.getElementById('sr-code').value.trim(),
+      prefix: document.getElementById('sr-prefix').value,
       first_name: document.getElementById('sr-fname').value.trim(),
       last_name: document.getElementById('sr-lname').value.trim(),
-      password: document.getElementById('sr-password').value
+      nickname: document.getElementById('sr-nickname').value.trim(),
+      gender: document.getElementById('sr-gender').value,
+      birth_date: document.getElementById('sr-birthdate').value,
+      phone: document.getElementById('sr-phone').value.trim(),
+      password
     });
 
     if (res.success) {
       API.setToken(res.data.token);
       StudentApp.showApp(res.data);
     } else {
-      alert.textContent = res.error || 'ลงทะเบียนไม่สำเร็จ';
+      alert.className = 'alert alert-danger';
+      alert.textContent = res.error || 'สมัครสมาชิกไม่สำเร็จ';
       alert.classList.remove('d-none');
     }
   });

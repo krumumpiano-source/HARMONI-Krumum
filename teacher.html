@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HARMONI — ระบบจัดการงานสอนดนตรี</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="css/app.css" rel="stylesheet">
+</head>
+<body>
+
+<!-- ==================== LOGIN PAGE ==================== -->
+<div id="login-page" class="d-flex align-items-center justify-content-center min-vh-100 bg-light">
+  <div class="card shadow-sm border-0" style="max-width:420px;width:100%">
+    <div class="card-body p-4">
+      <div class="text-center mb-4">
+        <div class="harmoni-logo mb-2">
+          <i class="bi bi-music-note-beamed fs-1 text-primary"></i>
+        </div>
+        <h3 class="fw-bold text-primary">HARMONI</h3>
+        <p class="text-muted small">ระบบจัดการงานสอนดนตรี</p>
+        <span class="badge bg-primary bg-opacity-10 text-primary px-3 py-2"><i class="bi bi-person-workspace me-1"></i>สำหรับครูผู้สอน</span>
+      </div>
+      <!-- Login only (teacher register hidden for future) -->
+      <!--
+      <ul class="nav nav-tabs mb-3" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-login" type="button">เข้าสู่ระบบ</button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-register-teacher" type="button">สมัครเป็นครู</button>
+        </li>
+      </ul>
+      -->
+
+      <div class="tab-content">
+        <!-- Login Tab -->
+        <div class="tab-pane fade show active" id="tab-login">
+          <div id="login-alert" class="alert alert-danger d-none" role="alert"></div>
+          <form id="login-form">
+            <div class="mb-3">
+              <label class="form-label"><i class="bi bi-person me-1"></i>ชื่อผู้ใช้</label>
+              <input type="text" class="form-control" id="login-username" placeholder="username" required autocomplete="username">
+            </div>
+            <div class="mb-3">
+              <label class="form-label"><i class="bi bi-lock me-1"></i>รหัสผ่าน</label>
+              <input type="password" class="form-control" id="login-password" placeholder="••••••" required autocomplete="current-password">
+            </div>
+            <button type="submit" class="btn btn-primary w-100 fw-semibold" id="login-btn">
+              <i class="bi bi-box-arrow-in-right me-1"></i>เข้าสู่ระบบ
+            </button>
+          </form>
+        </div>
+
+        <!-- Teacher Register Tab -->
+        <div class="tab-pane fade" id="tab-register-teacher">
+          <div id="register-teacher-alert" class="alert d-none" role="alert"></div>
+          <form id="register-teacher-form">
+            <div class="mb-3">
+              <label class="form-label"><i class="bi bi-person me-1"></i>ชื่อผู้ใช้</label>
+              <input type="text" class="form-control" id="reg-teacher-username" placeholder="username" required autocomplete="username">
+            </div>
+            <div class="mb-3">
+              <label class="form-label"><i class="bi bi-person-badge me-1"></i>ชื่อที่แสดง</label>
+              <input type="text" class="form-control" id="reg-teacher-displayname" placeholder="ชื่อ-นามสกุล" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label"><i class="bi bi-lock me-1"></i>รหัสผ่าน</label>
+              <input type="password" class="form-control" id="reg-teacher-password" placeholder="อย่างน้อย 6 ตัวอักษร" required minlength="6" autocomplete="new-password">
+            </div>
+            <div class="mb-3">
+              <label class="form-label"><i class="bi bi-lock-fill me-1"></i>ยืนยันรหัสผ่าน</label>
+              <input type="password" class="form-control" id="reg-teacher-confirm" placeholder="••••••" required minlength="6" autocomplete="new-password">
+            </div>
+            <button type="submit" class="btn btn-success w-100 fw-semibold" id="reg-teacher-btn">
+              <i class="bi bi-person-plus me-1"></i>สมัครสมาชิก
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <div class="text-center mt-3 pt-3 border-top">
+        <p class="text-muted small mb-2">ถ้าเป็นนักเรียน ให้เข้าหน้านี้แทน</p>
+        <a href="index.html" class="btn btn-outline-success btn-sm w-100">
+          <i class="bi bi-mortarboard me-1"></i>เข้าสู่ระบบนักเรียน
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== TEACHER APP ==================== -->
+<div id="app" class="d-none">
+  <!-- Top Navbar -->
+  <nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top shadow-sm">
+    <div class="container-fluid">
+      <button class="btn btn-link text-white d-lg-none me-2 p-0" id="sidebar-toggle">
+        <i class="bi bi-list fs-4"></i>
+      </button>
+      <a class="navbar-brand fw-bold" href="#">
+        <i class="bi bi-music-note-beamed me-1"></i>HARMONI
+      </a>
+      <div class="d-flex align-items-center ms-auto">
+        <span class="text-white-50 small me-3 d-none d-md-inline" id="nav-semester"></span>
+        <div class="dropdown">
+          <button class="btn btn-link text-white text-decoration-none dropdown-toggle" data-bs-toggle="dropdown">
+            <i class="bi bi-person-circle me-1"></i><span id="nav-username">ครู</span>
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><a class="dropdown-item" href="#" id="btn-change-password"><i class="bi bi-key me-2"></i>เปลี่ยนรหัสผ่าน</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item text-danger" href="#" id="btn-logout"><i class="bi bi-box-arrow-right me-2"></i>ออกจากระบบ</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Sidebar + Content -->
+  <div class="d-flex" style="padding-top:56px">
+    <!-- Sidebar -->
+    <nav id="sidebar" class="bg-white border-end shadow-sm">
+      <div class="sidebar-menu p-2">
+        <div class="sidebar-section text-muted small fw-semibold px-3 py-2">หลัก</div>
+        <a class="sidebar-link active" data-module="dashboard"><i class="bi bi-speedometer2"></i><span>แดชบอร์ด</span></a>
+        <a class="sidebar-link" data-module="settings"><i class="bi bi-gear"></i><span>ตั้งค่าเริ่มต้น</span></a>
+        <a class="sidebar-link d-none" data-module="admin" id="sidebar-admin"><i class="bi bi-shield-lock"></i><span>จัดการครู</span><span class="badge bg-danger ms-auto d-none" id="pending-badge">0</span></a>
+
+        <div class="sidebar-section text-muted small fw-semibold px-3 py-2 mt-2">การสอน</div>
+        <a class="sidebar-link" data-module="course-structure"><i class="bi bi-diagram-3"></i><span>โครงสร้างรายวิชา</span></a>
+        <a class="sidebar-link" data-module="lesson-plan"><i class="bi bi-journal-text"></i><span>แผนการจัดการเรียนรู้</span></a>
+        <a class="sidebar-link" data-module="post-lesson"><i class="bi bi-chat-square-text"></i><span>บันทึกหลังสอน</span></a>
+        <a class="sidebar-link" data-module="classroom-materials"><i class="bi bi-folder2-open"></i><span>สื่อการสอน</span></a>
+
+        <div class="sidebar-section text-muted small fw-semibold px-3 py-2 mt-2">การวัดผล</div>
+        <a class="sidebar-link" data-module="assessment"><i class="bi bi-clipboard-check"></i><span>เครื่องมือวัดผล</span></a>
+        <a class="sidebar-link" data-module="test"><i class="bi bi-pencil-square"></i><span>แบบทดสอบ</span></a>
+        <a class="sidebar-link" data-module="scores"><i class="bi bi-graph-up"></i><span>คะแนน</span></a>
+        <a class="sidebar-link" data-module="grade-result"><i class="bi bi-award"></i><span>ผลการเรียน/เกรด</span></a>
+
+        <div class="sidebar-section text-muted small fw-semibold px-3 py-2 mt-2">ห้องเรียนออนไลน์</div>
+        <a class="sidebar-link" data-module="student-classroom"><i class="bi bi-mortarboard"></i><span>ห้องเรียน (Classroom)</span></a>
+
+        <div class="sidebar-section text-muted small fw-semibold px-3 py-2 mt-2">งานวิชาการ</div>
+        <a class="sidebar-link" data-module="research"><i class="bi bi-search"></i><span>วิจัยในชั้นเรียน</span></a>
+        <a class="sidebar-link" data-module="pa"><i class="bi bi-file-earmark-bar-graph"></i><span>PA (วPA)</span></a>
+        <a class="sidebar-link" data-module="sar"><i class="bi bi-file-earmark-ruled"></i><span>SAR</span></a>
+        <a class="sidebar-link" data-module="innovation"><i class="bi bi-lightbulb"></i><span>นวัตกรรม</span></a>
+        <a class="sidebar-link" data-module="plc"><i class="bi bi-people"></i><span>PLC</span></a>
+        <a class="sidebar-link" data-module="logbook"><i class="bi bi-journal-bookmark"></i><span>สมุดบันทึก</span></a>
+        <a class="sidebar-link" data-module="portfolio"><i class="bi bi-briefcase"></i><span>แฟ้มสะสมผลงาน</span></a>
+        <a class="sidebar-link" data-module="awards"><i class="bi bi-trophy"></i><span>เกียรติบัตร/รางวัล</span></a>
+
+        <div class="sidebar-section text-muted small fw-semibold px-3 py-2 mt-2">ระบบดูแลช่วยเหลือ</div>
+        <a class="sidebar-link" data-module="attendance"><i class="bi bi-calendar-check"></i><span>เช็คชื่อ</span></a>
+        <a class="sidebar-link" data-module="homeroom"><i class="bi bi-house-heart"></i><span>ครูที่ปรึกษา</span></a>
+        <a class="sidebar-link" data-module="home-visit"><i class="bi bi-geo-alt"></i><span>เยี่ยมบ้าน</span></a>
+        <a class="sidebar-link" data-module="sdq"><i class="bi bi-heart-pulse"></i><span>SDQ</span></a>
+        <a class="sidebar-link" data-module="care-record"><i class="bi bi-shield-check"></i><span>บันทึกการดูแล</span></a>
+
+        <div class="sidebar-section text-muted small fw-semibold px-3 py-2 mt-2">เครื่องมือ</div>
+        <a class="sidebar-link" data-module="calendar"><i class="bi bi-calendar3"></i><span>ปฏิทิน</span></a>
+        <a class="sidebar-link" data-module="documents"><i class="bi bi-file-earmark"></i><span>เอกสาร</span></a>
+        <a class="sidebar-link" data-module="cover-designer"><i class="bi bi-brush"></i><span>ออกแบบปก</span></a>
+        <a class="sidebar-link" data-module="instruments"><i class="bi bi-music-note-list"></i><span>เครื่องดนตรี</span></a>
+        <a class="sidebar-link" data-module="quick-drop"><i class="bi bi-cloud-upload"></i><span>Quick Drop</span></a>
+      </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main id="main-content" class="flex-fill p-4">
+      <div id="content-area">
+        <!-- Modules render here via JS -->
+      </div>
+    </main>
+  </div>
+
+  <!-- AI Panel (Right Side) -->
+  <div id="ai-panel" class="bg-white border-start shadow-sm d-none">
+    <div class="p-3 border-bottom d-flex align-items-center">
+      <i class="bi bi-robot fs-5 text-primary me-2"></i>
+      <strong>AI ผู้ช่วย</strong>
+      <button class="btn btn-sm btn-link ms-auto text-muted" id="ai-panel-close"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div id="ai-chat-area" class="p-3" style="height:calc(100vh - 160px);overflow-y:auto"></div>
+    <div class="p-3 border-top">
+      <div class="input-group">
+        <input type="text" class="form-control" id="ai-input" placeholder="พิมพ์คำถาม...">
+        <button class="btn btn-primary" id="ai-send"><i class="bi bi-send"></i></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating AI Button -->
+  <button class="btn btn-primary rounded-circle shadow position-fixed" id="ai-fab"
+    style="bottom:24px;right:24px;width:56px;height:56px;z-index:1050">
+    <i class="bi bi-robot fs-4"></i>
+  </button>
+</div>
+
+<!-- Change Password Modal -->
+<div class="modal fade" id="modal-change-password" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-key me-2"></i>เปลี่ยนรหัสผ่าน</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="cp-alert" class="alert d-none"></div>
+        <div class="mb-3">
+          <label class="form-label">รหัสผ่านเดิม</label>
+          <input type="password" class="form-control" id="cp-old" autocomplete="current-password">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">รหัสผ่านใหม่</label>
+          <input type="password" class="form-control" id="cp-new" autocomplete="new-password">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">ยืนยันรหัสผ่านใหม่</label>
+          <input type="password" class="form-control" id="cp-confirm" autocomplete="new-password">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+        <button class="btn btn-primary" id="cp-submit">บันทึก</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- First-time Setup Wizard Modal -->
+<div class="modal fade" id="modal-setup" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title"><i class="bi bi-magic me-2"></i>ตั้งค่าเริ่มต้น — ยินดีต้อนรับสู่ HARMONI!</h5>
+      </div>
+      <div class="modal-body p-4">
+        <div id="setup-steps">
+          <!-- Step 1: Teacher Profile -->
+          <div class="setup-step" data-step="1">
+            <h5 class="mb-3"><i class="bi bi-person-badge me-2"></i>ข้อมูลครู</h5>
+            <div class="row g-3">
+              <div class="col-md-2">
+                <label class="form-label">คำนำหน้า</label>
+                <select class="form-select" id="setup-title">
+                  <option value="นาย">นาย</option>
+                  <option value="นาง">นาง</option>
+                  <option value="นางสาว">นางสาว</option>
+                </select>
+              </div>
+              <div class="col-md-5">
+                <label class="form-label">ชื่อ</label>
+                <input type="text" class="form-control" id="setup-firstname">
+              </div>
+              <div class="col-md-5">
+                <label class="form-label">นามสกุล</label>
+                <input type="text" class="form-control" id="setup-lastname">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">ตำแหน่ง</label>
+                <input type="text" class="form-control" id="setup-position" placeholder="ครู / ครูชำนาญการ">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">โรงเรียน</label>
+                <input type="text" class="form-control" id="setup-school">
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 2: Semester -->
+          <div class="setup-step d-none" data-step="2">
+            <h5 class="mb-3"><i class="bi bi-calendar-range me-2"></i>ภาคเรียน</h5>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">ปีการศึกษา</label>
+                <input type="number" class="form-control" id="setup-year" value="2568">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">ภาคเรียนที่</label>
+                <select class="form-select" id="setup-semester">
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 3: Subjects -->
+          <div class="setup-step d-none" data-step="3">
+            <h5 class="mb-3"><i class="bi bi-book me-2"></i>วิชาที่สอน</h5>
+            <div id="setup-subjects-list"></div>
+            <button class="btn btn-outline-primary btn-sm mt-2" id="setup-add-subject">
+              <i class="bi bi-plus-lg me-1"></i>เพิ่มวิชา
+            </button>
+          </div>
+
+          <!-- Step 4: Classrooms -->
+          <div class="setup-step d-none" data-step="4">
+            <h5 class="mb-3"><i class="bi bi-building me-2"></i>ห้องเรียนที่สอน</h5>
+            <div id="setup-classrooms-list"></div>
+            <button class="btn btn-outline-primary btn-sm mt-2" id="setup-add-classroom">
+              <i class="bi bi-plus-lg me-1"></i>เพิ่มห้องเรียน
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary d-none" id="setup-prev"><i class="bi bi-chevron-left me-1"></i>ย้อนกลับ</button>
+        <button class="btn btn-primary" id="setup-next">ถัดไป <i class="bi bi-chevron-right ms-1"></i></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

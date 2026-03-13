@@ -101,19 +101,35 @@ async function handleRegisterStudent(request, env) {
     return error('กรุณากรอกข้อมูลให้ครบถ้วน');
   }
 
-  // Find matching student record
-  const student = await dbFirst(env.DB,
-    'SELECT * FROM students WHERE student_code = ?',
-    [body.student_code]
-  );
-
-  if (!student) {
-    return error('ไม่พบข้อมูลนักเรียน กรุณาติดต่อครูประจำวิชา', 404);
+  if (body.password.length < 6) {
+    return error('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
   }
 
-  // Check if student already has a user account
-  if (student.user_id) {
-    return error('นักเรียนคนนี้ลงทะเบียนแล้ว กรุณาเข้าสู่ระบบ');
+  // Check if student_code already used as username
+  const existingUser = await dbFirst(env.DB,
+    'SELECT id FROM users WHERE username = ?',
+    [body.student_code]
+  );
+  if (existingUser) {
+    return error('รหัสนักเรียนนี้ลงทะเบียนแล้ว กรุณาเข้าสู่ระบบ');
+  }
+
+  // Check if student_code already exists in students table
+  const existingStudent = await dbFirst(env.DB,
+    'SELECT id, user_id FROM students WHERE student_code = ?',
+    [body.student_code]
+  );
+  if (existingStudent && existingStudent.user_id) {
+    return error('รหัสนักเรียนนี้ลงทะเบียนแล้ว กรุณาเข้าสู่ระบบ');
+  }
+
+  // Find admin teacher to assign as default teacher_id
+  const admin = await dbFirst(env.DB,
+    'SELECT id FROM users WHERE role = ? AND is_admin = 1',
+    ['teacher']
+  );
+  if (!admin) {
+    return error('ระบบยังไม่มีครูผู้ดูแล กรุณาติดต่อผู้ดูแลระบบ', 503);
   }
 
   // Create user account
@@ -127,11 +143,21 @@ async function handleRegisterStudent(request, env) {
     [userId, body.student_code, passwordHash, salt, 'student', displayName, 'active', now()]
   );
 
-  // Link student record to user
-  await dbRun(env.DB,
-    'UPDATE students SET user_id = ?, updated_at = ? WHERE id = ?',
-    [userId, now(), student.id]
-  );
+  // Create or link student record
+  if (existingStudent) {
+    // Link existing student record to new user
+    await dbRun(env.DB,
+      'UPDATE students SET user_id = ?, prefix = ?, first_name = ?, last_name = ?, nickname = ?, gender = ?, birth_date = ?, phone = ?, updated_at = ? WHERE id = ?',
+      [userId, body.prefix || null, body.first_name, body.last_name, body.nickname || null, body.gender || null, body.birth_date || null, body.phone || null, now(), existingStudent.id]
+    );
+  } else {
+    // Create new student record
+    const studentId = generateUUID();
+    await dbRun(env.DB,
+      'INSERT INTO students (id, teacher_id, user_id, student_code, prefix, first_name, last_name, nickname, gender, birth_date, phone, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [studentId, admin.id, userId, body.student_code, body.prefix || null, body.first_name, body.last_name, body.nickname || null, body.gender || null, body.birth_date || null, body.phone || null, now()]
+    );
+  }
 
   // Create session
   const token = generateToken();

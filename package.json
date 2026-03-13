@@ -1,0 +1,13 @@
+{
+  "name": "harmoni",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "npx wrangler pages dev ./ --d1 DB=65e58e3f-bd2c-4333-b60c-c3a65a5d2460",
+    "deploy": "npx wrangler pages deploy ./",
+    "migrate": "npx wrangler d1 execute harmoni-db --remote --file=migrations/schema.sql",
+    "seed": "npx wrangler d1 execute harmoni-db --remote --file=migrations/seed.sql",
+    "migrate:local": "npx wrangler d1 execute harmoni-db --local --file=migrations/schema.sql",
+    "seed:local": "npx wrangler d1 execute harmoni-db --local --file=migrations/seed.sql"
+  }
+}

@@ -1935,7 +1935,7 @@ pages_build_output_dir = "./"
 [[d1_databases]]
 binding = "DB"
 database_name = "harmoni-db"
-database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+database_id = "65e58e3f-bd2c-4333-b60c-c3a65a5d2460"
 
 [vars]
 GEMINI_API_KEY = ""

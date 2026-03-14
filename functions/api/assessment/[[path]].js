@@ -44,6 +44,9 @@ export async function onRequest(context) {
   const rubricMatch = path.match(/^\/api\/assessment\/([^/]+)\/rubric$/);
   if (rubricMatch) {
     const toolId = rubricMatch[1];
+    // Verify tool belongs to this teacher
+    const tool = await dbFirst(env.DB, 'SELECT id FROM assessment_tools WHERE id = ? AND teacher_id = ?', [toolId, env.user.id]);
+    if (!tool) return error('ไม่พบเครื่องมือวัดผล', 404);
     if (method === 'GET') {
       const rows = await dbAll(env.DB,
         'SELECT * FROM rubric_criteria WHERE assessment_tool_id = ? ORDER BY sort_order',

@@ -82,6 +82,9 @@ export async function onRequest(context) {
   if (path.startsWith('/api/student-classroom/submissions/') && method === 'GET') {
     const postId = extractParam(path, '/api/student-classroom/submissions/');
     if (!postId) return error('Missing post id');
+    // Verify post belongs to this teacher
+    const post = await dbFirst(env.DB, 'SELECT id FROM classroom_posts WHERE id = ? AND teacher_id = ?', [postId, env.user.id]);
+    if (!post) return error('ไม่พบโพสต์', 404);
 
     const subs = await dbAll(env.DB,
       `SELECT asub.*, st.student_code, st.first_name, st.last_name
@@ -98,6 +101,13 @@ export async function onRequest(context) {
   if (path === '/api/student-classroom/grade' && method === 'POST') {
     const body = await parseBody(request);
     if (!body || !body.submission_id) return error('Missing submission_id');
+    // Verify submission belongs to a post owned by this teacher
+    const sub = await dbFirst(env.DB,
+      `SELECT asub.id FROM assignment_submissions asub
+       JOIN classroom_posts cp ON cp.id = asub.post_id
+       WHERE asub.id = ? AND cp.teacher_id = ?`,
+      [body.submission_id, env.user.id]);
+    if (!sub) return error('ไม่พบผลงาน', 404);
 
     await dbRun(env.DB,
       `UPDATE assignment_submissions SET score=?, feedback=?, status='graded', graded_at=? WHERE id=?`,

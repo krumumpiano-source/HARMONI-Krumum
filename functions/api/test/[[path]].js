@@ -49,6 +49,9 @@ export async function onRequest(context) {
   const qMatch = path.match(/^\/api\/test\/([^/]+)\/questions$/);
   if (qMatch) {
     const testId = qMatch[1];
+    // Verify test belongs to this teacher
+    const testOwner = await dbFirst(env.DB, 'SELECT id FROM tests WHERE id = ? AND teacher_id = ?', [testId, env.user.id]);
+    if (!testOwner) return error('ไม่พบแบบทดสอบ', 404);
     if (method === 'GET') {
       const rows = await dbAll(env.DB,
         'SELECT * FROM test_questions WHERE test_id = ? ORDER BY sort_order, question_number', [testId]);

@@ -116,10 +116,10 @@ export async function onRequest(context) {
     }
 
     if (existing) {
-      // Resubmit
+      // Resubmit (use 'submitted' status to match CHECK constraint)
       await dbRun(db, `
         UPDATE assignment_submissions
-        SET submission_text = ?, submission_url = ?, file_urls = ?, status = 'resubmitted',
+        SET submission_text = ?, submission_url = ?, file_urls = ?, status = 'submitted',
             resubmitted_at = ?, attempt_count = ?, is_late = ?, late_days = ?
         WHERE id = ?
       `, [body.text || null, body.url || null, body.files ? JSON.stringify(body.files) : null,
@@ -140,22 +140,20 @@ export async function onRequest(context) {
   if (path === '/grades' || path === '/grades/') {
     if (method !== 'GET') return error('Method not allowed', 405);
 
-    // Get grade results per subject
+    // Get grade results per subject (grade_results has subject_id + classroom_id, not subject_classroom_id)
     const grades = await dbAll(db, `
       SELECT gr.*, s.name AS subject_name, s.code AS subject_code
       FROM grade_results gr
-      JOIN subject_classrooms sc ON sc.id = gr.subject_classroom_id
-      JOIN subjects s ON s.id = sc.subject_id
+      JOIN subjects s ON s.id = gr.subject_id
       WHERE gr.student_id = ?
       ORDER BY s.code
     `, [studentId]);
 
-    // Also get individual scores
+    // Also get individual scores (scores has subject_id + classroom_id)
     const scores = await dbAll(db, `
       SELECT sc2.*, s.name AS subject_name
       FROM scores sc2
-      JOIN subject_classrooms scc ON scc.id = sc2.subject_classroom_id
-      JOIN subjects s ON s.id = scc.subject_id
+      JOIN subjects s ON s.id = sc2.subject_id
       WHERE sc2.student_id = ?
       ORDER BY sc2.created_at DESC
     `, [studentId]);

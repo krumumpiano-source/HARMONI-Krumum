@@ -6,7 +6,7 @@
 
 import {
   generateUUID, now, success, error, parseBody,
-  dbAll, dbRun, extractParam
+  dbAll, dbFirst, dbRun, extractParam
 } from '../../_helpers.js';
 
 export async function onRequest(context) {
@@ -38,10 +38,10 @@ export async function onRequest(context) {
     const peer = parseInt(body.peer_score) || 0;
     const prosocial = parseInt(body.prosocial_score) || 0;
     const totalDifficulty = emotional + conduct + hyperactivity + peer;
-    // Risk level
-    let riskLevel = 'ปกติ';
-    if (totalDifficulty >= 20) riskLevel = 'มีปัญหา';
-    else if (totalDifficulty >= 14) riskLevel = 'เสี่ยง';
+    // Risk level (must match CHECK constraint: normal, borderline, abnormal)
+    let riskLevel = 'normal';
+    if (totalDifficulty >= 20) riskLevel = 'abnormal';
+    else if (totalDifficulty >= 14) riskLevel = 'borderline';
     const id = generateUUID();
     await dbRun(env.DB,
       `INSERT INTO sdq_screenings (id, teacher_id, student_id, semester_id, screen_date,
@@ -65,15 +65,19 @@ export async function onRequest(context) {
     for (const f of allowed) {
       if (body[f] !== undefined) { fields.push(`${f}=?`); params.push(body[f]); }
     }
-    // Recalculate if scores changed
+    // Recalculate if scores changed — fetch existing to avoid zeroing out missing fields
     if (body.emotional_score !== undefined || body.conduct_score !== undefined ||
         body.hyperactivity_score !== undefined || body.peer_score !== undefined) {
-      const total = (parseInt(body.emotional_score) || 0) + (parseInt(body.conduct_score) || 0) +
-                    (parseInt(body.hyperactivity_score) || 0) + (parseInt(body.peer_score) || 0);
+      const existing = await dbFirst(env.DB, 'SELECT emotional_score, conduct_score, hyperactivity_score, peer_score FROM sdq_screenings WHERE id = ? AND teacher_id = ?', [itemId, env.user.id]);
+      if (!existing) return error('ไม่พบข้อมูล', 404);
+      const total = (parseInt(body.emotional_score ?? existing.emotional_score) || 0) +
+                    (parseInt(body.conduct_score ?? existing.conduct_score) || 0) +
+                    (parseInt(body.hyperactivity_score ?? existing.hyperactivity_score) || 0) +
+                    (parseInt(body.peer_score ?? existing.peer_score) || 0);
       fields.push('total_difficulty=?'); params.push(total);
-      let risk = 'ปกติ';
-      if (total >= 20) risk = 'มีปัญหา';
-      else if (total >= 14) risk = 'เสี่ยง';
+      let risk = 'normal';
+      if (total >= 20) risk = 'abnormal';
+      else if (total >= 14) risk = 'borderline';
       fields.push('risk_level=?'); params.push(risk);
     }
     if (fields.length === 0) return error('ไม่มีข้อมูลที่จะอัปเดต');

@@ -32,7 +32,7 @@ export async function onRequest(context) {
     await dbRun(env.DB,
       `INSERT INTO grade_configs (id, teacher_id, name, config_type, config_data, is_default, created_at)
        VALUES (?,?,?,?,?,?,?)`,
-      [id, env.user.id, body.name, body.config_type || '8-level',
+      [id, env.user.id, body.name, body.config_type || 'custom',
        typeof body.config_data === 'string' ? body.config_data : JSON.stringify(body.config_data),
        body.is_default ? 1 : 0, now()]
     );

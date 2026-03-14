@@ -45,6 +45,9 @@ export async function onRequest(context) {
   const cycleMatch = path.match(/^\/api\/research\/([^/]+)\/cycles$/);
   if (cycleMatch) {
     const researchId = cycleMatch[1];
+    // Verify research belongs to this teacher
+    const research = await dbFirst(env.DB, 'SELECT id FROM researches WHERE id = ? AND teacher_id = ?', [researchId, env.user.id]);
+    if (!research) return error('ไม่พบงานวิจัย', 404);
     if (method === 'GET') {
       return success(await dbAll(env.DB,
         'SELECT * FROM research_cycles WHERE research_id = ? ORDER BY cycle_number', [researchId]));

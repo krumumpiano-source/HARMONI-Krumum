@@ -473,7 +473,7 @@ async function saveSetup() {
     const name = row.querySelector('[data-field="name"]').value.trim();
     const type = row.querySelector('[data-field="type"]').value;
     if (code && name) {
-      await API.post('/api/subjects', { code, name_th: name, subject_type: type });
+      await API.post('/api/subjects', { code, name, subject_type: type });
     }
   }
 

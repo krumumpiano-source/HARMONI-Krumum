@@ -10,7 +10,7 @@ export async function onRequest(context) {
 
   if (method === 'GET') {
     const rows = await dbAll(env.DB,
-      'SELECT key, value FROM settings WHERE teacher_id = ?',
+      'SELECT key, value FROM app_settings WHERE teacher_id = ?',
       [env.user.id]
     );
     const settings = {};
@@ -24,10 +24,10 @@ export async function onRequest(context) {
 
     for (const [key, value] of Object.entries(body)) {
       await dbRun(env.DB,
-        `INSERT INTO settings (id, teacher_id, key, value, updated_at)
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(teacher_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-        [generateUUID(), env.user.id, key, String(value), now()]
+        `INSERT INTO app_settings (id, teacher_id, key, value)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(teacher_id, key) DO UPDATE SET value = excluded.value`,
+        [generateUUID(), env.user.id, key, String(value)]
       );
     }
     return success({ message: 'บันทึกการตั้งค่าแล้ว' });

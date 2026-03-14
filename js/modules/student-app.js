@@ -1,7 +1,8 @@
-// HARMONI — Student App (student.html)
+﻿// HARMONI — Student App (student.html)
 
 const StudentApp = {
   currentTab: 'feed',
+  quizTimer: null,
 
   async init() {
     if (API.token) {
@@ -24,10 +25,24 @@ const StudentApp = {
     document.getElementById('student-login-page').classList.add('d-none');
     document.getElementById('student-app').classList.remove('d-none');
     this.switchTab('feed');
+    this.loadNotificationBadge();
+  },
+
+  async loadNotificationBadge() {
+    const res = await API.get('/api/student/notifications');
+    if (res.success && res.data) {
+      const unread = res.data.filter(n => !n.is_read).length;
+      const badge = document.getElementById('student-notif-badge');
+      if (badge) {
+        badge.textContent = unread || '';
+        badge.classList.toggle('d-none', !unread);
+      }
+    }
   },
 
   switchTab(tab) {
     this.currentTab = tab;
+    if (this.quizTimer) { clearInterval(this.quizTimer); this.quizTimer = null; }
     document.querySelectorAll('.student-tab').forEach(el => {
       el.classList.toggle('active', el.dataset.tab === tab);
     });
@@ -45,6 +60,7 @@ const StudentApp = {
     }
   },
 
+  // ==================== FEED ====================
   async renderFeed(container) {
     container.innerHTML = '<div class="loading"></div>';
     const res = await API.get('/api/student/feed');
@@ -60,97 +76,364 @@ const StudentApp = {
       return;
     }
 
+    const typeIcons = { announcement: 'megaphone', material: 'book', assignment: 'file-earmark-text', quiz: 'pencil-square', poll: 'bar-chart' };
+    const typeLabels = { announcement: 'ประกาศ', material: 'สื่อการสอน', assignment: 'งาน', quiz: 'แบบทดสอบ', poll: 'โพล' };
+    const typeColors = { announcement: 'info', material: 'primary', assignment: 'warning', quiz: 'danger', poll: 'secondary' };
+
     container.innerHTML = `
       <h5 class="fw-bold mb-3"><i class="bi bi-house-door me-2"></i>หน้าหลัก</h5>
       ${res.data.map(post => `
         <div class="card border-0 shadow-sm mb-3">
           <div class="card-body">
-            <div class="d-flex justify-content-between mb-2">
-              <span class="badge bg-primary">${DOMPurify.sanitize(post.subject_name || '')}</span>
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <div>
+                <span class="badge bg-${typeColors[post.post_type] || 'secondary'} me-1">
+                  <i class="bi bi-${typeIcons[post.post_type] || 'chat'} me-1"></i>${typeLabels[post.post_type] || post.post_type}
+                </span>
+                <span class="badge bg-light text-dark">${DOMPurify.sanitize(post.subject_name || '')}</span>
+              </div>
               <small class="text-muted">${new Date(post.created_at).toLocaleDateString('th-TH')}</small>
             </div>
+            ${post.is_pinned ? '<span class="badge bg-danger mb-1"><i class="bi bi-pin me-1"></i>ปักหมุด</span>' : ''}
             <h6 class="fw-bold">${DOMPurify.sanitize(post.title)}</h6>
-            <p class="text-muted small mb-0">${DOMPurify.sanitize(post.content || '').substring(0, 200)}</p>
+            <p class="text-muted small mb-1">${DOMPurify.sanitize(post.content || '').substring(0, 200)}</p>
+            ${post.due_date ? `<small class="text-danger"><i class="bi bi-clock me-1"></i>กำหนดส่ง: ${new Date(post.due_date).toLocaleDateString('th-TH')}</small>` : ''}
           </div>
         </div>`).join('')}`;
   },
 
+  // ==================== ASSIGNMENTS ====================
   async renderAssignments(container) {
     container.innerHTML = '<div class="loading"></div>';
     const res = await API.get('/api/student/feed?type=assignment');
 
+    if (!res.success || !res.data || res.data.length === 0) {
+      container.innerHTML = `
+        <h5 class="fw-bold mb-3"><i class="bi bi-file-earmark-text me-2"></i>งานที่ได้รับ</h5>
+        <div class="empty-state"><i class="bi bi-inbox d-block"></i><p>ยังไม่มีงาน</p></div>`;
+      return;
+    }
+
     container.innerHTML = `
       <h5 class="fw-bold mb-3"><i class="bi bi-file-earmark-text me-2"></i>งานที่ได้รับ</h5>
-      ${!res.success || !res.data || res.data.length === 0
-        ? '<div class="empty-state"><i class="bi bi-inbox d-block"></i><p>ยังไม่มีงาน</p></div>'
-        : res.data.map(a => `
+      ${res.data.map(a => {
+        const sub = a.submission;
+        const statusBadge = sub
+          ? (sub.status === 'graded' ? `<span class="badge bg-success">ตรวจแล้ว ${sub.score !== null ? sub.score + ' คะแนน' : ''}</span>`
+            : `<span class="badge bg-info">ส่งแล้ว</span>`)
+          : (a.due_date && new Date(a.due_date) < new Date() ? '<span class="badge bg-danger">เลยกำหนด</span>' : '<span class="badge bg-warning text-dark">ยังไม่ส่ง</span>');
+        return `
           <div class="card border-0 shadow-sm mb-3">
             <div class="card-body">
-              <h6 class="fw-bold">${DOMPurify.sanitize(a.title)}</h6>
-              <small class="text-muted">กำหนดส่ง: ${a.due_date ? new Date(a.due_date).toLocaleDateString('th-TH') : 'ไม่ระบุ'}</small>
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="fw-bold mb-0">${DOMPurify.sanitize(a.title)}</h6>
+                ${statusBadge}
+              </div>
+              <small class="text-muted d-block mb-1">${DOMPurify.sanitize(a.subject_name || '')}</small>
+              <small class="text-muted">${a.due_date ? 'กำหนดส่ง: ' + new Date(a.due_date).toLocaleDateString('th-TH') : 'ไม่มีกำหนดส่ง'}</small>
+              ${!sub || sub.status !== 'graded' ? `
+                <div class="mt-2">
+                  <button class="btn btn-sm btn-primary" onclick="StudentApp.openSubmitForm('${a.id}', '${DOMPurify.sanitize(a.title).replace(/'/g, "\\'")}')">
+                    <i class="bi bi-upload me-1"></i>${sub ? 'ส่งใหม่' : 'ส่งงาน'}
+                  </button>
+                </div>` : ''}
             </div>
-          </div>`).join('')}`;
+          </div>`;
+      }).join('')}`;
   },
 
-  async renderQuizzes(container) {
-    container.innerHTML = `
-      <h5 class="fw-bold mb-3"><i class="bi bi-pencil-square me-2"></i>แบบทดสอบ</h5>
-      <div class="empty-state">
-        <i class="bi bi-pencil-square d-block"></i>
-        <p>ยังไม่มีแบบทดสอบ</p>
-      </div>`;
-  },
-
-  async renderGrades(container) {
-    container.innerHTML = '<div class="loading"></div>';
-    const res = await API.get('/api/student/grades');
-
-    container.innerHTML = `
-      <h5 class="fw-bold mb-3"><i class="bi bi-graph-up me-2"></i>คะแนนของฉัน</h5>
-      ${!res.success || !res.data || res.data.length === 0
-        ? '<div class="empty-state"><i class="bi bi-graph-up d-block"></i><p>ยังไม่มีคะแนน</p></div>'
-        : `<div class="card border-0 shadow-sm"><div class="card-body p-0">
-            <div class="table-responsive"><table class="table table-hover mb-0">
-              <thead class="table-light"><tr><th>วิชา</th><th>คะแนน</th><th>เกรด</th></tr></thead>
-              <tbody>${res.data.map(g => `
-                <tr><td>${DOMPurify.sanitize(g.subject_name || '')}</td><td>${g.total_score || '-'}</td><td><strong>${g.grade || '-'}</strong></td></tr>`).join('')}
-              </tbody></table></div></div></div>`}`;
-  },
-
-  async renderNotifications(container) {
-    container.innerHTML = '<div class="loading"></div>';
-    const res = await API.get('/api/student/notifications');
-
-    container.innerHTML = `
-      <h5 class="fw-bold mb-3"><i class="bi bi-bell me-2"></i>แจ้งเตือน</h5>
-      ${!res.success || !res.data || res.data.length === 0
-        ? '<div class="empty-state"><i class="bi bi-bell d-block"></i><p>ไม่มีแจ้งเตือน</p></div>'
-        : res.data.map(n => `
-          <div class="card border-0 shadow-sm mb-2 ${n.is_read ? '' : 'border-start border-primary border-3'}">
-            <div class="card-body py-2">
-              <strong class="small">${DOMPurify.sanitize(n.title)}</strong>
-              <p class="text-muted small mb-0">${DOMPurify.sanitize(n.message || '')}</p>
-            </div>
-          </div>`).join('')}`;
-  },
-
-  async renderProfile(container) {
-    const res = await API.get('/api/auth/me');
-    const user = res.success ? res.data : {};
-
-    container.innerHTML = `
-      <h5 class="fw-bold mb-3"><i class="bi bi-person me-2"></i>โปรไฟล์</h5>
+  openSubmitForm(postId, title) {
+    const content = document.getElementById('student-content');
+    content.innerHTML = `
+      <h5 class="fw-bold mb-3"><i class="bi bi-upload me-2"></i>ส่งงาน: ${title}</h5>
       <div class="card border-0 shadow-sm">
-        <div class="card-body text-center">
-          <i class="bi bi-person-circle fs-1 text-muted d-block mb-3"></i>
-          <h5 class="fw-bold">${DOMPurify.sanitize(user.display_name || '')}</h5>
-          <p class="text-muted">${DOMPurify.sanitize(user.username || '')}</p>
+        <div class="card-body">
+          <div class="mb-3">
+            <label class="form-label">คำตอบ / รายละเอียด</label>
+            <textarea id="submit-text" class="form-control" rows="4" placeholder="พิมพ์คำตอบหรือรายละเอียด..."></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">ลิงก์ (ถ้ามี)</label>
+            <input id="submit-url" type="url" class="form-control" placeholder="https://...">
+          </div>
+          <div class="d-flex gap-2">
+            <button class="btn btn-primary" onclick="StudentApp.submitAssignment('${postId}')">
+              <i class="bi bi-send me-1"></i>ส่ง
+            </button>
+            <button class="btn btn-outline-secondary" onclick="StudentApp.switchTab('assignments')">ยกเลิก</button>
+          </div>
         </div>
       </div>`;
   },
 
+  async submitAssignment(postId) {
+    const text = document.getElementById('submit-text').value.trim();
+    const url = document.getElementById('submit-url').value.trim();
+    if (!text && !url) { this.toast('กรุณากรอกคำตอบหรือแนบลิงก์', 'danger'); return; }
+
+    const res = await API.post(`/api/student/submit/${postId}`, { text, url: url || null });
+    if (res.success) {
+      this.toast('ส่งงานเรียบร้อย');
+      this.switchTab('assignments');
+    } else {
+      this.toast(res.error || 'ส่งงานไม่สำเร็จ', 'danger');
+    }
+  },
+
+  // ==================== QUIZZES ====================
+  async renderQuizzes(container) {
+    container.innerHTML = '<div class="loading"></div>';
+    const res = await API.get('/api/student/quizzes');
+
+    if (!res.success || !res.data || res.data.length === 0) {
+      container.innerHTML = `
+        <h5 class="fw-bold mb-3"><i class="bi bi-pencil-square me-2"></i>แบบทดสอบ</h5>
+        <div class="empty-state"><i class="bi bi-pencil-square d-block"></i><p>ยังไม่มีแบบทดสอบ</p></div>`;
+      return;
+    }
+
+    container.innerHTML = `
+      <h5 class="fw-bold mb-3"><i class="bi bi-pencil-square me-2"></i>แบบทดสอบ</h5>
+      ${res.data.map(q => `
+        <div class="card border-0 shadow-sm mb-3">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="fw-bold mb-0">${DOMPurify.sanitize(q.title)}</h6>
+              ${q.attempt_id ? `<span class="badge bg-success">${q.my_score}/${q.total_score} คะแนน</span>` : '<span class="badge bg-warning text-dark">ยังไม่ทำ</span>'}
+            </div>
+            <small class="text-muted d-block">${DOMPurify.sanitize(q.subject_name || '')}</small>
+            ${q.time_limit_minutes ? `<small class="text-muted"><i class="bi bi-clock me-1"></i>${q.time_limit_minutes} นาที</small>` : ''}
+            ${!q.attempt_id ? `
+              <div class="mt-2">
+                <button class="btn btn-sm btn-danger" onclick="StudentApp.startQuiz('${q.test_id}')">
+                  <i class="bi bi-play-fill me-1"></i>เริ่มทำ
+                </button>
+              </div>` : ''}
+          </div>
+        </div>`).join('')}`;
+  },
+
+  async startQuiz(testId) {
+    const container = document.getElementById('student-content');
+    container.innerHTML = '<div class="loading"></div>';
+
+    const res = await API.get(`/api/student/quiz/${testId}`);
+    if (!res.success) {
+      this.toast(res.error || 'ไม่สามารถโหลดแบบทดสอบ', 'danger');
+      this.switchTab('quizzes');
+      return;
+    }
+
+    const { test, questions } = res.data;
+    const startedAt = new Date().toISOString();
+    let timeLeft = test.time_limit_minutes ? test.time_limit_minutes * 60 : null;
+
+    container.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="fw-bold mb-0"><i class="bi bi-pencil-square me-2"></i>${DOMPurify.sanitize(test.title)}</h5>
+        ${timeLeft ? `<span id="quiz-timer" class="badge bg-danger fs-6"></span>` : ''}
+      </div>
+      <form id="quiz-form">
+        ${questions.map((q, i) => {
+          let opts = [];
+          try { opts = JSON.parse(q.options || '[]'); } catch(e) {}
+          return `
+            <div class="card border-0 shadow-sm mb-3">
+              <div class="card-body">
+                <p class="fw-bold mb-2">ข้อ ${i + 1}. ${DOMPurify.sanitize(q.question_text)} <small class="text-muted">(${q.points} คะแนน)</small></p>
+                ${q.question_type === 'multiple_choice' ? opts.map((o, oi) => `
+                  <div class="form-check">
+                    <input class="form-check-input" type="radio" name="q_${q.id}" value="${DOMPurify.sanitize(String(o))}" id="q_${q.id}_${oi}">
+                    <label class="form-check-label" for="q_${q.id}_${oi}">${DOMPurify.sanitize(String(o))}</label>
+                  </div>`).join('') : ''}
+                ${q.question_type === 'true_false' ? `
+                  <div class="form-check"><input class="form-check-input" type="radio" name="q_${q.id}" value="true" id="q_${q.id}_t"><label class="form-check-label" for="q_${q.id}_t">ถูก</label></div>
+                  <div class="form-check"><input class="form-check-input" type="radio" name="q_${q.id}" value="false" id="q_${q.id}_f"><label class="form-check-label" for="q_${q.id}_f">ผิด</label></div>` : ''}
+                ${q.question_type === 'short_answer' || q.question_type === 'essay' ? `
+                  <textarea class="form-control" name="q_${q.id}" rows="${q.question_type === 'essay' ? 4 : 1}" placeholder="พิมพ์คำตอบ..."></textarea>` : ''}
+              </div>
+            </div>`;
+        }).join('')}
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-primary" onclick="StudentApp.submitQuiz('${testId}', '${test.post_id}', '${startedAt}')">
+            <i class="bi bi-check-lg me-1"></i>ส่งคำตอบ
+          </button>
+          <button type="button" class="btn btn-outline-secondary" onclick="StudentApp.switchTab('quizzes')">ยกเลิก</button>
+        </div>
+      </form>`;
+
+    // Timer
+    if (timeLeft) {
+      const timerEl = document.getElementById('quiz-timer');
+      const updateTimer = () => {
+        if (timeLeft <= 0) {
+          clearInterval(this.quizTimer);
+          this.submitQuiz(testId, test.post_id, startedAt);
+          return;
+        }
+        const m = Math.floor(timeLeft / 60);
+        const s = timeLeft % 60;
+        timerEl.textContent = `${m}:${String(s).padStart(2, '0')}`;
+        timeLeft--;
+      };
+      updateTimer();
+      this.quizTimer = setInterval(updateTimer, 1000);
+    }
+  },
+
+  async submitQuiz(testId, postId, startedAt) {
+    if (this.quizTimer) { clearInterval(this.quizTimer); this.quizTimer = null; }
+
+    const form = document.getElementById('quiz-form');
+    if (!form) return;
+    const formData = new FormData(form);
+    const answers = {};
+    for (const [key, value] of formData.entries()) {
+      if (key.startsWith('q_')) {
+        answers[key.replace('q_', '')] = value;
+      }
+    }
+
+    const timeSpent = Math.round((Date.now() - new Date(startedAt).getTime()) / 1000);
+    const res = await API.post(`/api/student/quiz/${testId}/submit`, {
+      answers, started_at: startedAt, time_spent: timeSpent
+    });
+
+    if (res.success) {
+      const d = res.data;
+      const container = document.getElementById('student-content');
+      container.innerHTML = `
+        <div class="text-center py-5">
+          <i class="bi bi-check-circle text-success" style="font-size:4rem"></i>
+          <h4 class="fw-bold mt-3">ส่งคำตอบเรียบร้อย!</h4>
+          ${d.auto_graded ? `<p class="fs-5">คะแนน: <strong>${d.total_score}/${d.max_score}</strong></p>` : '<p class="text-muted">รอครูตรวจให้คะแนน</p>'}
+          <button class="btn btn-primary mt-3" onclick="StudentApp.switchTab('quizzes')">
+            <i class="bi bi-arrow-left me-1"></i>กลับ
+          </button>
+        </div>`;
+    } else {
+      this.toast(res.error || 'ส่งคำตอบไม่สำเร็จ', 'danger');
+    }
+  },
+
+  // ==================== GRADES ====================
+  async renderGrades(container) {
+    container.innerHTML = '<div class="loading"></div>';
+    const res = await API.get('/api/student/grades');
+
+    if (!res.success) {
+      container.innerHTML = `<h5 class="fw-bold mb-3"><i class="bi bi-graph-up me-2"></i>คะแนนของฉัน</h5>
+        <div class="empty-state"><i class="bi bi-graph-up d-block"></i><p>ยังไม่มีคะแนน</p></div>`;
+      return;
+    }
+
+    const { grades, scores } = res.data;
+    const hasGrades = grades && grades.length > 0;
+    const hasScores = scores && scores.length > 0;
+
+    if (!hasGrades && !hasScores) {
+      container.innerHTML = `<h5 class="fw-bold mb-3"><i class="bi bi-graph-up me-2"></i>คะแนนของฉัน</h5>
+        <div class="empty-state"><i class="bi bi-graph-up d-block"></i><p>ยังไม่มีคะแนน</p></div>`;
+      return;
+    }
+
+    container.innerHTML = `
+      <h5 class="fw-bold mb-3"><i class="bi bi-graph-up me-2"></i>คะแนนของฉัน</h5>
+      ${hasGrades ? `
+        <h6 class="fw-bold mb-2">เกรด</h6>
+        <div class="card border-0 shadow-sm mb-3"><div class="card-body p-0">
+          <div class="table-responsive"><table class="table table-hover mb-0">
+            <thead class="table-light"><tr><th>วิชา</th><th>คะแนนรวม</th><th>เกรด</th></tr></thead>
+            <tbody>${grades.map(g => `
+              <tr>
+                <td>${DOMPurify.sanitize(g.subject_name || g.subject_code || '')}</td>
+                <td>${g.total_score ?? '-'}</td>
+                <td><span class="badge bg-primary fs-6">${g.grade || '-'}</span></td>
+              </tr>`).join('')}
+            </tbody></table></div></div></div>` : ''}
+      ${hasScores ? `
+        <h6 class="fw-bold mb-2">คะแนนย่อย</h6>
+        <div class="card border-0 shadow-sm"><div class="card-body p-0">
+          <div class="table-responsive"><table class="table table-hover mb-0">
+            <thead class="table-light"><tr><th>วิชา</th><th>รายการ</th><th>คะแนน</th></tr></thead>
+            <tbody>${scores.map(s => `
+              <tr>
+                <td>${DOMPurify.sanitize(s.subject_name || '')}</td>
+                <td>${DOMPurify.sanitize(s.score_label || '')}</td>
+                <td>${s.score ?? '-'}${s.max_score ? '/' + s.max_score : ''}</td>
+              </tr>`).join('')}
+            </tbody></table></div></div></div>` : ''}`;
+  },
+
+  // ==================== NOTIFICATIONS ====================
+  async renderNotifications(container) {
+    container.innerHTML = '<div class="loading"></div>';
+    const res = await API.get('/api/student/notifications');
+
+    if (!res.success || !res.data || res.data.length === 0) {
+      container.innerHTML = `<h5 class="fw-bold mb-3"><i class="bi bi-bell me-2"></i>แจ้งเตือน</h5>
+        <div class="empty-state"><i class="bi bi-bell d-block"></i><p>ไม่มีแจ้งเตือน</p></div>`;
+      return;
+    }
+
+    container.innerHTML = `
+      <h5 class="fw-bold mb-3"><i class="bi bi-bell me-2"></i>แจ้งเตือน</h5>
+      ${res.data.map(n => `
+        <div class="card border-0 shadow-sm mb-2 ${n.is_read ? '' : 'border-start border-primary border-3'}" onclick="StudentApp.markNotifRead('${n.id}', this)">
+          <div class="card-body py-2">
+            <div class="d-flex justify-content-between">
+              <strong class="small">${DOMPurify.sanitize(n.title)}</strong>
+              <small class="text-muted">${new Date(n.created_at).toLocaleDateString('th-TH')}</small>
+            </div>
+            <p class="text-muted small mb-0">${DOMPurify.sanitize(n.message || '')}</p>
+          </div>
+        </div>`).join('')}`;
+  },
+
+  async markNotifRead(notifId, el) {
+    await API.put(`/api/student/notifications/${notifId}`);
+    el.classList.remove('border-start', 'border-primary', 'border-3');
+    this.loadNotificationBadge();
+  },
+
+  // ==================== PROFILE ====================
+  async renderProfile(container) {
+    container.innerHTML = '<div class="loading"></div>';
+    const res = await API.get('/api/student/profile');
+    const p = res.success ? res.data : {};
+
+    container.innerHTML = `
+      <h5 class="fw-bold mb-3"><i class="bi bi-person me-2"></i>โปรไฟล์</h5>
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body text-center">
+          <i class="bi bi-person-circle fs-1 text-muted d-block mb-3"></i>
+          <h5 class="fw-bold">${DOMPurify.sanitize((p.prefix || '') + (p.first_name || '') + ' ' + (p.last_name || ''))}</h5>
+          <p class="text-muted mb-1">${DOMPurify.sanitize(p.nickname ? 'ชื่อเล่น: ' + p.nickname : '')}</p>
+          <p class="text-muted mb-0">รหัสนักเรียน: ${DOMPurify.sanitize(p.student_code || p.username || '')}</p>
+        </div>
+      </div>
+      ${p.classrooms && p.classrooms.length ? `
+        <h6 class="fw-bold mb-2">ห้องเรียนของฉัน</h6>
+        ${p.classrooms.map(c => `
+          <div class="card border-0 shadow-sm mb-2">
+            <div class="card-body py-2">
+              <strong>${DOMPurify.sanitize(c.classroom_name)}</strong>
+              <small class="text-muted d-block">ปีการศึกษา ${c.academic_year} ภาคเรียนที่ ${c.semester}</small>
+            </div>
+          </div>`).join('')}` : ''}
+      <div class="mt-3">
+        <button class="btn btn-outline-danger btn-sm" id="profile-logout-btn">
+          <i class="bi bi-box-arrow-right me-1"></i>ออกจากระบบ
+        </button>
+      </div>`;
+
+    document.getElementById('profile-logout-btn').addEventListener('click', () => {
+      API.setToken(null);
+      this.showLogin();
+    });
+  },
+
   toast(message, type = 'success') {
-    // Reuse same toast logic
     let container = document.querySelector('.toast-container');
     if (!container) {
       container = document.createElement('div');
@@ -241,13 +524,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Logout
-  document.getElementById('student-logout').addEventListener('click', async (e) => {
+  // Header logout
+  document.getElementById('student-logout').addEventListener('click', (e) => {
     e.preventDefault();
-    await API.post('/api/auth/logout');
+    API.setToken(null);
     StudentApp.showLogin();
   });
 
-  // Init
+  // Notification bell
+  const notifBtn = document.getElementById('student-notif-btn');
+  if (notifBtn) {
+    notifBtn.addEventListener('click', () => StudentApp.switchTab('notifications'));
+  }
+
   StudentApp.init();
 });

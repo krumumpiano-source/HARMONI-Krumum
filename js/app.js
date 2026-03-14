@@ -501,19 +501,38 @@ App.modules['dashboard'] = {
   async render(container) {
     container.innerHTML = '<div class="loading"></div>';
 
-    const [semRes, subRes, classRes, studentRes] = await Promise.all([
+    const [semRes, subRes, classRes, studentRes, attRes, calRes, logRes, postRes] = await Promise.all([
       API.get('/api/semesters'),
       API.get('/api/subjects'),
       API.get('/api/classrooms'),
-      API.get('/api/students?limit=9999')
+      API.get('/api/students?limit=9999'),
+      API.get('/api/attendance'),
+      API.get('/api/calendar'),
+      API.get('/api/logbook'),
+      API.get('/api/subject-classrooms')
     ]);
 
     const semesters = semRes.success ? semRes.data : [];
     const subjects = subRes.success ? subRes.data : [];
     const classrooms = classRes.success ? classRes.data : [];
     const studentCount = studentRes.success ? studentRes.data.length : 0;
+    const attRecords = attRes.success ? (attRes.data || []) : [];
+    const calEvents = calRes.success ? (calRes.data || []) : [];
+    const logEntries = logRes.success ? (logRes.data || []) : [];
+    const subjectClassrooms = postRes.success ? (postRes.data || []) : [];
 
     const active = semesters.find(s => s.is_active);
+
+    // Today's attendance
+    const today = new Date().toISOString().slice(0, 10);
+    const todayAtt = attRecords.filter(a => a.date === today);
+
+    // Upcoming events (next 7 days)
+    const nextWeek = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+    const upcoming = calEvents.filter(e => e.start_date >= today && e.start_date <= nextWeek).slice(0, 5);
+
+    // Recent log entries (last 5)
+    const recentLogs = logEntries.slice(0, 5);
 
     container.innerHTML = `
       <div class="d-flex justify-content-between align-items-center mb-4">
@@ -523,7 +542,7 @@ App.modules['dashboard'] = {
 
       <div class="row g-3 mb-4">
         <div class="col-md-3 col-6">
-          <div class="card stat-card bg-primary bg-gradient text-white">
+          <div class="card stat-card bg-primary bg-gradient text-white" style="cursor:pointer" onclick="App.navigate('settings')">
             <div class="card-body">
               <div class="d-flex justify-content-between align-items-center">
                 <div>
@@ -536,7 +555,7 @@ App.modules['dashboard'] = {
           </div>
         </div>
         <div class="col-md-3 col-6">
-          <div class="card stat-card bg-success bg-gradient text-white">
+          <div class="card stat-card bg-success bg-gradient text-white" style="cursor:pointer" onclick="App.navigate('course-structure')">
             <div class="card-body">
               <div class="d-flex justify-content-between align-items-center">
                 <div>
@@ -549,7 +568,7 @@ App.modules['dashboard'] = {
           </div>
         </div>
         <div class="col-md-3 col-6">
-          <div class="card stat-card bg-info bg-gradient text-white">
+          <div class="card stat-card bg-info bg-gradient text-white" style="cursor:pointer" onclick="App.navigate('student-classroom')">
             <div class="card-body">
               <div class="d-flex justify-content-between align-items-center">
                 <div>
@@ -562,7 +581,7 @@ App.modules['dashboard'] = {
           </div>
         </div>
         <div class="col-md-3 col-6">
-          <div class="card stat-card bg-warning bg-gradient text-white">
+          <div class="card stat-card bg-warning bg-gradient text-white" style="cursor:pointer" onclick="App.navigate('student-classroom')">
             <div class="card-body">
               <div class="d-flex justify-content-between align-items-center">
                 <div>
@@ -576,6 +595,13 @@ App.modules['dashboard'] = {
         </div>
       </div>
 
+      ${todayAtt.length > 0 ? `
+      <div class="alert alert-info d-flex align-items-center mb-3">
+        <i class="bi bi-calendar-check me-2 fs-5"></i>
+        <span>วันนี้เช็คชื่อแล้ว <strong>${todayAtt.length}</strong> รายการ</span>
+        <a href="#" class="ms-auto text-decoration-none" onclick="App.navigate('attendance')">ดูทั้งหมด →</a>
+      </div>` : ''}
+
       ${!active ? `
       <div class="alert alert-warning">
         <i class="bi bi-exclamation-triangle me-2"></i>
@@ -583,7 +609,7 @@ App.modules['dashboard'] = {
       </div>` : ''}
 
       <div class="row g-3">
-        <div class="col-md-6">
+        <div class="col-md-4">
           <div class="card border-0 shadow-sm">
             <div class="card-header bg-white fw-semibold"><i class="bi bi-lightning me-2"></i>ใช้งานด่วน</div>
             <div class="card-body">
@@ -607,6 +633,41 @@ App.modules['dashboard'] = {
             </div>
           </div>
         </div>
+        <div class="col-md-4">
+          <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-semibold"><i class="bi bi-calendar-event me-2"></i>กิจกรรมที่จะถึง</div>
+            <div class="card-body">
+              ${upcoming.length > 0 ? upcoming.map(e => `
+                <div class="d-flex align-items-center py-2 border-bottom">
+                  <div class="me-3 text-center" style="min-width:40px">
+                    <div class="fw-bold text-primary">${new Date(e.start_date).getDate()}</div>
+                    <small class="text-muted">${new Date(e.start_date).toLocaleDateString('th-TH', {month:'short'})}</small>
+                  </div>
+                  <div>
+                    <strong class="small">${DOMPurify.sanitize(e.title)}</strong>
+                    ${e.event_type ? `<br><span class="badge bg-light text-dark">${DOMPurify.sanitize(e.event_type)}</span>` : ''}
+                  </div>
+                </div>`).join('') : '<p class="text-muted small mb-0">ไม่มีกิจกรรมใน 7 วัน</p>'}
+              <a href="#" class="btn btn-sm btn-outline-primary mt-2 w-100" onclick="App.navigate('calendar')">ดูปฏิทิน</a>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-semibold"><i class="bi bi-journal-text me-2"></i>บันทึกล่าสุด</div>
+            <div class="card-body">
+              ${recentLogs.length > 0 ? recentLogs.map(l => `
+                <div class="py-2 border-bottom">
+                  <strong class="small">${DOMPurify.sanitize(l.title || l.category || '')}</strong>
+                  <br><small class="text-muted">${l.log_date ? new Date(l.log_date).toLocaleDateString('th-TH') : ''} ${l.hours ? '(' + l.hours + ' ชม.)' : ''}</small>
+                </div>`).join('') : '<p class="text-muted small mb-0">ยังไม่มีบันทึก</p>'}
+              <a href="#" class="btn btn-sm btn-outline-primary mt-2 w-100" onclick="App.navigate('logbook')">ดูสมุดบันทึก</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3 mt-1">
         <div class="col-md-6">
           <div class="card border-0 shadow-sm">
             <div class="card-header bg-white fw-semibold"><i class="bi bi-book me-2"></i>วิชาที่สอน</div>
@@ -619,6 +680,21 @@ App.modules['dashboard'] = {
                   </div>
                   <span class="badge bg-light text-dark">${s.subject_type === 'regular' ? 'พื้นฐาน' : s.subject_type === 'elective' ? 'เพิ่มเติม' : s.subject_type === 'activity' ? 'กิจกรรม' : s.subject_type}</span>
                 </div>`).join('') : '<p class="text-muted mb-0">ยังไม่มีวิชา</p>'}
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-semibold"><i class="bi bi-building me-2"></i>ห้องเรียนที่สอน</div>
+            <div class="card-body">
+              ${subjectClassrooms.length > 0 ? subjectClassrooms.slice(0, 10).map(sc => `
+                <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                  <div>
+                    <strong>${DOMPurify.sanitize(sc.subject_name || sc.subject_code || '')}</strong>
+                    <span class="text-muted ms-2">${DOMPurify.sanitize(sc.classroom_name || '')}</span>
+                  </div>
+                  <span class="badge bg-primary">${sc.student_count || 0} คน</span>
+                </div>`).join('') : '<p class="text-muted mb-0">ยังไม่มีห้องเรียน</p>'}
             </div>
           </div>
         </div>

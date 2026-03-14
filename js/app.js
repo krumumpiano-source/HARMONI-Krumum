@@ -1380,3 +1380,144 @@ App.modules['post-lesson'] = {
     }
   }
 };
+
+// ==================== Register Schedule Module ====================
+
+App.modules['schedule'] = {
+  dayNames: ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์'],
+  periods: [1, 2, 3, 4, 5, 6, 7, 8],
+
+  async render(container) {
+    container.innerHTML = '<div class="loading"></div>';
+
+    const [semRes, subRes, clsRes] = await Promise.all([
+      API.get('/api/semesters'),
+      API.get('/api/subjects'),
+      API.get('/api/classrooms')
+    ]);
+
+    const semesters = semRes.success ? semRes.data : [];
+    const activeSem = semesters.find(s => s.is_active);
+    this.subjects = subRes.success ? subRes.data : [];
+    this.classrooms = clsRes.success ? clsRes.data : [];
+    this.activeSemId = activeSem?.id || '';
+
+    if (!activeSem) {
+      container.innerHTML = '<div class="alert alert-warning">ไม่พบภาคเรียนที่เปิดใช้งาน กรุณาตั้งค่าภาคเรียนก่อน</div>';
+      return;
+    }
+
+    const schedRes = await API.get(`/api/schedule?semester_id=${activeSem.id}`);
+    this.slots = schedRes.success ? schedRes.data : [];
+
+    container.innerHTML = `
+      <h4 class="fw-bold mb-4"><i class="bi bi-calendar-week me-2 text-primary"></i>ตารางสอน — ${activeSem.semester}/${activeSem.academic_year}</h4>
+      <p class="text-muted small mb-3"><i class="bi bi-info-circle me-1"></i>กดช่องว่างเพื่อเพิ่มคาบ / กดช่องที่มีวิชาเพื่อลบ</p>
+      <div class="table-responsive">
+        <table class="table table-bordered text-center align-middle mb-0" id="schedule-grid">
+          <thead class="table-primary">
+            <tr>
+              <th style="width:90px">วัน / คาบ</th>
+              ${this.periods.map(p => `<th style="min-width:100px">คาบ ${p}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${this.dayNames.map((day, idx) => `
+            <tr>
+              <td class="fw-semibold bg-light">${day}</td>
+              ${this.periods.map(p => {
+                const slot = this.slots.find(s => s.day_of_week === idx + 1 && s.period === p);
+                if (slot) {
+                  return `<td class="schedule-slot filled" data-id="${slot.id}" role="button" style="cursor:pointer;background:#e8f5e9">
+                    <div class="fw-semibold small">${DOMPurify.sanitize(slot.subject_code)}</div>
+                    <div class="text-muted" style="font-size:0.7rem">${DOMPurify.sanitize(slot.classroom_name)}</div>
+                  </td>`;
+                }
+                return `<td class="schedule-slot empty" data-day="${idx + 1}" data-period="${p}" role="button" style="cursor:pointer" title="กดเพื่อเพิ่ม">
+                  <span class="text-muted" style="font-size:0.75rem">—</span>
+                </td>`;
+              }).join('')}
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Add Modal -->
+      <div class="modal fade" id="scheduleModal" tabindex="-1">
+        <div class="modal-dialog modal-sm">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h6 class="modal-title">เพิ่มคาบเรียน</h6>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <div class="mb-2" id="sched-modal-info"></div>
+              <div class="mb-2">
+                <label class="form-label small mb-1">วิชา</label>
+                <select class="form-select" id="sched-subject">
+                  ${this.subjects.map(s => `<option value="${s.id}">${DOMPurify.sanitize(s.code)} ${DOMPurify.sanitize(s.name)}</option>`).join('')}
+                </select>
+              </div>
+              <div class="mb-2">
+                <label class="form-label small mb-1">ห้องเรียน</label>
+                <select class="form-select" id="sched-classroom">
+                  ${this.classrooms.map(c => `<option value="${c.id}">${DOMPurify.sanitize(c.name)}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-primary btn-sm" id="sched-confirm"><i class="bi bi-check-lg me-1"></i>เพิ่ม</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+
+    // Event: empty cell -> open modal
+    container.querySelectorAll('.schedule-slot.empty').forEach(td => {
+      td.addEventListener('click', () => this.openAddModal(parseInt(td.dataset.day), parseInt(td.dataset.period)));
+    });
+    // Event: filled cell -> delete
+    container.querySelectorAll('.schedule-slot.filled').forEach(td => {
+      td.addEventListener('click', () => this.removeSlot(td.dataset.id));
+    });
+    // Confirm add
+    document.getElementById('sched-confirm').addEventListener('click', () => this.confirmAdd());
+  },
+
+  openAddModal(day, period) {
+    this.pendingDay = day;
+    this.pendingPeriod = period;
+    document.getElementById('sched-modal-info').innerHTML =
+      `<span class="badge bg-info">${this.dayNames[day - 1]}</span> <span class="badge bg-secondary">คาบ ${period}</span>`;
+    const modal = new bootstrap.Modal(document.getElementById('scheduleModal'));
+    modal.show();
+  },
+
+  async confirmAdd() {
+    const res = await API.post('/api/schedule', {
+      semester_id: this.activeSemId,
+      subject_id: document.getElementById('sched-subject').value,
+      classroom_id: document.getElementById('sched-classroom').value,
+      day_of_week: this.pendingDay,
+      period: this.pendingPeriod
+    });
+    bootstrap.Modal.getInstance(document.getElementById('scheduleModal'))?.hide();
+    if (res.success) {
+      App.toast('เพิ่มคาบเรียนแล้ว');
+      App.navigate('schedule');
+    } else {
+      App.toast(res.error || 'เพิ่มไม่สำเร็จ', 'danger');
+    }
+  },
+
+  async removeSlot(id) {
+    if (!confirm('ลบคาบนี้ออกจากตารางสอน?')) return;
+    const res = await API.del(`/api/schedule/${id}`);
+    if (res.success) {
+      App.toast('ลบคาบแล้ว');
+      App.navigate('schedule');
+    } else {
+      App.toast(res.error || 'ลบไม่สำเร็จ', 'danger');
+    }
+  }
+};

@@ -1199,6 +1199,9 @@ App.modules['attendance'] = {
         </div>
         <div class="card-footer bg-white text-end">
           <span class="me-3 small text-muted" id="att-summary"></span>
+          <button class="btn btn-outline-secondary btn-sm me-2" id="att-export">
+            <i class="bi bi-download me-1"></i>ส่งออก
+          </button>
           <button class="btn btn-primary" id="att-save">
             <i class="bi bi-check-lg me-1"></i>บันทึกเช็คชื่อ
           </button>
@@ -1222,6 +1225,22 @@ App.modules['attendance'] = {
 
     // Save
     document.getElementById('att-save').addEventListener('click', () => this.save());
+
+    // Export
+    document.getElementById('att-export').addEventListener('click', () => {
+      const rows = [];
+      document.querySelectorAll('tr[data-student-id]').forEach(row => {
+        const name = row.querySelector('td:nth-child(2) strong')?.textContent || '';
+        const activeBtn = row.querySelector('.att-status-btn.btn-success, .att-status-btn.btn-warning, .att-status-btn.btn-danger, .att-status-btn.btn-info');
+        const status = activeBtn ? activeBtn.textContent.trim() : '-';
+        rows.push({ name, status });
+      });
+      const date = document.getElementById('att-date').value;
+      Exporter.showExportDialog(`เช็คชื่อ ${date}`, rows, {
+        headers: ['name', 'status'],
+        headerLabels: ['ชื่อ-สกุล', 'สถานะ']
+      });
+    });
 
     this.updateSummary();
   },
@@ -2502,11 +2521,27 @@ App.modules['scores'] = {
         <div class="card-footer bg-white">
           <button class="btn btn-primary" id="sc2-save"><i class="bi bi-check-lg me-1"></i>บันทึกคะแนน</button>
           <button class="btn btn-outline-info ms-2" id="sc2-view-summary"><i class="bi bi-bar-chart me-1"></i>ดูสรุป</button>
+          <button class="btn btn-outline-secondary ms-2" id="sc2-export"><i class="bi bi-download me-1"></i>ส่งออก</button>
         </div>
       </div>`;
 
     document.getElementById('sc2-save').addEventListener('click', () => this.saveScores());
     document.getElementById('sc2-view-summary').addEventListener('click', () => this.viewSummary());
+    document.getElementById('sc2-export').addEventListener('click', () => {
+      const rows = [];
+      document.querySelectorAll('.score-input').forEach(inp => {
+        const tr = inp.closest('tr');
+        const code = tr.querySelector('td:first-child')?.textContent || '';
+        const name = tr.querySelector('td:nth-child(2)')?.textContent || '';
+        const score = inp.value || '';
+        rows.push({ code, name, score });
+      });
+      const type = document.getElementById('sc2-type').value;
+      Exporter.showExportDialog(`คะแนน${type}`, rows, {
+        headers: ['code', 'name', 'score'],
+        headerLabels: ['รหัส', 'ชื่อ-สกุล', 'คะแนน']
+      });
+    });
   },
 
   async saveScores() {
@@ -2711,13 +2746,18 @@ App.modules['grade-result'] = {
             </tbody>
           </table>
         </div>
-        <div class="card-footer bg-white">
+        <div class="card-footer bg-white d-flex align-items-center">
           <button class="btn btn-success" id="gr-save"><i class="bi bi-check-lg me-1"></i>บันทึกเกรด</button>
+          <button class="btn btn-outline-secondary ms-2" id="gr-export"><i class="bi bi-download me-1"></i>ส่งออก</button>
           <span class="text-muted small ms-3">เกณฑ์: 4=80+ 3.5=75+ 3=70+ 2.5=65+ 2=60+ 1.5=55+ 1=50+ 0=ต่ำกว่า50</span>
         </div>
       </div>`;
 
     document.getElementById('gr-save').addEventListener('click', () => this.saveGrades());
+    document.getElementById('gr-export').addEventListener('click', () => {
+      const data = this.gradeRecords.map(r => [r.student_code, `${r.first_name} ${r.last_name}`, `${r.total_score}/${r.total_max}`, `${r.pct}%`, r.grade]);
+      Exporter.showExportDialog('ผลการเรียน', data, { headers: ['code','name','score','pct','grade'], headerLabels: ['รหัส','ชื่อ-สกุล','คะแนนรวม','%','เกรด'] });
+    });
   },
 
   async saveGrades() {
@@ -3264,7 +3304,10 @@ App.modules['logbook'] = {
     area.innerHTML = `
       <div class="d-flex justify-content-between align-items-center mb-4">
         <h4 class="fw-bold mb-0"><i class="bi bi-journal me-2"></i>สมุดบันทึก</h4>
-        <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#log-form"><i class="bi bi-plus-lg me-1"></i>เพิ่มบันทึก</button>
+        <div>
+          <button class="btn btn-outline-secondary me-1" id="lg-export"><i class="bi bi-download me-1"></i>ส่งออก</button>
+          <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#log-form"><i class="bi bi-plus-lg me-1"></i>เพิ่มบันทึก</button>
+        </div>
       </div>
       ${summary.length > 0 ? `
       <div class="row g-2 mb-3">
@@ -3300,6 +3343,11 @@ App.modules['logbook'] = {
             <button class="btn btn-sm btn-outline-danger" data-del="${e.id}"><i class="bi bi-trash"></i></button>
           </div></div>`).join('')}
       </div>`;
+
+    document.getElementById('lg-export')?.addEventListener('click', () => {
+      const data = entries.map(e => [e.entry_date || '', e.category, e.hours, e.description || '']);
+      Exporter.showExportDialog('สมุดบันทึก', data, { headers: ['date','category','hours','desc'], headerLabels: ['วันที่','หมวด','ชั่วโมง','รายละเอียด'] });
+    });
 
     document.getElementById('lg-save')?.addEventListener('click', async () => {
       const res = await API.post('/api/logbook', {
@@ -3338,6 +3386,7 @@ App.modules['awards'] = {
       <div class="d-flex justify-content-between align-items-center mb-4">
         <h4 class="fw-bold mb-0"><i class="bi bi-trophy me-2"></i>เกียรติบัตร/รางวัล</h4>
         <div>
+          <button class="btn btn-outline-secondary me-1" id="aw-export"><i class="bi bi-download me-1"></i>ส่งออก</button>
           <button class="btn btn-outline-secondary me-1" data-bs-toggle="collapse" data-bs-target="#aw-type-form"><i class="bi bi-tag me-1"></i>ประเภท</button>
           <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#aw-form"><i class="bi bi-plus-lg me-1"></i>เพิ่มรางวัล</button>
         </div>
@@ -3382,6 +3431,12 @@ App.modules['awards'] = {
             </div>
           </div></div>`).join('')}
       </div>`;
+
+    document.getElementById('aw-export')?.addEventListener('click', () => {
+      const sLabels = { planning: 'วางแผน', applied: 'สมัครแล้ว', waiting: 'รอผล', won: 'ได้รับ', not_won: 'ไม่ได้รับ' };
+      const data = awards.map(a => [a.type_name || 'ไม่ระบุ', a.academic_year, sLabels[a.status] || a.status, a.notes || '']);
+      Exporter.showExportDialog('เกียรติบัตร/รางวัล', data, { headers: ['name','year','status','notes'], headerLabels: ['ชื่อรางวัล','ปี พ.ศ.','สถานะ','หมายเหตุ'] });
+    });
 
     document.getElementById('awt-save')?.addEventListener('click', async () => {
       const res = await API.post('/api/awards/types', {
@@ -3494,7 +3549,10 @@ App.modules['home-visit'] = {
     area.innerHTML = `
       <div class="d-flex justify-content-between align-items-center mb-4">
         <h4 class="fw-bold mb-0"><i class="bi bi-geo-alt me-2"></i>เยี่ยมบ้าน</h4>
-        <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#hv-form"><i class="bi bi-plus-lg me-1"></i>เพิ่มบันทึก</button>
+        <div>
+          <button class="btn btn-outline-secondary me-1" id="hv-export"><i class="bi bi-download me-1"></i>ส่งออก</button>
+          <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#hv-form"><i class="bi bi-plus-lg me-1"></i>เพิ่มบันทึก</button>
+        </div>
       </div>
       <div class="collapse mb-3" id="hv-form">
         <div class="card border-0 shadow-sm"><div class="card-body">
@@ -3535,6 +3593,12 @@ App.modules['home-visit'] = {
             <button class="btn btn-sm btn-outline-danger" data-del="${v.id}"><i class="bi bi-trash"></i></button>
           </div></div>`).join('')}
       </div>`;
+
+    document.getElementById('hv-export')?.addEventListener('click', () => {
+      const typeLabels = { in_person: 'เยี่ยมจริง', phone: 'โทรศัพท์', online: 'ออนไลน์' };
+      const data = visits.map(v => [v.student_code, `${v.first_name} ${v.last_name}`, v.visit_date || '', typeLabels[v.visit_type] || v.visit_type, v.family_present || '']);
+      Exporter.showExportDialog('เยี่ยมบ้าน', data, { headers: ['code','name','date','type','family'], headerLabels: ['รหัส','ชื่อ-สกุล','วันที่','รูปแบบ','ผู้ปกครอง'] });
+    });
 
     // Load students when classroom selected
     document.getElementById('hv-cls')?.addEventListener('change', async (e) => {
@@ -3584,7 +3648,10 @@ App.modules['sdq'] = {
     area.innerHTML = `
       <div class="d-flex justify-content-between align-items-center mb-4">
         <h4 class="fw-bold mb-0"><i class="bi bi-heart-pulse me-2"></i>SDQ</h4>
-        <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#sdq-form"><i class="bi bi-plus-lg me-1"></i>เพิ่มแบบคัดกรอง</button>
+        <div>
+          <button class="btn btn-outline-secondary me-1" id="sdq-export"><i class="bi bi-download me-1"></i>ส่งออก</button>
+          <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#sdq-form"><i class="bi bi-plus-lg me-1"></i>เพิ่มแบบคัดกรอง</button>
+        </div>
       </div>
       <div class="collapse mb-3" id="sdq-form">
         <div class="card border-0 shadow-sm"><div class="card-body">
@@ -3622,6 +3689,11 @@ App.modules['sdq'] = {
             <button class="btn btn-sm btn-outline-danger" data-del="${s.id}"><i class="bi bi-trash"></i></button>
           </div></div>`).join('')}
       </div>`;
+
+    document.getElementById('sdq-export')?.addEventListener('click', () => {
+      const data = screenings.map(s => [s.student_code, `${s.first_name} ${s.last_name}`, s.screen_date || '', s.total_difficulty, s.risk_level || '']);
+      Exporter.showExportDialog('SDQ', data, { headers: ['code','name','date','total','risk'], headerLabels: ['รหัส','ชื่อ-สกุล','วันที่','คะแนนรวม','ระดับ'] });
+    });
 
     document.getElementById('sdq-cls')?.addEventListener('change', async (e) => {
       const sel = document.getElementById('sdq-student');
@@ -3673,7 +3745,10 @@ App.modules['care-record'] = {
     area.innerHTML = `
       <div class="d-flex justify-content-between align-items-center mb-4">
         <h4 class="fw-bold mb-0"><i class="bi bi-clipboard2-heart me-2"></i>บันทึกการดูแล</h4>
-        <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#care-form"><i class="bi bi-plus-lg me-1"></i>เพิ่มบันทึก</button>
+        <div>
+          <button class="btn btn-outline-secondary me-1" id="cr-export"><i class="bi bi-download me-1"></i>ส่งออก</button>
+          <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#care-form"><i class="bi bi-plus-lg me-1"></i>เพิ่มบันทึก</button>
+        </div>
       </div>
       <div class="collapse mb-3" id="care-form">
         <div class="card border-0 shadow-sm"><div class="card-body">
@@ -3709,6 +3784,11 @@ App.modules['care-record'] = {
             <button class="btn btn-sm btn-outline-danger" data-del="${r.id}"><i class="bi bi-trash"></i></button>
           </div></div>`).join('')}
       </div>`;
+
+    document.getElementById('cr-export')?.addEventListener('click', () => {
+      const data = records.map(r => [r.student_code, `${r.first_name} ${r.last_name}`, `ขั้นที่ ${r.care_step}`, r.record_date || '', r.description || '']);
+      Exporter.showExportDialog('บันทึกการดูแล', data, { headers: ['code','name','step','date','desc'], headerLabels: ['รหัส','ชื่อ-สกุล','ขั้นตอน','วันที่','รายละเอียด'] });
+    });
 
     document.getElementById('cr-cls')?.addEventListener('change', async (e) => {
       const sel = document.getElementById('cr-student');

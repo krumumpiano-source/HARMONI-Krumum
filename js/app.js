@@ -138,6 +138,7 @@ const App = {
       'dashboard': 'แดชบอร์ด',
       'settings': 'ตั้งค่าเริ่มต้น',
       'admin': 'จัดการครู',
+      'schedule': 'ตารางสอน/คิวงาน',
       'course-structure': 'โครงสร้างรายวิชา',
       'lesson-plan': 'แผนการจัดการเรียนรู้',
       'post-lesson': 'บันทึกหลังสอน',
@@ -146,14 +147,14 @@ const App = {
       'test': 'แบบทดสอบ',
       'scores': 'คะแนน',
       'grade-result': 'ผลการเรียน/เกรด',
-      'student-classroom': 'ห้องเรียนออนไลน์',
+      'student-classroom': 'สั่งงาน/ตรวจงาน',
       'research': 'วิจัยในชั้นเรียน',
       'pa': 'PA (วPA)',
       'sar': 'SAR',
       'innovation': 'นวัตกรรม',
       'plc': 'PLC',
       'logbook': 'สมุดบันทึก',
-      'portfolio': 'แฟ้มสะสมผลงาน',
+      'portfolio': 'เก็บผลงาน',
       'awards': 'เกียรติบัตร/รางวัล',
       'attendance': 'เช็คชื่อ',
       'homeroom': 'ครูที่ปรึกษา',
@@ -552,20 +553,23 @@ App.modules['dashboard'] = {
       <div class="row g-3">
         <div class="col-md-6">
           <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white fw-semibold"><i class="bi bi-lightning me-2"></i>เข้าถึงด่วน</div>
+            <div class="card-header bg-white fw-semibold"><i class="bi bi-lightning me-2"></i>ใช้งานด่วน</div>
             <div class="card-body">
               <div class="d-grid gap-2">
-                <button class="btn btn-outline-primary text-start" onclick="App.navigate('lesson-plan')">
-                  <i class="bi bi-journal-text me-2"></i>เขียนแผนการสอน
-                </button>
-                <button class="btn btn-outline-primary text-start" onclick="App.navigate('scores')">
-                  <i class="bi bi-graph-up me-2"></i>บันทึกคะแนน
-                </button>
                 <button class="btn btn-outline-primary text-start" onclick="App.navigate('attendance')">
                   <i class="bi bi-calendar-check me-2"></i>เช็คชื่อ
                 </button>
+                <button class="btn btn-outline-primary text-start" onclick="App.navigate('schedule')">
+                  <i class="bi bi-clock-history me-2"></i>ตารางสอน/คิวงาน
+                </button>
                 <button class="btn btn-outline-primary text-start" onclick="App.navigate('student-classroom')">
-                  <i class="bi bi-mortarboard me-2"></i>โพสต์งานในห้องเรียน
+                  <i class="bi bi-send me-2"></i>สั่งงาน/ตรวจงาน
+                </button>
+                <button class="btn btn-outline-primary text-start" onclick="App.navigate('post-lesson')">
+                  <i class="bi bi-chat-square-text me-2"></i>บันทึกหลังสอน
+                </button>
+                <button class="btn btn-outline-primary text-start" onclick="App.navigate('portfolio')">
+                  <i class="bi bi-briefcase me-2"></i>เก็บผลงาน
                 </button>
               </div>
             </div>

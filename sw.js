@@ -1,5 +1,5 @@
-// HARMONI Service Worker — Cache-first for static, Network-first for API
-const CACHE_NAME = 'harmoni-v1';
+// HARMONI Service Worker — Network-first for local, Cache-first for CDN
+const CACHE_NAME = 'harmoni-v2';
 const STATIC_ASSETS = [
   '/',
   '/teacher.html',
@@ -19,12 +19,11 @@ const CDN_ASSETS = [
   'https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js'
 ];
 
-// Install — cache static assets
+// Install — cache static assets & skip waiting immediately
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache =>
       cache.addAll([...STATIC_ASSETS, ...CDN_ASSETS]).catch(() => {
-        // If some CDN assets fail, still install
         return cache.addAll(STATIC_ASSETS);
       })
     )
@@ -32,7 +31,7 @@ self.addEventListener('install', event => {
   self.skipWaiting();
 });
 
-// Activate — clean old caches
+// Activate — clean ALL old caches
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
@@ -51,7 +50,6 @@ self.addEventListener('fetch', event => {
     event.respondWith(
       fetch(event.request)
         .then(response => {
-          // Cache successful GET responses
           if (event.request.method === 'GET' && response.ok) {
             const clone = response.clone();
             caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
@@ -63,19 +61,34 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Static assets — Cache-first, fall back to network
+  // CDN assets — Cache-first (they are versioned/immutable)
+  if (url.hostname.includes('cdn.jsdelivr.net') || url.hostname.includes('googleapis.com') || url.hostname.includes('gstatic.com')) {
+    event.respondWith(
+      caches.match(event.request).then(cached => {
+        if (cached) return cached;
+        return fetch(event.request).then(response => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+          }
+          return response;
+        });
+      })
+    );
+    return;
+  }
+
+  // Local static assets — Network-first, fall back to cache
   event.respondWith(
-    caches.match(event.request).then(cached => {
-      if (cached) return cached;
-      return fetch(event.request).then(response => {
-        // Cache new static resources
-        if (response.ok && (url.origin === self.location.origin || url.hostname.includes('cdn.jsdelivr.net') || url.hostname.includes('googleapis.com'))) {
+    fetch(event.request)
+      .then(response => {
+        if (response.ok) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
         }
         return response;
-      });
-    })
+      })
+      .catch(() => caches.match(event.request))
   );
 });
 

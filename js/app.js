@@ -1521,3 +1521,219 @@ App.modules['schedule'] = {
     }
   }
 };
+
+// ==================== Register Student-Classroom Module ====================
+
+App.modules['student-classroom'] = {
+  async render(container) {
+    container.innerHTML = '<div class="loading"></div>';
+
+    const [semRes, subRes, clsRes] = await Promise.all([
+      API.get('/api/semesters'),
+      API.get('/api/subjects'),
+      API.get('/api/classrooms')
+    ]);
+
+    const semesters = semRes.success ? semRes.data : [];
+    const activeSem = semesters.find(s => s.is_active);
+    const subjects = subRes.success ? subRes.data : [];
+    const classrooms = clsRes.success ? clsRes.data : [];
+
+    if (!activeSem) {
+      container.innerHTML = '<div class="alert alert-warning">ไม่พบภาคเรียนที่เปิดใช้งาน</div>';
+      return;
+    }
+
+    this.activeSemId = activeSem.id;
+
+    container.innerHTML = `
+      <h4 class="fw-bold mb-4"><i class="bi bi-clipboard-check me-2 text-primary"></i>สั่งงาน / ตรวจงาน</h4>
+
+      <!-- Select classroom + subject -->
+      <div class="row g-2 mb-4">
+        <div class="col-md-4">
+          <select class="form-select" id="sc-classroom">
+            <option value="">— เลือกห้องเรียน —</option>
+            ${classrooms.map(c => `<option value="${c.id}">${DOMPurify.sanitize(c.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <select class="form-select" id="sc-subject">
+            <option value="">— เลือกวิชา —</option>
+            ${subjects.map(s => `<option value="${s.id}">${DOMPurify.sanitize(s.code)} ${DOMPurify.sanitize(s.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <button class="btn btn-primary w-100" id="sc-load"><i class="bi bi-search me-1"></i>ดูงาน</button>
+        </div>
+      </div>
+
+      <!-- Post creation form (hidden by default) -->
+      <div class="card border-0 shadow-sm mb-4 d-none" id="sc-form-card">
+        <div class="card-header bg-white fw-semibold"><i class="bi bi-plus-circle me-2"></i>สร้างงานใหม่</div>
+        <div class="card-body">
+          <div class="row g-2 mb-2">
+            <div class="col-md-4">
+              <label class="form-label small mb-1">ประเภท</label>
+              <select class="form-select" id="sc-type">
+                <option value="assignment">สั่งงาน</option>
+                <option value="announcement">ประกาศ</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small mb-1">กำหนดส่ง</label>
+              <input type="date" class="form-control" id="sc-due">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small mb-1">คะแนนเต็ม</label>
+              <input type="number" class="form-control" id="sc-max-score" placeholder="—">
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small mb-1">หัวข้อ</label>
+            <input type="text" class="form-control" id="sc-title" placeholder="เช่น ใบงานที่ 1 จังหวะดนตรี">
+          </div>
+          <div class="mb-2">
+            <label class="form-label small mb-1">รายละเอียด</label>
+            <textarea class="form-control" id="sc-content" rows="2" placeholder="คำอธิบาย..."></textarea>
+          </div>
+          <button class="btn btn-primary btn-sm" id="sc-post-btn"><i class="bi bi-send me-1"></i>โพสต์</button>
+        </div>
+      </div>
+
+      <!-- Posts list -->
+      <div id="sc-posts-area"></div>`;
+
+    document.getElementById('sc-load').addEventListener('click', () => this.loadPosts());
+    document.getElementById('sc-post-btn').addEventListener('click', () => this.createPost());
+  },
+
+  async loadPosts() {
+    const classroomId = document.getElementById('sc-classroom').value;
+    const subjectId = document.getElementById('sc-subject').value;
+    if (!classroomId || !subjectId) { App.toast('เลือกห้องเรียนและวิชาก่อน', 'warning'); return; }
+
+    document.getElementById('sc-form-card').classList.remove('d-none');
+    const area = document.getElementById('sc-posts-area');
+    area.innerHTML = '<div class="loading"></div>';
+
+    const res = await API.get(`/api/student-classroom/posts?classroom_id=${classroomId}&subject_id=${subjectId}`);
+    const posts = res.success ? res.data : [];
+
+    if (posts.length === 0) {
+      area.innerHTML = '<p class="text-muted">ยังไม่มีงานสำหรับห้องนี้ — สร้างงานใหม่ด้านบน</p>';
+      return;
+    }
+
+    area.innerHTML = posts.map(p => {
+      const typeLabel = p.post_type === 'assignment' ? '<span class="badge bg-warning text-dark">สั่งงาน</span>' : '<span class="badge bg-info">ประกาศ</span>';
+      const score = p.max_score ? `<span class="badge bg-secondary">${p.max_score} คะแนน</span>` : '';
+      const due = p.due_date ? `<span class="text-muted small ms-2"><i class="bi bi-calendar me-1"></i>ส่ง ${p.due_date}</span>` : '';
+      const subCount = p.post_type === 'assignment' ? `<span class="small text-muted ms-2">ส่งแล้ว ${p.submission_count || 0}/${p.total_students || '?'}</span>` : '';
+      return `
+      <div class="card border-0 shadow-sm mb-2">
+        <div class="card-body p-3">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              ${typeLabel} ${score}
+              <strong class="ms-2">${DOMPurify.sanitize(p.title)}</strong>
+              ${due} ${subCount}
+            </div>
+            <div>
+              ${p.post_type === 'assignment' ? `<button class="btn btn-sm btn-outline-primary me-1" onclick="App.modules['student-classroom'].viewSubs('${p.id}','${DOMPurify.sanitize(p.title)}')"><i class="bi bi-people"></i></button>` : ''}
+              <button class="btn btn-sm btn-outline-danger" onclick="App.modules['student-classroom'].deletePost('${p.id}')"><i class="bi bi-trash"></i></button>
+            </div>
+          </div>
+          ${p.content ? `<div class="small mt-2 text-muted">${DOMPurify.sanitize(p.content)}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+  },
+
+  async createPost() {
+    const title = document.getElementById('sc-title').value.trim();
+    if (!title) { App.toast('กรุณากรอกหัวข้อ', 'warning'); return; }
+
+    const res = await API.post('/api/student-classroom/posts', {
+      classroom_id: document.getElementById('sc-classroom').value,
+      subject_id: document.getElementById('sc-subject').value,
+      semester_id: this.activeSemId,
+      post_type: document.getElementById('sc-type').value,
+      title,
+      content: document.getElementById('sc-content').value.trim(),
+      due_date: document.getElementById('sc-due').value || null,
+      max_score: document.getElementById('sc-max-score').value ? parseFloat(document.getElementById('sc-max-score').value) : null
+    });
+
+    if (res.success) {
+      App.toast('สร้างงานสำเร็จ!');
+      document.getElementById('sc-title').value = '';
+      document.getElementById('sc-content').value = '';
+      document.getElementById('sc-due').value = '';
+      document.getElementById('sc-max-score').value = '';
+      this.loadPosts();
+    } else {
+      App.toast(res.error || 'สร้างไม่สำเร็จ', 'danger');
+    }
+  },
+
+  async viewSubs(postId, title) {
+    const area = document.getElementById('sc-posts-area');
+    area.innerHTML = '<div class="loading"></div>';
+
+    const res = await API.get(`/api/student-classroom/submissions/${postId}`);
+    const subs = res.success ? res.data : [];
+
+    area.innerHTML = `
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+          <span class="fw-semibold"><i class="bi bi-people me-2"></i>ผลงานส่ง — ${DOMPurify.sanitize(title)}</span>
+          <button class="btn btn-sm btn-outline-secondary" onclick="App.modules['student-classroom'].loadPosts()"><i class="bi bi-arrow-left me-1"></i>กลับ</button>
+        </div>
+        <div class="card-body">
+          ${subs.length === 0 ? '<p class="text-muted mb-0">ยังไม่มีนักเรียนส่งงาน</p>' :
+          `<div class="table-responsive"><table class="table table-sm align-middle mb-0">
+            <thead><tr><th>รหัส</th><th>ชื่อ</th><th>สถานะ</th><th>คะแนน</th><th>จัดการ</th></tr></thead>
+            <tbody>
+            ${subs.map(s => `
+              <tr>
+                <td>${DOMPurify.sanitize(s.student_code)}</td>
+                <td>${DOMPurify.sanitize(s.first_name)} ${DOMPurify.sanitize(s.last_name)}</td>
+                <td><span class="badge ${s.status === 'graded' ? 'bg-success' : 'bg-warning text-dark'}">${s.status === 'graded' ? 'ตรวจแล้ว' : 'รอตรวจ'}</span></td>
+                <td>
+                  <input type="number" class="form-control form-control-sm" style="width:70px;display:inline-block" value="${s.score ?? ''}" id="score-${s.id}">
+                </td>
+                <td>
+                  <button class="btn btn-sm btn-outline-success" onclick="App.modules['student-classroom'].grade('${s.id}')"><i class="bi bi-check-lg"></i></button>
+                </td>
+              </tr>`).join('')}
+            </tbody>
+          </table></div>`}
+        </div>
+      </div>`;
+  },
+
+  async grade(submissionId) {
+    const scoreEl = document.getElementById(`score-${submissionId}`);
+    const res = await API.post('/api/student-classroom/grade', {
+      submission_id: submissionId,
+      score: scoreEl ? parseFloat(scoreEl.value) : null
+    });
+    if (res.success) {
+      App.toast('ให้คะแนนแล้ว');
+    } else {
+      App.toast(res.error || 'ให้คะแนนไม่สำเร็จ', 'danger');
+    }
+  },
+
+  async deletePost(postId) {
+    if (!confirm('ลบงานนี้?')) return;
+    const res = await API.del(`/api/student-classroom/posts/${postId}`);
+    if (res.success) {
+      App.toast('ลบงานแล้ว');
+      this.loadPosts();
+    } else {
+      App.toast(res.error || 'ลบไม่สำเร็จ', 'danger');
+    }
+  }
+};

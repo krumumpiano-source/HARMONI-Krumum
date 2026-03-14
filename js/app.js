@@ -64,6 +64,19 @@ const App = {
 
     // Navigate to dashboard
     this.navigate('dashboard');
+
+    // Load notification badge
+    this.loadNotifBadge();
+  },
+
+  async loadNotifBadge() {
+    const res = await API.get('/api/notifications?unread=1');
+    const badge = document.getElementById('notif-badge');
+    if (badge && res.success) {
+      const count = res.data.length;
+      badge.textContent = count;
+      badge.classList.toggle('d-none', !count);
+    }
   },
 
   async loadPendingBadge() {
@@ -162,6 +175,9 @@ const App = {
       'home-visit': 'เยี่ยมบ้าน',
       'sdq': 'SDQ',
       'care-record': 'บันทึกการดูแล',
+      'early-warning': 'เตือนภัยล่วงหน้า',
+      'evidence-pool': 'คลังหลักฐาน',
+      'notifications': 'แจ้งเตือน',
       'calendar': 'ปฏิทิน',
       'documents': 'เอกสาร',
       'cover-designer': 'ออกแบบปก',
@@ -354,6 +370,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('ai-panel-close').addEventListener('click', () => {
     document.getElementById('ai-panel').classList.add('d-none');
+  });
+
+  // Notification bell
+  document.getElementById('btn-notifications')?.addEventListener('click', () => {
+    App.navigate('notifications');
   });
 
   // Setup wizard
@@ -4172,5 +4193,269 @@ App.modules['quick-drop'] = {
         if (res.success) { App.toast('ลบแล้ว'); this.render(area); }
       });
     });
+  }
+};
+
+// ===================== EARLY WARNING (Student Alerts) =====================
+App.modules['early-warning'] = {
+  async render(area) {
+    const sems = await API.get('/api/semesters');
+    const semOpts = sems.success ? sems.data.map(s =>
+      `<option value="${App.esc(s.id)}">${App.esc(s.academic_year)} / ${App.esc(s.semester)}</option>`
+    ).join('') : '';
+    area.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="fw-bold mb-0"><i class="bi bi-exclamation-triangle me-2"></i>ระบบเตือนภัยล่วงหน้า</h5>
+        <div class="d-flex gap-2">
+          <select id="ew-semester" class="form-select form-select-sm" style="width:auto">${semOpts}</select>
+          <button class="btn btn-sm btn-warning" id="ew-generate"><i class="bi bi-cpu me-1"></i>วิเคราะห์</button>
+        </div>
+      </div>
+      <div id="ew-filter" class="btn-group mb-3">
+        <button class="btn btn-sm btn-outline-secondary active" data-risk="">ทั้งหมด</button>
+        <button class="btn btn-sm btn-outline-danger" data-risk="critical">วิกฤต</button>
+        <button class="btn btn-sm btn-outline-warning" data-risk="watch">เฝ้าระวัง</button>
+        <button class="btn btn-sm btn-outline-success" data-risk="normal">ปกติ</button>
+      </div>
+      <div id="ew-list"><div class="loading"></div></div>`;
+
+    const loadAlerts = async (risk) => {
+      const semId = document.getElementById('ew-semester')?.value || '';
+      let url = '/api/student-alerts?semester_id=' + encodeURIComponent(semId);
+      if (risk) url += '&risk_level=' + encodeURIComponent(risk);
+      const res = await API.get(url);
+      const list = document.getElementById('ew-list');
+      if (!res.success || !res.data?.length) {
+        list.innerHTML = '<div class="empty-state"><i class="bi bi-shield-check d-block"></i><p>ไม่พบข้อมูล — กดปุ่ม "วิเคราะห์" เพื่อสร้างรายงาน</p></div>';
+        return;
+      }
+      const riskColors = { critical: 'danger', watch: 'warning', normal: 'success' };
+      const riskLabels = { critical: 'วิกฤต', watch: 'เฝ้าระวัง', normal: 'ปกติ' };
+      const typeLabels = { academic: 'วิชาการ', attendance: 'การเข้าเรียน', behavior: 'พฤติกรรม', combined: 'รวม' };
+      list.innerHTML = `
+        <div class="table-responsive"><table class="table table-hover align-middle mb-0">
+          <thead class="table-light"><tr><th>ชื่อ</th><th>ประเภท</th><th>ระดับ</th><th>คะแนนเสี่ยง</th><th>ปัจจัย</th><th></th></tr></thead>
+          <tbody>${res.data.map(a => {
+            let factors = {};
+            try { factors = JSON.parse(a.factors || '{}'); } catch(e) {}
+            return `<tr class="${a.is_resolved ? 'text-decoration-line-through text-muted' : ''}">
+              <td><strong>${App.esc(a.first_name)} ${App.esc(a.last_name)}</strong><br><small class="text-muted">${App.esc(a.student_code)}</small></td>
+              <td><span class="badge bg-secondary">${typeLabels[a.alert_type] || a.alert_type}</span></td>
+              <td><span class="badge bg-${riskColors[a.risk_level] || 'secondary'}">${riskLabels[a.risk_level] || a.risk_level}</span></td>
+              <td><div class="progress" style="width:80px;height:20px"><div class="progress-bar bg-${riskColors[a.risk_level]}" style="width:${a.risk_score}%">${a.risk_score}</div></div></td>
+              <td><small>${factors.attendance_rate !== null ? 'เข้าเรียน ' + factors.attendance_rate + '% ' : ''}${factors.avg_score !== null ? 'คะแนน ' + factors.avg_score + '% ' : ''}${factors.sdq_risk ? 'SDQ: ' + factors.sdq_risk : ''}</small></td>
+              <td>${!a.is_resolved ? `<button class="btn btn-sm btn-outline-success" data-resolve="${App.esc(a.id)}"><i class="bi bi-check-lg"></i></button>` : '<i class="bi bi-check-circle text-success"></i>'}</td>
+            </tr>`;
+          }).join('')}</tbody></table></div>`;
+
+      list.querySelectorAll('[data-resolve]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          await API.put(`/api/student-alerts/${btn.dataset.resolve}`, { is_resolved: true });
+          App.toast('แก้ไขแล้ว'); loadAlerts(document.querySelector('#ew-filter .active')?.dataset.risk || '');
+        });
+      });
+    };
+
+    document.getElementById('ew-generate').addEventListener('click', async () => {
+      const semId = document.getElementById('ew-semester')?.value;
+      if (!semId) { App.toast('เลือกภาคเรียน', 'danger'); return; }
+      document.getElementById('ew-list').innerHTML = '<div class="loading"></div>';
+      const res = await API.post('/api/student-alerts/generate', { semester_id: semId });
+      if (res.success) {
+        App.toast(`วิเคราะห์เสร็จ: ${res.data.generated} คน จาก ${res.data.total_students} คน`);
+        loadAlerts('');
+      } else App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+    });
+
+    document.querySelectorAll('#ew-filter .btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#ew-filter .btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        loadAlerts(btn.dataset.risk);
+      });
+    });
+
+    document.getElementById('ew-semester').addEventListener('change', () => {
+      loadAlerts(document.querySelector('#ew-filter .active')?.dataset.risk || '');
+    });
+
+    loadAlerts('');
+  }
+};
+
+// ===================== EVIDENCE POOL =====================
+App.modules['evidence-pool'] = {
+  async render(area) {
+    const sems = await API.get('/api/semesters');
+    const semOpts = sems.success ? sems.data.map(s =>
+      `<option value="${App.esc(s.id)}">${App.esc(s.academic_year)} / ${App.esc(s.semester)}</option>`
+    ).join('') : '';
+    area.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="fw-bold mb-0"><i class="bi bi-collection me-2"></i>คลังหลักฐาน (Evidence Pool)</h5>
+        <div class="d-flex gap-2">
+          <select id="ep-semester" class="form-select form-select-sm" style="width:auto">${semOpts}</select>
+          <button class="btn btn-sm btn-info text-white" id="ep-collect"><i class="bi bi-arrow-repeat me-1"></i>รวบรวมอัตโนมัติ</button>
+          <button class="btn btn-sm btn-primary" id="ep-add"><i class="bi bi-plus-lg me-1"></i>เพิ่มหลักฐาน</button>
+        </div>
+      </div>
+      <div id="ep-filter" class="btn-group mb-3">
+        <button class="btn btn-sm btn-outline-secondary active" data-pa="">ทั้งหมด</button>
+        <button class="btn btn-sm btn-outline-primary" data-pa="pa1">PA1 การสอน</button>
+        <button class="btn btn-sm btn-outline-success" data-pa="pa2">PA2 สนับสนุน</button>
+        <button class="btn btn-sm btn-outline-warning" data-pa="pa3">PA3 วิจัย</button>
+        <button class="btn btn-sm btn-outline-info" data-pa="pa4">PA4 อื่นๆ</button>
+      </div>
+      <div id="ep-list"><div class="loading"></div></div>`;
+
+    const loadEvidence = async (pa) => {
+      const semId = document.getElementById('ep-semester')?.value || '';
+      let url = '/api/evidence-pool?semester_id=' + encodeURIComponent(semId);
+      if (pa) url += '&pa_category=' + encodeURIComponent(pa);
+      const res = await API.get(url);
+      const list = document.getElementById('ep-list');
+      if (!res.success || !res.data?.length) {
+        list.innerHTML = '<div class="empty-state"><i class="bi bi-folder2-open d-block"></i><p>ยังไม่มีหลักฐาน — กด "รวบรวมอัตโนมัติ" เพื่อดึงจากโมดูลต่างๆ</p></div>';
+        return;
+      }
+      const typeLabels = { teaching: 'การสอน', support: 'สนับสนุน', research: 'วิจัย', innovation: 'นวัตกรรม', other: 'อื่นๆ' };
+      const paLabels = { pa1: 'PA1', pa2: 'PA2', pa3: 'PA3', pa4: 'PA4' };
+      list.innerHTML = `
+        <div class="row g-3">${res.data.map(ev => `
+          <div class="col-md-6 col-lg-4">
+            <div class="card border-0 shadow-sm h-100">
+              <div class="card-body">
+                <div class="d-flex justify-content-between mb-2">
+                  <span class="badge bg-primary">${paLabels[ev.pa_category] || '-'}</span>
+                  <span class="badge bg-secondary">${typeLabels[ev.evidence_type] || ev.evidence_type}</span>
+                </div>
+                <h6 class="fw-bold">${App.esc(ev.title)}</h6>
+                <p class="text-muted small mb-1">${App.esc((ev.description || '').substring(0, 100))}</p>
+                <small class="text-muted"><i class="bi bi-${ev.auto_collected ? 'robot' : 'pencil'} me-1"></i>${ev.auto_collected ? 'อัตโนมัติจาก ' + App.esc(ev.source_module) : 'เพิ่มเอง'}</small>
+              </div>
+              <div class="card-footer bg-white border-0 pt-0">
+                <small class="text-muted">${new Date(ev.created_at).toLocaleDateString('th-TH')}</small>
+                ${!ev.auto_collected ? `<button class="btn btn-sm btn-outline-danger float-end" data-ep-del="${App.esc(ev.id)}"><i class="bi bi-trash"></i></button>` : ''}
+              </div>
+            </div>
+          </div>`).join('')}
+        </div>`;
+
+      list.querySelectorAll('[data-ep-del]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('ลบหลักฐานนี้?')) return;
+          await API.del(`/api/evidence-pool/${btn.dataset.epDel}`);
+          App.toast('ลบแล้ว'); loadEvidence(document.querySelector('#ep-filter .active')?.dataset.pa || '');
+        });
+      });
+    };
+
+    document.getElementById('ep-collect').addEventListener('click', async () => {
+      const semId = document.getElementById('ep-semester')?.value;
+      if (!semId) { App.toast('เลือกภาคเรียน', 'danger'); return; }
+      document.getElementById('ep-list').innerHTML = '<div class="loading"></div>';
+      const res = await API.post('/api/evidence-pool/auto-collect', { semester_id: semId });
+      if (res.success) {
+        App.toast(`รวบรวมเสร็จ: ${res.data.collected} รายการใหม่`);
+        loadEvidence('');
+      } else App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+    });
+
+    document.getElementById('ep-add').addEventListener('click', () => {
+      const list = document.getElementById('ep-list');
+      list.innerHTML = `
+        <div class="card border-0 shadow-sm"><div class="card-body">
+          <h6 class="fw-bold mb-3">เพิ่มหลักฐานใหม่</h6>
+          <div class="row g-3">
+            <div class="col-md-6"><label class="form-label">ชื่อหลักฐาน *</label><input id="ep-title" class="form-control"></div>
+            <div class="col-md-3"><label class="form-label">ประเภท</label>
+              <select id="ep-type" class="form-select"><option value="teaching">การสอน</option><option value="support">สนับสนุน</option><option value="research">วิจัย</option><option value="innovation">นวัตกรรม</option><option value="other">อื่นๆ</option></select></div>
+            <div class="col-md-3"><label class="form-label">หมวด PA</label>
+              <select id="ep-pa" class="form-select"><option value="pa1">PA1</option><option value="pa2">PA2</option><option value="pa3">PA3</option><option value="pa4">PA4</option></select></div>
+            <div class="col-12"><label class="form-label">รายละเอียด</label><textarea id="ep-desc" class="form-control" rows="3"></textarea></div>
+          </div>
+          <div class="mt-3"><button class="btn btn-primary" id="ep-save"><i class="bi bi-check-lg me-1"></i>บันทึก</button>
+            <button class="btn btn-outline-secondary ms-2" id="ep-cancel">ยกเลิก</button></div>
+        </div></div>`;
+      document.getElementById('ep-save').addEventListener('click', async () => {
+        const title = document.getElementById('ep-title').value.trim();
+        if (!title) { App.toast('ระบุชื่อหลักฐาน', 'danger'); return; }
+        const res = await API.post('/api/evidence-pool', {
+          title, description: document.getElementById('ep-desc').value,
+          evidence_type: document.getElementById('ep-type').value,
+          pa_category: document.getElementById('ep-pa').value,
+          semester_id: document.getElementById('ep-semester')?.value
+        });
+        if (res.success) { App.toast('เพิ่มหลักฐานแล้ว'); loadEvidence(''); }
+        else App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+      });
+      document.getElementById('ep-cancel').addEventListener('click', () => loadEvidence(''));
+    });
+
+    document.querySelectorAll('#ep-filter .btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#ep-filter .btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        loadEvidence(btn.dataset.pa);
+      });
+    });
+
+    document.getElementById('ep-semester').addEventListener('change', () => {
+      loadEvidence(document.querySelector('#ep-filter .active')?.dataset.pa || '');
+    });
+
+    loadEvidence('');
+  }
+};
+
+// ===================== NOTIFICATIONS MODULE =====================
+App.modules['notifications'] = {
+  async render(area) {
+    area.innerHTML = '<div class="d-flex justify-content-between align-items-center mb-3"><h5 class="fw-bold mb-0"><i class="bi bi-bell me-2"></i>แจ้งเตือน</h5><button class="btn btn-sm btn-outline-primary" id="notif-read-all"><i class="bi bi-check-all me-1"></i>อ่านทั้งหมด</button></div><div id="notif-list"><div class="loading"></div></div>';
+
+    const load = async () => {
+      const res = await API.get('/api/notifications');
+      const list = document.getElementById('notif-list');
+      if (!res.success || !res.data?.length) {
+        list.innerHTML = '<div class="empty-state"><i class="bi bi-bell-slash d-block"></i><p>ไม่มีแจ้งเตือน</p></div>';
+        return;
+      }
+      const typeIcons = { early_warning: 'exclamation-triangle', pa_deadline: 'calendar-check', award_deadline: 'trophy', system: 'gear' };
+      list.innerHTML = res.data.map(n => `
+        <div class="card border-0 shadow-sm mb-2 ${n.is_read ? '' : 'border-start border-primary border-3'}">
+          <div class="card-body py-2 d-flex justify-content-between align-items-start">
+            <div>
+              <i class="bi bi-${typeIcons[n.notification_type] || 'bell'} me-1 text-primary"></i>
+              <strong class="small">${App.esc(n.title)}</strong>
+              <p class="text-muted small mb-0">${App.esc(n.message || '')}</p>
+              <small class="text-muted">${new Date(n.created_at).toLocaleDateString('th-TH')}</small>
+            </div>
+            <div class="d-flex gap-1">
+              ${!n.is_read ? `<button class="btn btn-sm btn-outline-primary" data-notif-read="${App.esc(n.id)}" title="อ่านแล้ว"><i class="bi bi-check"></i></button>` : ''}
+              <button class="btn btn-sm btn-outline-danger" data-notif-del="${App.esc(n.id)}" title="ลบ"><i class="bi bi-trash"></i></button>
+            </div>
+          </div>
+        </div>`).join('');
+
+      list.querySelectorAll('[data-notif-read]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          await API.put(`/api/notifications/${btn.dataset.notifRead}`, { is_read: true });
+          load(); App.loadNotifBadge();
+        });
+      });
+      list.querySelectorAll('[data-notif-del]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          await API.del(`/api/notifications/${btn.dataset.notifDel}`);
+          App.toast('ลบแล้ว'); load(); App.loadNotifBadge();
+        });
+      });
+    };
+
+    document.getElementById('notif-read-all').addEventListener('click', async () => {
+      await API.put('/api/notifications/read-all');
+      App.toast('อ่านทั้งหมดแล้ว'); load(); App.loadNotifBadge();
+    });
+
+    load();
   }
 };

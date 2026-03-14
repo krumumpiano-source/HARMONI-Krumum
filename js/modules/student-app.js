@@ -260,12 +260,17 @@ const StudentApp = {
       <form id="quiz-form">
         ${questions.map((q, i) => {
           let opts = [];
-          try { opts = JSON.parse(q.options || '[]'); } catch(e) {}
+          try { opts = JSON.parse(q.choices || '[]'); } catch(e) {}
           const qId = escAttr(q.id);
+          let matchData = null;
+          try { matchData = q.matching_pairs ? JSON.parse(q.matching_pairs) : null; } catch(e) {}
+          let shuffledItems = [];
+          try { shuffledItems = q.shuffled_items ? JSON.parse(q.shuffled_items) : []; } catch(e) {}
           return `
             <div class="card border-0 shadow-sm mb-3">
               <div class="card-body">
-                <p class="fw-bold mb-2">ข้อ ${i + 1}. ${DOMPurify.sanitize(q.question_text)} <small class="text-muted">(${q.points} คะแนน)</small></p>
+                <p class="fw-bold mb-2">ข้อ ${i + 1}. ${DOMPurify.sanitize(q.question_text)} <small class="text-muted">(${q.score} คะแนน)</small></p>
+                ${q.media_url ? `<img src="${escAttr(q.media_url)}" class="img-fluid mb-2 rounded" style="max-height:200px" alt="media">` : ''}
                 ${q.question_type === 'multiple_choice' ? opts.map((o, oi) => {
                   const optVal = escAttr(String(o));
                   return `
@@ -274,11 +279,63 @@ const StudentApp = {
                     <label class="form-check-label" for="q_${qId}_${oi}">${DOMPurify.sanitize(String(o))}</label>
                   </div>`;
                 }).join('') : ''}
+                ${q.question_type === 'multiple_select' ? opts.map((o, oi) => {
+                  const optVal = escAttr(String(o));
+                  return `
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="q_${qId}" value="${optVal}" id="q_${qId}_${oi}">
+                    <label class="form-check-label" for="q_${qId}_${oi}">${DOMPurify.sanitize(String(o))}</label>
+                  </div>`;
+                }).join('') : ''}
                 ${q.question_type === 'true_false' ? `
                   <div class="form-check"><input class="form-check-input" type="radio" name="q_${qId}" value="true" id="q_${qId}_t"><label class="form-check-label" for="q_${qId}_t">ถูก</label></div>
                   <div class="form-check"><input class="form-check-input" type="radio" name="q_${qId}" value="false" id="q_${qId}_f"><label class="form-check-label" for="q_${qId}_f">ผิด</label></div>` : ''}
-                ${q.question_type === 'short_answer' || q.question_type === 'essay' ? `
-                  <textarea class="form-control" name="q_${qId}" rows="${q.question_type === 'essay' ? 4 : 1}" placeholder="พิมพ์คำตอบ..."></textarea>` : ''}
+                ${q.question_type === 'short_answer' ? `
+                  <input class="form-control" name="q_${qId}" placeholder="พิมพ์คำตอบ...">` : ''}
+                ${q.question_type === 'essay' ? `
+                  <textarea class="form-control" name="q_${qId}" rows="4" placeholder="พิมพ์คำตอบ..."></textarea>` : ''}
+                ${q.question_type === 'fill_blank' ? `
+                  <div class="fill-blank-inputs" data-qid="${qId}">
+                    ${(q.question_text.match(/___/g) || ['___']).map((_, bi) => `
+                      <div class="input-group input-group-sm mb-1">
+                        <span class="input-group-text">ช่องที่ ${bi + 1}</span>
+                        <input class="form-control fill-blank-input" data-qid="${qId}" data-idx="${bi}" placeholder="เติมคำตอบ...">
+                      </div>`).join('')}
+                  </div>` : ''}
+                ${q.question_type === 'matching' && matchData ? `
+                  <div class="matching-area" data-qid="${qId}">
+                    ${matchData.lefts.map((left, mi) => `
+                      <div class="d-flex align-items-center gap-2 mb-2">
+                        <span class="badge bg-primary">${DOMPurify.sanitize(left)}</span>
+                        <i class="bi bi-arrow-right"></i>
+                        <select class="form-select form-select-sm matching-select" data-qid="${qId}" data-left="${escAttr(left)}" style="max-width:200px">
+                          <option value="">-- เลือก --</option>
+                          ${matchData.rights.map(r => `<option value="${escAttr(r)}">${DOMPurify.sanitize(r)}</option>`).join('')}
+                        </select>
+                      </div>`).join('')}
+                  </div>` : ''}
+                ${q.question_type === 'ordering' && shuffledItems.length ? `
+                  <div class="ordering-area" data-qid="${qId}">
+                    <small class="text-muted mb-1 d-block">ลากเพื่อเรียงลำดับ หรือใช้ปุ่มขึ้น/ลง</small>
+                    <ol class="list-group ordering-list" data-qid="${qId}">
+                      ${shuffledItems.map((item, oi) => `
+                        <li class="list-group-item d-flex justify-content-between align-items-center ordering-item" data-value="${escAttr(item)}">
+                          <span>${DOMPurify.sanitize(item)}</span>
+                          <span>
+                            <button type="button" class="btn btn-sm btn-outline-secondary order-up" data-qid="${qId}" data-idx="${oi}"><i class="bi bi-chevron-up"></i></button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary order-down" data-qid="${qId}" data-idx="${oi}"><i class="bi bi-chevron-down"></i></button>
+                          </span>
+                        </li>`).join('')}
+                    </ol>
+                  </div>` : ''}
+                ${q.question_type === 'audio_record' ? `
+                  <div class="audio-record-area" data-qid="${qId}">
+                    <button type="button" class="btn btn-sm btn-outline-danger btn-audio-record" data-qid="${qId}">
+                      <i class="bi bi-mic me-1"></i>เริ่มอัดเสียง
+                    </button>
+                    <span class="audio-status ms-2 text-muted small" data-qid="${qId}"></span>
+                    <audio class="audio-preview d-none mt-2" data-qid="${qId}" controls></audio>
+                  </div>` : ''}
               </div>
             </div>`;
         }).join('')}
@@ -294,6 +351,30 @@ const StudentApp = {
     });
     document.getElementById('btn-cancel-quiz').addEventListener('click', () => {
       this.switchTab('quizzes');
+    });
+
+    // Bind ordering up/down buttons
+    document.querySelectorAll('.order-up').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const list = document.querySelector(`.ordering-list[data-qid="${btn.dataset.qid}"]`);
+        const items = [...list.children];
+        const idx = items.indexOf(btn.closest('.ordering-item'));
+        if (idx > 0) list.insertBefore(items[idx], items[idx - 1]);
+      });
+    });
+    document.querySelectorAll('.order-down').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const list = document.querySelector(`.ordering-list[data-qid="${btn.dataset.qid}"]`);
+        const items = [...list.children];
+        const idx = items.indexOf(btn.closest('.ordering-item'));
+        if (idx < items.length - 1) list.insertBefore(items[idx + 1], items[idx]);
+      });
+    });
+
+    // Bind audio record buttons
+    this._audioBlobs = {};
+    document.querySelectorAll('.btn-audio-record').forEach(btn => {
+      btn.addEventListener('click', () => this._toggleAudioRecord(btn.dataset.qid));
     });
 
     // Timer
@@ -328,9 +409,49 @@ const StudentApp = {
     if (!form) { this._submitting = false; return; }
     const formData = new FormData(form);
     const answers = {};
+
+    // Standard radio/text answers
     for (const [key, value] of formData.entries()) {
       if (key.startsWith('q_')) {
-        answers[key.substring(2)] = value;
+        const qId = key.substring(2);
+        // For multiple_select (checkboxes), collect all checked values
+        if (answers[qId]) {
+          if (!Array.isArray(answers[qId])) answers[qId] = [answers[qId]];
+          answers[qId].push(value);
+        } else {
+          answers[qId] = value;
+        }
+      }
+    }
+
+    // Matching answers (select dropdowns)
+    document.querySelectorAll('.matching-select').forEach(sel => {
+      const qId = sel.dataset.qid;
+      if (!answers[qId]) answers[qId] = {};
+      if (sel.value) answers[qId][sel.dataset.left] = sel.value;
+    });
+
+    // Ordering answers (list order)
+    document.querySelectorAll('.ordering-list').forEach(list => {
+      const qId = list.dataset.qid;
+      answers[qId] = [...list.children].map(li => li.dataset.value);
+    });
+
+    // Fill-in-the-blank answers
+    document.querySelectorAll('.fill-blank-inputs').forEach(container => {
+      const qId = container.dataset.qid;
+      const inputs = container.querySelectorAll('.fill-blank-input');
+      if (inputs.length === 1) {
+        answers[qId] = inputs[0].value;
+      } else {
+        answers[qId] = [...inputs].map(inp => inp.value);
+      }
+    });
+
+    // Audio answers — store as "recorded" flag (actual audio handled separately)
+    if (this._audioBlobs) {
+      for (const [qId, blob] of Object.entries(this._audioBlobs)) {
+        answers[qId] = '__audio_recorded__';
       }
     }
 
@@ -480,6 +601,48 @@ const StudentApp = {
       API.setToken(null);
       this.showLogin();
     });
+  },
+
+  async _toggleAudioRecord(qId) {
+    const btn = document.querySelector(`.btn-audio-record[data-qid="${qId}"]`);
+    const statusEl = document.querySelector(`.audio-status[data-qid="${qId}"]`);
+    const previewEl = document.querySelector(`.audio-preview[data-qid="${qId}"]`);
+
+    if (this._audioRecorder && this._audioRecorderQid === qId) {
+      // Stop recording
+      this._audioRecorder.stop();
+      btn.innerHTML = '<i class="bi bi-mic me-1"></i>อัดใหม่';
+      btn.classList.remove('btn-danger');
+      btn.classList.add('btn-outline-danger');
+      statusEl.textContent = 'อัดเสร็จแล้ว';
+      this._audioRecorder = null;
+      this._audioRecorderQid = null;
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      const chunks = [];
+      recorder.ondataavailable = e => chunks.push(e.data);
+      recorder.onstop = () => {
+        stream.getTracks().forEach(t => t.stop());
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        if (!this._audioBlobs) this._audioBlobs = {};
+        this._audioBlobs[qId] = blob;
+        previewEl.src = URL.createObjectURL(blob);
+        previewEl.classList.remove('d-none');
+      };
+      recorder.start();
+      this._audioRecorder = recorder;
+      this._audioRecorderQid = qId;
+      btn.innerHTML = '<i class="bi bi-stop-fill me-1"></i>หยุดอัด';
+      btn.classList.remove('btn-outline-danger');
+      btn.classList.add('btn-danger');
+      statusEl.textContent = 'กำลังอัดเสียง...';
+    } catch (e) {
+      statusEl.textContent = 'ไม่สามารถเข้าถึงไมโครโฟน';
+    }
   },
 
   toast(message, type = 'success') {

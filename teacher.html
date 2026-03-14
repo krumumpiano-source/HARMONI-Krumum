@@ -108,6 +108,10 @@
       </a>
       <div class="d-flex align-items-center ms-auto">
         <span class="text-white-50 small me-3 d-none d-md-inline" id="nav-semester"></span>
+        <button class="btn btn-outline-light btn-sm me-2 position-relative" id="btn-notifications" title="แจ้งเตือน">
+          <i class="bi bi-bell"></i>
+          <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none" id="notif-badge">0</span>
+        </button>
         <button class="btn btn-outline-light btn-sm me-2" onclick="AIPanel.open()" title="AI Assistant">
           <i class="bi bi-stars me-1"></i><span class="d-none d-md-inline">AI</span>
         </button>
@@ -176,6 +180,7 @@
         <a class="sidebar-link" data-module="home-visit"><i class="bi bi-geo-alt"></i><span>เยี่ยมบ้าน</span></a>
         <a class="sidebar-link" data-module="sdq"><i class="bi bi-heart-pulse"></i><span>SDQ</span></a>
         <a class="sidebar-link" data-module="care-record"><i class="bi bi-shield-check"></i><span>บันทึกการดูแล</span></a>
+        <a class="sidebar-link" data-module="early-warning"><i class="bi bi-exclamation-triangle"></i><span>เตือนภัยล่วงหน้า</span></a>
         </div>
 
         <div class="sidebar-section text-muted small fw-semibold px-3 py-2 mt-2 sidebar-toggle-section" data-target="sec-tools"><i class="bi bi-chevron-down me-1 toggle-icon"></i>เครื่องมือ</div>
@@ -185,6 +190,7 @@
         <a class="sidebar-link" data-module="cover-designer"><i class="bi bi-brush"></i><span>ออกแบบปก</span></a>
         <a class="sidebar-link" data-module="instruments"><i class="bi bi-music-note-list"></i><span>เครื่องดนตรี</span></a>
         <a class="sidebar-link" data-module="quick-drop"><i class="bi bi-cloud-upload"></i><span>Quick Drop</span></a>
+        <a class="sidebar-link" data-module="evidence-pool"><i class="bi bi-collection"></i><span>คลังหลักฐาน</span></a>
         </div>
       </div>
     </nav>

@@ -223,17 +223,35 @@ export async function onRequest(context) {
 
       // Get questions (hide correct answers)
       const questions = await dbAll(db,
-        'SELECT id, question_text, question_type, options, points, sort_order FROM test_questions WHERE test_id = ? ORDER BY sort_order',
+        'SELECT id, question_text, question_type, choices, score, matching_pairs, correct_order, media_url, sort_order FROM test_questions WHERE test_id = ? ORDER BY sort_order',
         [testId]);
 
-      // Strip any is_correct markers from options to prevent answer leaking
+      // Strip correct answer info to prevent answer leaking
       for (const q of questions) {
-        if (q.options) {
+        if (q.choices) {
           try {
-            const opts = JSON.parse(q.options);
-            q.options = JSON.stringify(opts.map(o => typeof o === 'object' ? (o.text || o.label || String(o)) : o));
+            const opts = JSON.parse(q.choices);
+            q.choices = JSON.stringify(opts.map(o => typeof o === 'object' ? (o.text || o.label || String(o)) : o));
           } catch (e) { /* keep as-is */ }
         }
+        // For matching, only send left+right labels (shuffled right side)
+        if (q.matching_pairs) {
+          try {
+            const pairs = JSON.parse(q.matching_pairs);
+            const lefts = pairs.map(p => p.left);
+            const rights = pairs.map(p => p.right).sort(() => Math.random() - 0.5);
+            q.matching_pairs = JSON.stringify({ lefts, rights });
+          } catch (e) { /* keep as-is */ }
+        }
+        // For ordering, shuffle the items
+        if (q.correct_order) {
+          try {
+            const items = JSON.parse(q.correct_order);
+            q.shuffled_items = JSON.stringify(items.sort(() => Math.random() - 0.5));
+            delete q.correct_order;
+          } catch (e) { delete q.correct_order; }
+        }
+        // For fill_blank, keep question_text with ___ placeholders
       }
 
       return success({ test: { id: test.id, title: test.title, time_limit_minutes: test.time_limit_minutes, total_score: test.total_score, post_id: test.post_id }, questions });
@@ -269,19 +287,81 @@ export async function onRequest(context) {
         }
       }
 
-      // Auto-grade multiple choice
+      // Auto-grade all auto-gradable question types
       const questions = await dbAll(db, 'SELECT * FROM test_questions WHERE test_id = ?', [testId]);
       let totalScore = 0;
       let autoGraded = 1;
 
       for (const q of questions) {
         const answer = body.answers[q.id];
+        const pts = q.score || 0;
+
         if (q.question_type === 'multiple_choice' || q.question_type === 'true_false') {
-          if (answer && q.correct_answer && answer === q.correct_answer) {
-            totalScore += q.points || 0;
+          if (answer && q.correct_answer && String(answer).trim().toLowerCase() === String(q.correct_answer).trim().toLowerCase()) {
+            totalScore += pts;
+          }
+        } else if (q.question_type === 'short_answer') {
+          if (answer && q.correct_answer && String(answer).trim().toLowerCase() === String(q.correct_answer).trim().toLowerCase()) {
+            totalScore += pts;
+          }
+        } else if (q.question_type === 'fill_blank') {
+          // correct_answer can be a single string or JSON array for multi-blank
+          if (answer && q.correct_answer) {
+            try {
+              const correctArr = JSON.parse(q.correct_answer);
+              const ansArr = Array.isArray(answer) ? answer : [answer];
+              let correct = 0;
+              for (let i = 0; i < correctArr.length; i++) {
+                if (ansArr[i] && String(ansArr[i]).trim().toLowerCase() === String(correctArr[i]).trim().toLowerCase()) correct++;
+              }
+              totalScore += pts * (correct / correctArr.length);
+            } catch (e) {
+              if (String(answer).trim().toLowerCase() === String(q.correct_answer).trim().toLowerCase()) {
+                totalScore += pts;
+              }
+            }
+          }
+        } else if (q.question_type === 'multiple_select') {
+          // Partial credit: each correct = +1, each wrong = -1, min 0
+          if (answer && q.correct_answer) {
+            try {
+              const correctSet = new Set(JSON.parse(q.correct_answer));
+              const ansSet = new Set(Array.isArray(answer) ? answer : JSON.parse(answer));
+              let score = 0;
+              for (const a of ansSet) { score += correctSet.has(a) ? 1 : -1; }
+              score = Math.max(0, score);
+              totalScore += pts * (score / correctSet.size);
+            } catch (e) { /* skip */ }
+          }
+        } else if (q.question_type === 'matching') {
+          // answer = {left: right} mapping, matching_pairs = [{left, right}]
+          if (answer && q.matching_pairs) {
+            try {
+              const pairs = JSON.parse(q.matching_pairs);
+              const ansMap = typeof answer === 'string' ? JSON.parse(answer) : answer;
+              let correct = 0;
+              for (const p of pairs) {
+                if (ansMap[p.left] === p.right) correct++;
+              }
+              totalScore += pts * (correct / pairs.length);
+            } catch (e) { /* skip */ }
+          }
+        } else if (q.question_type === 'ordering') {
+          // answer = ordered array, correct_order = JSON array
+          if (answer && q.correct_order) {
+            try {
+              const correctOrder = JSON.parse(q.correct_order);
+              const ansOrder = Array.isArray(answer) ? answer : JSON.parse(answer);
+              let correct = 0;
+              for (let i = 0; i < correctOrder.length; i++) {
+                if (ansOrder[i] === correctOrder[i]) correct++;
+              }
+              totalScore += pts * (correct / correctOrder.length);
+            } catch (e) { /* skip */ }
           }
         } else {
-          autoGraded = 0; // needs manual grading for essay/short_answer
+          // essay, audio_record — needs manual grading
+          autoGraded = 0;
         }
       }
 

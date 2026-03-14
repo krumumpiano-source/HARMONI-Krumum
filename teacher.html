@@ -108,6 +108,9 @@
       </a>
       <div class="d-flex align-items-center ms-auto">
         <span class="text-white-50 small me-3 d-none d-md-inline" id="nav-semester"></span>
+        <button class="btn btn-outline-light btn-sm me-2" onclick="AIPanel.open()" title="AI Assistant">
+          <i class="bi bi-stars me-1"></i><span class="d-none d-md-inline">AI</span>
+        </button>
         <div class="dropdown">
           <button class="btn btn-link text-white text-decoration-none dropdown-toggle" data-bs-toggle="dropdown">
             <i class="bi bi-person-circle me-1"></i><span id="nav-username">ครู</span>
@@ -337,6 +340,7 @@
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
 <script src="js/api.js"></script>
 <script src="js/export.js"></script>
+<script src="js/ai-panel.js"></script>
 <script src="js/app.js"></script>
 <script>if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>
 </body>

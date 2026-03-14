@@ -1737,3 +1737,138 @@ App.modules['student-classroom'] = {
     }
   }
 };
+
+// ==================== Register Portfolio Module ====================
+
+App.modules['portfolio'] = {
+  categories: ['ภาพกิจกรรม', 'ผลงานนักเรียน', 'ผลงานครู', 'เอกสาร', 'วิดีโอ', 'อื่นๆ'],
+
+  async render(container) {
+    container.innerHTML = '<div class="loading"></div>';
+
+    const res = await API.get('/api/portfolio');
+    const items = res.success ? res.data : [];
+    const today = new Date().toISOString().split('T')[0];
+
+    container.innerHTML = `
+      <h4 class="fw-bold mb-4"><i class="bi bi-collection me-2 text-primary"></i>เก็บผลงาน</h4>
+
+      <!-- Add new item -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-semibold"><i class="bi bi-plus-circle me-2"></i>เพิ่มผลงาน</div>
+        <div class="card-body">
+          <div class="row g-2 mb-2">
+            <div class="col-md-5">
+              <input type="text" class="form-control" id="pf-title" placeholder="ชื่อผลงาน เช่น การแสดงคอนเสิร์ตปีใหม่">
+            </div>
+            <div class="col-md-3">
+              <select class="form-select" id="pf-category">
+                <option value="">— หมวดหมู่ —</option>
+                ${this.categories.map(c => `<option value="${c}">${c}</option>`).join('')}
+              </select>
+            </div>
+            <div class="col-md-2">
+              <input type="date" class="form-control" id="pf-date" value="${today}">
+            </div>
+            <div class="col-md-2">
+              <button class="btn btn-primary w-100" id="pf-save"><i class="bi bi-plus-lg me-1"></i>เพิ่ม</button>
+            </div>
+          </div>
+          <div class="mb-2">
+            <textarea class="form-control" id="pf-desc" rows="2" placeholder="รายละเอียด (ไม่บังคับ)"></textarea>
+          </div>
+          <div class="mb-0">
+            <input type="text" class="form-control" id="pf-url" placeholder="ลิงก์ไฟล์ / รูปภาพ / YouTube (ไม่บังคับ)">
+          </div>
+        </div>
+      </div>
+
+      <!-- Filter -->
+      <div class="mb-3">
+        <div class="btn-group btn-group-sm">
+          <button class="btn btn-outline-primary active" data-filter="all">ทั้งหมด</button>
+          ${this.categories.map(c => `<button class="btn btn-outline-primary" data-filter="${c}">${c}</button>`).join('')}
+        </div>
+      </div>
+
+      <!-- Items list -->
+      <div id="pf-items">
+        ${this.renderItems(items)}
+      </div>`;
+
+    this.allItems = items;
+
+    // Save event
+    document.getElementById('pf-save').addEventListener('click', () => this.saveItem());
+    // Filter events
+    container.querySelectorAll('[data-filter]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        container.querySelectorAll('[data-filter]').forEach(b => b.classList.remove('active'));
+        e.target.classList.add('active');
+        const f = e.target.dataset.filter;
+        const filtered = f === 'all' ? this.allItems : this.allItems.filter(i => i.category === f);
+        document.getElementById('pf-items').innerHTML = this.renderItems(filtered);
+      });
+    });
+  },
+
+  renderItems(items) {
+    if (items.length === 0) return '<p class="text-muted">ยังไม่มีผลงาน</p>';
+    return items.map(item => {
+      const catBadge = item.category ? `<span class="badge bg-secondary">${DOMPurify.sanitize(item.category)}</span>` : '';
+      const star = item.is_featured ? '<i class="bi bi-star-fill text-warning me-1"></i>' : '<i class="bi bi-star text-muted me-1"></i>';
+      return `
+      <div class="card border-0 shadow-sm mb-2">
+        <div class="card-body p-3">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <span role="button" onclick="App.modules['portfolio'].toggleFeatured('${item.id}', ${item.is_featured ? 0 : 1})">${star}</span>
+              <strong>${DOMPurify.sanitize(item.title)}</strong>
+              ${catBadge}
+              ${item.date ? `<span class="text-muted small ms-2">${item.date}</span>` : ''}
+            </div>
+            <button class="btn btn-sm btn-outline-danger" onclick="App.modules['portfolio'].deleteItem('${item.id}')"><i class="bi bi-trash"></i></button>
+          </div>
+          ${item.description ? `<div class="small mt-1 text-muted">${DOMPurify.sanitize(item.description)}</div>` : ''}
+          ${item.file_urls ? `<div class="small mt-1"><a href="${DOMPurify.sanitize(item.file_urls)}" target="_blank" rel="noopener"><i class="bi bi-link-45deg me-1"></i>ดูไฟล์</a></div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+  },
+
+  async saveItem() {
+    const title = document.getElementById('pf-title').value.trim();
+    if (!title) { App.toast('กรุณากรอกชื่อผลงาน', 'warning'); return; }
+
+    const res = await API.post('/api/portfolio', {
+      title,
+      category: document.getElementById('pf-category').value || null,
+      description: document.getElementById('pf-desc').value.trim() || null,
+      file_urls: document.getElementById('pf-url').value.trim() || null,
+      date: document.getElementById('pf-date').value || null
+    });
+
+    if (res.success) {
+      App.toast('เพิ่มผลงานสำเร็จ!');
+      App.navigate('portfolio');
+    } else {
+      App.toast(res.error || 'เพิ่มไม่สำเร็จ', 'danger');
+    }
+  },
+
+  async toggleFeatured(id, val) {
+    await API.put(`/api/portfolio/${id}`, { is_featured: val });
+    App.navigate('portfolio');
+  },
+
+  async deleteItem(id) {
+    if (!confirm('ลบผลงานนี้?')) return;
+    const res = await API.del(`/api/portfolio/${id}`);
+    if (res.success) {
+      App.toast('ลบผลงานแล้ว');
+      App.navigate('portfolio');
+    } else {
+      App.toast(res.error || 'ลบไม่สำเร็จ', 'danger');
+    }
+  }
+};

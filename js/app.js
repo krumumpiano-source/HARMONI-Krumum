@@ -1,4 +1,4 @@
-// HARMONI — Main Teacher App (Router + Auth + Module Loader)
+﻿// HARMONI — Main Teacher App (Router + Auth + Module Loader)
 
 const App = {
   currentModule: null,
@@ -2679,5 +2679,1353 @@ App.modules['grade-result'] = {
     } else {
       App.toast(res.error || 'บันทึกไม่สำเร็จ', 'danger');
     }
+  }
+};
+
+// ==================== Assessment Module ====================
+App.modules['assessment'] = {
+  async render(area) {
+    const [subRes, toolRes] = await Promise.all([
+      API.get('/api/subjects'), API.get('/api/assessment')
+    ]);
+    const subjects = subRes.success ? subRes.data : [];
+    const tools = toolRes.success ? toolRes.data : [];
+
+    area.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="fw-bold mb-0"><i class="bi bi-clipboard-check me-2"></i>เครื่องมือวัดผล</h4>
+        <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#assess-form"><i class="bi bi-plus-lg me-1"></i>เพิ่มเครื่องมือ</button>
+      </div>
+      <div class="collapse mb-3" id="assess-form">
+        <div class="card border-0 shadow-sm"><div class="card-body">
+          <div class="row g-2">
+            <div class="col-md-4"><input class="form-control" id="at-name" placeholder="ชื่อเครื่องมือ"></div>
+            <div class="col-md-3"><select class="form-select" id="at-type">
+              <option value="">-- ประเภท --</option>
+              <option value="rubric">Rubric</option>
+              <option value="checklist">Checklist</option>
+              <option value="rating_scale">Rating Scale</option>
+              <option value="observation">แบบสังเกต</option>
+              <option value="interview">แบบสัมภาษณ์</option>
+              <option value="other">อื่นๆ</option>
+            </select></div>
+            <div class="col-md-3"><select class="form-select" id="at-subject">
+              <option value="">-- วิชา (ไม่บังคับ) --</option>
+              ${subjects.map(s => `<option value="${s.id}">${DOMPurify.sanitize(s.name)}</option>`).join('')}
+            </select></div>
+            <div class="col-md-2"><button class="btn btn-success w-100" id="at-save"><i class="bi bi-check-lg me-1"></i>บันทึก</button></div>
+          </div>
+          <div class="mt-2"><textarea class="form-control" id="at-desc" rows="2" placeholder="รายละเอียด (ไม่บังคับ)"></textarea></div>
+        </div></div>
+      </div>
+      <div id="at-list">
+        ${tools.length === 0 ? '<div class="text-muted text-center py-4">ยังไม่มีเครื่องมือวัดผล</div>' :
+          tools.map(t => `
+          <div class="card border-0 shadow-sm mb-2"><div class="card-body d-flex justify-content-between align-items-center">
+            <div>
+              <strong>${DOMPurify.sanitize(t.name)}</strong>
+              ${t.tool_type ? `<span class="badge bg-info ms-2">${DOMPurify.sanitize(t.tool_type)}</span>` : ''}
+              ${t.description ? `<div class="text-muted small">${DOMPurify.sanitize(t.description)}</div>` : ''}
+            </div>
+            <button class="btn btn-sm btn-outline-danger" data-del="${t.id}"><i class="bi bi-trash"></i></button>
+          </div></div>`).join('')}
+      </div>`;
+
+    document.getElementById('at-save')?.addEventListener('click', async () => {
+      const res = await API.post('/api/assessment', {
+        name: document.getElementById('at-name').value,
+        tool_type: document.getElementById('at-type').value || null,
+        subject_id: document.getElementById('at-subject').value || null,
+        description: document.getElementById('at-desc').value || null
+      });
+      if (res.success) { App.toast('เพิ่มเครื่องมือสำเร็จ!'); this.render(area); }
+      else App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+    });
+
+    area.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('ลบเครื่องมือนี้?')) return;
+        const res = await API.del(`/api/assessment/${btn.dataset.del}`);
+        if (res.success) { App.toast('ลบแล้ว'); this.render(area); }
+      });
+    });
+  }
+};
+
+// ==================== Test Module ====================
+App.modules['test'] = {
+  async render(area) {
+    const [subRes, semRes, testRes] = await Promise.all([
+      API.get('/api/subjects'), API.get('/api/semesters'), API.get('/api/test')
+    ]);
+    const subjects = subRes.success ? subRes.data : [];
+    const activeSem = semRes.success ? semRes.data.find(s => s.is_active) : null;
+    const tests = testRes.success ? testRes.data : [];
+
+    area.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="fw-bold mb-0"><i class="bi bi-journal-text me-2"></i>แบบทดสอบ</h4>
+        <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#test-form"><i class="bi bi-plus-lg me-1"></i>สร้างแบบทดสอบ</button>
+      </div>
+      <div class="collapse mb-3" id="test-form">
+        <div class="card border-0 shadow-sm"><div class="card-body">
+          <div class="row g-2">
+            <div class="col-md-4"><input class="form-control" id="tt-title" placeholder="ชื่อแบบทดสอบ"></div>
+            <div class="col-md-3"><select class="form-select" id="tt-subject">
+              <option value="">-- เลือกวิชา --</option>
+              ${subjects.map(s => `<option value="${s.id}">${DOMPurify.sanitize(s.name)}</option>`).join('')}
+            </select></div>
+            <div class="col-md-3"><select class="form-select" id="tt-type">
+              <option value="quiz">แบบทดสอบย่อย</option>
+              <option value="midterm">สอบกลางภาค</option>
+              <option value="final">สอบปลายภาค</option>
+              <option value="pretest">Pre-test</option>
+              <option value="posttest">Post-test</option>
+            </select></div>
+            <div class="col-md-2"><button class="btn btn-success w-100" id="tt-save"><i class="bi bi-check-lg me-1"></i>สร้าง</button></div>
+          </div>
+          <div class="row g-2 mt-1">
+            <div class="col-md-3"><input class="form-control" id="tt-time" type="number" placeholder="เวลา (นาที)"></div>
+            <div class="col-md-3"><input class="form-control" id="tt-pass" type="number" placeholder="คะแนนผ่าน"></div>
+            <div class="col-md-6"><input class="form-control" id="tt-inst" placeholder="คำชี้แจง (ไม่บังคับ)"></div>
+          </div>
+        </div></div>
+      </div>
+      <div id="tt-list">
+        ${tests.length === 0 ? '<div class="text-muted text-center py-4">ยังไม่มีแบบทดสอบ</div>' :
+          tests.map(t => `
+          <div class="card border-0 shadow-sm mb-2"><div class="card-body d-flex justify-content-between align-items-center">
+            <div>
+              <strong>${DOMPurify.sanitize(t.title)}</strong>
+              <span class="badge bg-secondary ms-2">${DOMPurify.sanitize(t.test_type || '')}</span>
+              ${t.total_questions ? `<span class="badge bg-info ms-1">${t.total_questions} ข้อ</span>` : ''}
+              ${t.is_published ? '<span class="badge bg-success ms-1">เผยแพร่</span>' : '<span class="badge bg-warning text-dark ms-1">แบบร่าง</span>'}
+            </div>
+            <div>
+              <button class="btn btn-sm btn-outline-primary me-1" data-pub="${t.id}" data-status="${t.is_published}">${t.is_published ? 'ยกเลิกเผยแพร่' : 'เผยแพร่'}</button>
+              <button class="btn btn-sm btn-outline-danger" data-del="${t.id}"><i class="bi bi-trash"></i></button>
+            </div>
+          </div></div>`).join('')}
+      </div>`;
+
+    document.getElementById('tt-save')?.addEventListener('click', async () => {
+      const res = await API.post('/api/test', {
+        title: document.getElementById('tt-title').value,
+        subject_id: document.getElementById('tt-subject').value,
+        semester_id: activeSem?.id,
+        test_type: document.getElementById('tt-type').value,
+        time_limit_minutes: parseInt(document.getElementById('tt-time').value) || null,
+        passing_score: parseFloat(document.getElementById('tt-pass').value) || null,
+        instructions: document.getElementById('tt-inst').value || null
+      });
+      if (res.success) { App.toast('สร้างแบบทดสอบสำเร็จ!'); this.render(area); }
+      else App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+    });
+
+    area.querySelectorAll('[data-pub]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const newStatus = btn.dataset.status === '1' ? 0 : 1;
+        const res = await API.put(`/api/test/${btn.dataset.pub}`, { is_published: newStatus });
+        if (res.success) { App.toast(newStatus ? 'เผยแพร่แล้ว' : 'ยกเลิกเผยแพร่'); this.render(area); }
+      });
+    });
+
+    area.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('ลบแบบทดสอบนี้?')) return;
+        const res = await API.del(`/api/test/${btn.dataset.del}`);
+        if (res.success) { App.toast('ลบแล้ว'); this.render(area); }
+      });
+    });
+  }
+};
+
+// ==================== Research Module ====================
+App.modules['research'] = {
+  async render(area) {
+    const [semRes, researchRes] = await Promise.all([
+      API.get('/api/semesters'), API.get('/api/research')
+    ]);
+    const activeSem = semRes.success ? semRes.data.find(s => s.is_active) : null;
+    const researches = researchRes.success ? researchRes.data : [];
+    const statusColors = { draft: 'warning', in_progress: 'info', completed: 'success', published: 'primary' };
+    const statusLabels = { draft: 'ร่าง', in_progress: 'กำลังดำเนินการ', completed: 'เสร็จสิ้น', published: 'เผยแพร่' };
+
+    area.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="fw-bold mb-0"><i class="bi bi-search me-2"></i>วิจัยในชั้นเรียน</h4>
+        <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#res-form"><i class="bi bi-plus-lg me-1"></i>สร้างงานวิจัย</button>
+      </div>
+      <div class="collapse mb-3" id="res-form">
+        <div class="card border-0 shadow-sm"><div class="card-body">
+          <div class="mb-2"><input class="form-control" id="rs-title" placeholder="ชื่อเรื่องวิจัย"></div>
+          <div class="mb-2"><textarea class="form-control" id="rs-problem" rows="2" placeholder="สภาพปัญหา"></textarea></div>
+          <div class="mb-2"><textarea class="form-control" id="rs-obj" rows="2" placeholder="วัตถุประสงค์"></textarea></div>
+          <button class="btn btn-success" id="rs-save"><i class="bi bi-check-lg me-1"></i>สร้าง</button>
+        </div></div>
+      </div>
+      <div id="rs-list">
+        ${researches.length === 0 ? '<div class="text-muted text-center py-4">ยังไม่มีงานวิจัย</div>' :
+          researches.map(r => `
+          <div class="card border-0 shadow-sm mb-2"><div class="card-body">
+            <div class="d-flex justify-content-between">
+              <div>
+                <strong>${DOMPurify.sanitize(r.title)}</strong>
+                <span class="badge bg-${statusColors[r.status] || 'secondary'} ms-2">${statusLabels[r.status] || r.status}</span>
+              </div>
+              <div>
+                <select class="form-select form-select-sm d-inline-block w-auto me-1" data-status="${r.id}">
+                  ${Object.entries(statusLabels).map(([k,v]) => `<option value="${k}" ${r.status===k?'selected':''}>${v}</option>`).join('')}
+                </select>
+                <button class="btn btn-sm btn-outline-danger" data-del="${r.id}"><i class="bi bi-trash"></i></button>
+              </div>
+            </div>
+            ${r.problem_statement ? `<div class="text-muted small mt-1">${DOMPurify.sanitize(r.problem_statement).substring(0,100)}...</div>` : ''}
+          </div></div>`).join('')}
+      </div>`;
+
+    document.getElementById('rs-save')?.addEventListener('click', async () => {
+      const res = await API.post('/api/research', {
+        title: document.getElementById('rs-title').value,
+        semester_id: activeSem?.id,
+        problem_statement: document.getElementById('rs-problem').value || null,
+        objectives: document.getElementById('rs-obj').value || null
+      });
+      if (res.success) { App.toast('สร้างงานวิจัยสำเร็จ!'); this.render(area); }
+      else App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+    });
+
+    area.querySelectorAll('[data-status]').forEach(sel => {
+      sel.addEventListener('change', async () => {
+        await API.put(`/api/research/${sel.dataset.status}`, { status: sel.value });
+        App.toast('อัปเดตสถานะแล้ว'); this.render(area);
+      });
+    });
+
+    area.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('ลบงานวิจัยนี้?')) return;
+        const res = await API.del(`/api/research/${btn.dataset.del}`);
+        if (res.success) { App.toast('ลบแล้ว'); this.render(area); }
+      });
+    });
+  }
+};
+
+// ==================== PA Module ====================
+App.modules['pa'] = {
+  async render(area) {
+    const [semRes, paRes] = await Promise.all([
+      API.get('/api/semesters'), API.get('/api/pa')
+    ]);
+    const semesters = semRes.success ? semRes.data : [];
+    const activeSem = semesters.find(s => s.is_active);
+    const agreements = paRes.success ? paRes.data : [];
+
+    area.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="fw-bold mb-0"><i class="bi bi-award me-2"></i>PA (วPA)</h4>
+        <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#pa-form"><i class="bi bi-plus-lg me-1"></i>สร้างข้อตกลง PA</button>
+      </div>
+      <div class="collapse mb-3" id="pa-form">
+        <div class="card border-0 shadow-sm"><div class="card-body">
+          <div class="row g-2 mb-2">
+            <div class="col-md-6"><select class="form-select" id="pa-sem">
+              ${semesters.map(s => `<option value="${s.id}" ${s.is_active?'selected':''}>${s.academic_year}/${s.semester}</option>`).join('')}
+            </select></div>
+            <div class="col-md-6"><input class="form-control" id="pa-year" type="number" value="${activeSem?.academic_year || 2568}" placeholder="ปีการศึกษา"></div>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-md-4"><input class="form-control" id="pa-teach" type="number" placeholder="ชม.สอน (เป้า)"></div>
+            <div class="col-md-4"><input class="form-control" id="pa-support" type="number" placeholder="ชม.สนับสนุน (เป้า)"></div>
+            <div class="col-md-4"><input class="form-control" id="pa-other" type="number" placeholder="ชม.อื่นๆ (เป้า)"></div>
+          </div>
+          <div class="mb-2"><textarea class="form-control" id="pa-duties" rows="2" placeholder="ภาระงานสอน"></textarea></div>
+          <button class="btn btn-success" id="pa-save"><i class="bi bi-check-lg me-1"></i>สร้างข้อตกลง</button>
+        </div></div>
+      </div>
+      <div id="pa-list">
+        ${agreements.length === 0 ? '<div class="text-muted text-center py-4">ยังไม่มีข้อตกลง PA</div>' :
+          agreements.map(a => `
+          <div class="card border-0 shadow-sm mb-2"><div class="card-body d-flex justify-content-between align-items-center">
+            <div>
+              <strong>ปีการศึกษา ${a.academic_year}</strong>
+              ${a.teaching_hours_target ? `<span class="badge bg-info ms-2">สอน ${a.teaching_hours_target} ชม.</span>` : ''}
+              ${a.submitted_at ? '<span class="badge bg-success ms-1">ส่งแล้ว</span>' : '<span class="badge bg-warning text-dark ms-1">ยังไม่ส่ง</span>'}
+            </div>
+            <button class="btn btn-sm btn-outline-danger" data-del="${a.id}"><i class="bi bi-trash"></i></button>
+          </div></div>`).join('')}
+      </div>`;
+
+    document.getElementById('pa-save')?.addEventListener('click', async () => {
+      const res = await API.post('/api/pa', {
+        semester_id: document.getElementById('pa-sem').value,
+        academic_year: parseInt(document.getElementById('pa-year').value),
+        teaching_hours_target: parseFloat(document.getElementById('pa-teach').value) || null,
+        support_hours_target: parseFloat(document.getElementById('pa-support').value) || null,
+        other_hours_target: parseFloat(document.getElementById('pa-other').value) || null,
+        teaching_duties: document.getElementById('pa-duties').value || null
+      });
+      if (res.success) { App.toast('สร้างข้อตกลง PA สำเร็จ!'); this.render(area); }
+      else App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+    });
+
+    area.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('ลบข้อตกลงนี้?')) return;
+        const res = await API.del(`/api/pa/${btn.dataset.del}`);
+        if (res.success) { App.toast('ลบแล้ว'); this.render(area); }
+      });
+    });
+  }
+};
+
+// ==================== SAR Module ====================
+App.modules['sar'] = {
+  async render(area) {
+    const [semRes, sarRes] = await Promise.all([
+      API.get('/api/semesters'), API.get('/api/sar')
+    ]);
+    const semesters = semRes.success ? semRes.data : [];
+    const activeSem = semesters.find(s => s.is_active);
+    const reports = sarRes.success ? sarRes.data : [];
+    const statusLabels = { draft: 'ร่าง', completed: 'เสร็จสิ้น', submitted: 'ส่งแล้ว' };
+
+    area.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="fw-bold mb-0"><i class="bi bi-file-earmark-text me-2"></i>SAR</h4>
+        <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#sar-form"><i class="bi bi-plus-lg me-1"></i>สร้าง SAR</button>
+      </div>
+      <div class="collapse mb-3" id="sar-form">
+        <div class="card border-0 shadow-sm"><div class="card-body">
+          <div class="row g-2 mb-2">
+            <div class="col-md-6"><select class="form-select" id="sar-sem">
+              ${semesters.map(s => `<option value="${s.id}" ${s.is_active?'selected':''}>${s.academic_year}/${s.semester}</option>`).join('')}
+            </select></div>
+            <div class="col-md-6"><input class="form-control" id="sar-year" type="number" value="${activeSem?.academic_year || 2568}" placeholder="ปีการศึกษา"></div>
+          </div>
+          <div class="mb-2"><textarea class="form-control" id="sar-p1" rows="2" placeholder="ส่วนที่ 1: บริบท"></textarea></div>
+          <div class="mb-2"><textarea class="form-control" id="sar-p2" rows="2" placeholder="ส่วนที่ 2: ผลการดำเนินงาน"></textarea></div>
+          <button class="btn btn-success" id="sar-save"><i class="bi bi-check-lg me-1"></i>สร้าง</button>
+        </div></div>
+      </div>
+      <div id="sar-list">
+        ${reports.length === 0 ? '<div class="text-muted text-center py-4">ยังไม่มีรายงาน SAR</div>' :
+          reports.map(r => `
+          <div class="card border-0 shadow-sm mb-2"><div class="card-body d-flex justify-content-between align-items-center">
+            <div>
+              <strong>SAR ปี ${r.academic_year}</strong>
+              <span class="badge bg-${r.overall_status==='submitted'?'success':r.overall_status==='completed'?'info':'warning'} text-${r.overall_status==='warning'?'dark':''} ms-2">${statusLabels[r.overall_status] || r.overall_status}</span>
+            </div>
+            <div>
+              <select class="form-select form-select-sm d-inline-block w-auto me-1" data-status="${r.id}">
+                ${Object.entries(statusLabels).map(([k,v]) => `<option value="${k}" ${r.overall_status===k?'selected':''}>${v}</option>`).join('')}
+              </select>
+              <button class="btn btn-sm btn-outline-danger" data-del="${r.id}"><i class="bi bi-trash"></i></button>
+            </div>
+          </div></div>`).join('')}
+      </div>`;
+
+    document.getElementById('sar-save')?.addEventListener('click', async () => {
+      const res = await API.post('/api/sar', {
+        semester_id: document.getElementById('sar-sem').value,
+        academic_year: parseInt(document.getElementById('sar-year').value),
+        part1_context: document.getElementById('sar-p1').value || null,
+        part2_results: document.getElementById('sar-p2').value || null
+      });
+      if (res.success) { App.toast('สร้าง SAR สำเร็จ!'); this.render(area); }
+      else App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+    });
+
+    area.querySelectorAll('[data-status]').forEach(sel => {
+      sel.addEventListener('change', async () => {
+        await API.put(`/api/sar/${sel.dataset.status}`, { overall_status: sel.value });
+        App.toast('อัปเดตสถานะแล้ว'); this.render(area);
+      });
+    });
+
+    area.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('ลบ SAR นี้?')) return;
+        const res = await API.del(`/api/sar/${btn.dataset.del}`);
+        if (res.success) { App.toast('ลบแล้ว'); this.render(area); }
+      });
+    });
+  }
+};
+
+// ==================== Innovation Module ====================
+App.modules['innovation'] = {
+  async render(area) {
+    const [semRes, innRes] = await Promise.all([
+      API.get('/api/semesters'), API.get('/api/innovation')
+    ]);
+    const semesters = semRes.success ? semRes.data : [];
+    const activeSem = semesters.find(s => s.is_active);
+    const items = innRes.success ? innRes.data : [];
+    const statusLabels = { draft: 'ร่าง', in_progress: 'กำลังพัฒนา', completed: 'เสร็จสิ้น', published: 'เผยแพร่' };
+
+    area.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="fw-bold mb-0"><i class="bi bi-lightbulb me-2"></i>นวัตกรรม</h4>
+        <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#inn-form"><i class="bi bi-plus-lg me-1"></i>เพิ่มนวัตกรรม</button>
+      </div>
+      <div class="collapse mb-3" id="inn-form">
+        <div class="card border-0 shadow-sm"><div class="card-body">
+          <div class="row g-2 mb-2">
+            <div class="col-md-6"><input class="form-control" id="inn-title" placeholder="ชื่อนวัตกรรม"></div>
+            <div class="col-md-6"><select class="form-select" id="inn-type">
+              <option value="">-- ประเภท --</option>
+              <option value="teaching_media">สื่อการสอน</option>
+              <option value="learning_management">การจัดการเรียนรู้</option>
+              <option value="assessment_tool">เครื่องมือวัดผล</option>
+              <option value="curriculum">หลักสูตร</option>
+              <option value="other">อื่นๆ</option>
+            </select></div>
+          </div>
+          <div class="mb-2"><textarea class="form-control" id="inn-prob" rows="2" placeholder="ปัญหาที่แก้ไข"></textarea></div>
+          <div class="mb-2"><textarea class="form-control" id="inn-desc" rows="2" placeholder="รายละเอียด"></textarea></div>
+          <button class="btn btn-success" id="inn-save"><i class="bi bi-check-lg me-1"></i>บันทึก</button>
+        </div></div>
+      </div>
+      <div id="inn-list">
+        ${items.length === 0 ? '<div class="text-muted text-center py-4">ยังไม่มีนวัตกรรม</div>' :
+          items.map(i => `
+          <div class="card border-0 shadow-sm mb-2"><div class="card-body d-flex justify-content-between align-items-center">
+            <div>
+              <strong>${DOMPurify.sanitize(i.title)}</strong>
+              ${i.innovation_type ? `<span class="badge bg-info ms-2">${DOMPurify.sanitize(i.innovation_type)}</span>` : ''}
+              <span class="badge bg-${i.status==='published'?'success':i.status==='completed'?'primary':'warning'} ms-1">${statusLabels[i.status] || i.status}</span>
+            </div>
+            <button class="btn btn-sm btn-outline-danger" data-del="${i.id}"><i class="bi bi-trash"></i></button>
+          </div></div>`).join('')}
+      </div>`;
+
+    document.getElementById('inn-save')?.addEventListener('click', async () => {
+      const res = await API.post('/api/innovation', {
+        title: document.getElementById('inn-title').value,
+        semester_id: activeSem?.id,
+        innovation_type: document.getElementById('inn-type').value || null,
+        problem_addressed: document.getElementById('inn-prob').value || null,
+        description: document.getElementById('inn-desc').value || null
+      });
+      if (res.success) { App.toast('เพิ่มนวัตกรรมสำเร็จ!'); this.render(area); }
+      else App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+    });
+
+    area.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('ลบนวัตกรรมนี้?')) return;
+        const res = await API.del(`/api/innovation/${btn.dataset.del}`);
+        if (res.success) { App.toast('ลบแล้ว'); this.render(area); }
+      });
+    });
+  }
+};
+
+// ==================== PLC Module ====================
+App.modules['plc'] = {
+  async render(area) {
+    const [semRes, plcRes] = await Promise.all([
+      API.get('/api/semesters'), API.get('/api/plc')
+    ]);
+    const activeSem = semRes.success ? semRes.data.find(s => s.is_active) : null;
+    const records = plcRes.success ? plcRes.data : [];
+
+    area.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="fw-bold mb-0"><i class="bi bi-people me-2"></i>PLC</h4>
+        <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#plc-form"><i class="bi bi-plus-lg me-1"></i>เพิ่มบันทึก PLC</button>
+      </div>
+      <div class="collapse mb-3" id="plc-form">
+        <div class="card border-0 shadow-sm"><div class="card-body">
+          <div class="row g-2 mb-2">
+            <div class="col-md-4"><input class="form-control" id="plc-date" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
+            <div class="col-md-5"><input class="form-control" id="plc-topic" placeholder="หัวข้อ PLC"></div>
+            <div class="col-md-3"><input class="form-control" id="plc-hours" type="number" step="0.5" placeholder="ชั่วโมง"></div>
+          </div>
+          <div class="mb-2"><input class="form-control" id="plc-parts" placeholder="ผู้เข้าร่วม (คั่นด้วย ,)"></div>
+          <div class="mb-2"><textarea class="form-control" id="plc-outcomes" rows="2" placeholder="ผลลัพธ์/สิ่งที่ได้เรียนรู้"></textarea></div>
+          <button class="btn btn-success" id="plc-save"><i class="bi bi-check-lg me-1"></i>บันทึก</button>
+        </div></div>
+      </div>
+      <div id="plc-list">
+        ${records.length === 0 ? '<div class="text-muted text-center py-4">ยังไม่มีบันทึก PLC</div>' :
+          records.map(r => `
+          <div class="card border-0 shadow-sm mb-2"><div class="card-body d-flex justify-content-between align-items-center">
+            <div>
+              <strong>${DOMPurify.sanitize(r.topic)}</strong>
+              <span class="text-muted small ms-2">${r.session_date || ''}</span>
+              ${r.hours ? `<span class="badge bg-info ms-2">${r.hours} ชม.</span>` : ''}
+            </div>
+            <button class="btn btn-sm btn-outline-danger" data-del="${r.id}"><i class="bi bi-trash"></i></button>
+          </div></div>`).join('')}
+      </div>`;
+
+    document.getElementById('plc-save')?.addEventListener('click', async () => {
+      const res = await API.post('/api/plc', {
+        session_date: document.getElementById('plc-date').value,
+        topic: document.getElementById('plc-topic').value,
+        semester_id: activeSem?.id,
+        hours: parseFloat(document.getElementById('plc-hours').value) || null,
+        participants: document.getElementById('plc-parts').value || null,
+        outcomes: document.getElementById('plc-outcomes').value || null
+      });
+      if (res.success) { App.toast('บันทึก PLC สำเร็จ!'); this.render(area); }
+      else App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+    });
+
+    area.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('ลบบันทึก PLC นี้?')) return;
+        const res = await API.del(`/api/plc/${btn.dataset.del}`);
+        if (res.success) { App.toast('ลบแล้ว'); this.render(area); }
+      });
+    });
+  }
+};
+
+// ==================== Logbook Module ====================
+App.modules['logbook'] = {
+  async render(area) {
+    const [semRes, logRes, sumRes] = await Promise.all([
+      API.get('/api/semesters'), API.get('/api/logbook'), API.get('/api/logbook/summary')
+    ]);
+    const activeSem = semRes.success ? semRes.data.find(s => s.is_active) : null;
+    const entries = logRes.success ? logRes.data : [];
+    const summary = sumRes.success ? sumRes.data : [];
+    const categories = ['สอน','สนับสนุนการสอน','พัฒนาตนเอง','งานพิเศษ','อื่นๆ'];
+
+    area.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="fw-bold mb-0"><i class="bi bi-journal me-2"></i>สมุดบันทึก</h4>
+        <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#log-form"><i class="bi bi-plus-lg me-1"></i>เพิ่มบันทึก</button>
+      </div>
+      ${summary.length > 0 ? `
+      <div class="row g-2 mb-3">
+        ${summary.map(s => `
+        <div class="col-auto"><div class="card border-0 shadow-sm"><div class="card-body py-2 px-3">
+          <small class="text-muted">${DOMPurify.sanitize(s.category)}</small><br>
+          <strong>${s.total_hours} ชม.</strong> <span class="text-muted small">(${s.count} รายการ)</span>
+        </div></div></div>`).join('')}
+      </div>` : ''}
+      <div class="collapse mb-3" id="log-form">
+        <div class="card border-0 shadow-sm"><div class="card-body">
+          <div class="row g-2 mb-2">
+            <div class="col-md-3"><input class="form-control" id="lg-date" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
+            <div class="col-md-4"><select class="form-select" id="lg-cat">
+              ${categories.map(c => `<option value="${c}">${c}</option>`).join('')}
+            </select></div>
+            <div class="col-md-2"><input class="form-control" id="lg-hours" type="number" step="0.5" placeholder="ชม."></div>
+            <div class="col-md-3"><button class="btn btn-success w-100" id="lg-save"><i class="bi bi-check-lg me-1"></i>บันทึก</button></div>
+          </div>
+          <div><textarea class="form-control" id="lg-desc" rows="2" placeholder="รายละเอียด"></textarea></div>
+        </div></div>
+      </div>
+      <div id="lg-list">
+        ${entries.length === 0 ? '<div class="text-muted text-center py-4">ยังไม่มีบันทึก</div>' :
+          entries.map(e => `
+          <div class="card border-0 shadow-sm mb-2"><div class="card-body d-flex justify-content-between align-items-center">
+            <div>
+              <span class="badge bg-secondary me-2">${DOMPurify.sanitize(e.category)}</span>
+              <strong>${e.hours} ชม.</strong>
+              <span class="text-muted small ms-2">${e.entry_date || ''}</span>
+              ${e.description ? `<div class="text-muted small">${DOMPurify.sanitize(e.description).substring(0,80)}</div>` : ''}
+            </div>
+            <button class="btn btn-sm btn-outline-danger" data-del="${e.id}"><i class="bi bi-trash"></i></button>
+          </div></div>`).join('')}
+      </div>`;
+
+    document.getElementById('lg-save')?.addEventListener('click', async () => {
+      const res = await API.post('/api/logbook', {
+        entry_date: document.getElementById('lg-date').value,
+        category: document.getElementById('lg-cat').value,
+        hours: parseFloat(document.getElementById('lg-hours').value),
+        semester_id: activeSem?.id,
+        description: document.getElementById('lg-desc').value || null
+      });
+      if (res.success) { App.toast('บันทึกสำเร็จ!'); this.render(area); }
+      else App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+    });
+
+    area.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('ลบบันทึกนี้?')) return;
+        const res = await API.del(`/api/logbook/${btn.dataset.del}`);
+        if (res.success) { App.toast('ลบแล้ว'); this.render(area); }
+      });
+    });
+  }
+};
+
+// ==================== Awards Module ====================
+App.modules['awards'] = {
+  async render(area) {
+    const [typeRes, awardRes] = await Promise.all([
+      API.get('/api/awards/types'), API.get('/api/awards')
+    ]);
+    const types = typeRes.success ? typeRes.data : [];
+    const awards = awardRes.success ? awardRes.data : [];
+    const statusLabels = { planning: 'วางแผน', applied: 'สมัครแล้ว', waiting: 'รอผล', won: 'ได้รับ', not_won: 'ไม่ได้รับ' };
+    const statusColors = { planning: 'secondary', applied: 'info', waiting: 'warning', won: 'success', not_won: 'danger' };
+
+    area.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="fw-bold mb-0"><i class="bi bi-trophy me-2"></i>เกียรติบัตร/รางวัล</h4>
+        <div>
+          <button class="btn btn-outline-secondary me-1" data-bs-toggle="collapse" data-bs-target="#aw-type-form"><i class="bi bi-tag me-1"></i>ประเภท</button>
+          <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#aw-form"><i class="bi bi-plus-lg me-1"></i>เพิ่มรางวัล</button>
+        </div>
+      </div>
+      <div class="collapse mb-3" id="aw-type-form">
+        <div class="card border-0 shadow-sm"><div class="card-body">
+          <div class="row g-2">
+            <div class="col-md-5"><input class="form-control" id="awt-name" placeholder="ชื่อประเภท เช่น OBEC Awards"></div>
+            <div class="col-md-3"><input class="form-control" id="awt-level" placeholder="ระดับ เช่น ชาติ"></div>
+            <div class="col-md-2"><input class="form-control" id="awt-org" placeholder="หน่วยงาน"></div>
+            <div class="col-md-2"><button class="btn btn-success w-100" id="awt-save">บันทึก</button></div>
+          </div>
+        </div></div>
+      </div>
+      <div class="collapse mb-3" id="aw-form">
+        <div class="card border-0 shadow-sm"><div class="card-body">
+          <div class="row g-2 mb-2">
+            <div class="col-md-6"><select class="form-select" id="aw-type">
+              <option value="">-- เลือกประเภทรางวัล --</option>
+              ${types.map(t => `<option value="${t.id}">${DOMPurify.sanitize(t.name)} ${t.level ? '('+t.level+')' : ''}</option>`).join('')}
+            </select></div>
+            <div class="col-md-3"><input class="form-control" id="aw-year" type="number" value="${new Date().getFullYear() + 543}" placeholder="ปี พ.ศ."></div>
+            <div class="col-md-3"><button class="btn btn-success w-100" id="aw-save">เพิ่ม</button></div>
+          </div>
+          <div><textarea class="form-control" id="aw-notes" rows="2" placeholder="หมายเหตุ"></textarea></div>
+        </div></div>
+      </div>
+      <div id="aw-list">
+        ${awards.length === 0 ? '<div class="text-muted text-center py-4">ยังไม่มีรางวัล</div>' :
+          awards.map(a => `
+          <div class="card border-0 shadow-sm mb-2"><div class="card-body d-flex justify-content-between align-items-center">
+            <div>
+              <strong>${DOMPurify.sanitize(a.type_name || 'ไม่ระบุ')}</strong>
+              <span class="text-muted small ms-2">ปี ${a.academic_year}</span>
+              <span class="badge bg-${statusColors[a.status] || 'secondary'} ms-2">${statusLabels[a.status] || a.status}</span>
+            </div>
+            <div>
+              <select class="form-select form-select-sm d-inline-block w-auto me-1" data-status="${a.id}">
+                ${Object.entries(statusLabels).map(([k,v]) => `<option value="${k}" ${a.status===k?'selected':''}>${v}</option>`).join('')}
+              </select>
+              <button class="btn btn-sm btn-outline-danger" data-del="${a.id}"><i class="bi bi-trash"></i></button>
+            </div>
+          </div></div>`).join('')}
+      </div>`;
+
+    document.getElementById('awt-save')?.addEventListener('click', async () => {
+      const res = await API.post('/api/awards/types', {
+        name: document.getElementById('awt-name').value,
+        level: document.getElementById('awt-level').value || null,
+        organizing_body: document.getElementById('awt-org').value || null
+      });
+      if (res.success) { App.toast('เพิ่มประเภทสำเร็จ!'); this.render(area); }
+      else App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+    });
+
+    document.getElementById('aw-save')?.addEventListener('click', async () => {
+      const res = await API.post('/api/awards', {
+        award_type_id: document.getElementById('aw-type').value,
+        academic_year: parseInt(document.getElementById('aw-year').value),
+        notes: document.getElementById('aw-notes').value || null
+      });
+      if (res.success) { App.toast('เพิ่มรางวัลสำเร็จ!'); this.render(area); }
+      else App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+    });
+
+    area.querySelectorAll('[data-status]').forEach(sel => {
+      sel.addEventListener('change', async () => {
+        await API.put(`/api/awards/${sel.dataset.status}`, { status: sel.value });
+        App.toast('อัปเดตสถานะแล้ว');
+      });
+    });
+
+    area.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('ลบรางวัลนี้?')) return;
+        const res = await API.del(`/api/awards/${btn.dataset.del}`);
+        if (res.success) { App.toast('ลบแล้ว'); this.render(area); }
+      });
+    });
+  }
+};
+
+// ==================== Homeroom Module ====================
+App.modules['homeroom'] = {
+  async render(area) {
+    const [semRes, clsRes, hrRes] = await Promise.all([
+      API.get('/api/semesters'), API.get('/api/classrooms'), API.get('/api/homeroom')
+    ]);
+    const semesters = semRes.success ? semRes.data : [];
+    const activeSem = semesters.find(s => s.is_active);
+    const classrooms = clsRes.success ? clsRes.data : [];
+    const assignments = hrRes.success ? hrRes.data : [];
+
+    area.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="fw-bold mb-0"><i class="bi bi-house-heart me-2"></i>ครูที่ปรึกษา</h4>
+        <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#hr-form"><i class="bi bi-plus-lg me-1"></i>เพิ่มห้อง</button>
+      </div>
+      <div class="collapse mb-3" id="hr-form">
+        <div class="card border-0 shadow-sm"><div class="card-body">
+          <div class="row g-2">
+            <div class="col-md-5"><select class="form-select" id="hr-cls">
+              <option value="">-- เลือกห้องเรียน --</option>
+              ${classrooms.map(c => `<option value="${c.id}">${DOMPurify.sanitize(c.name)}</option>`).join('')}
+            </select></div>
+            <div class="col-md-5"><select class="form-select" id="hr-sem">
+              ${semesters.map(s => `<option value="${s.id}" ${s.is_active?'selected':''}>${s.academic_year}/${s.semester}</option>`).join('')}
+            </select></div>
+            <div class="col-md-2"><button class="btn btn-success w-100" id="hr-save">เพิ่ม</button></div>
+          </div>
+        </div></div>
+      </div>
+      <div id="hr-list">
+        ${assignments.length === 0 ? '<div class="text-muted text-center py-4">ยังไม่ได้รับมอบหมายห้อง</div>' :
+          assignments.map(a => `
+          <div class="card border-0 shadow-sm mb-2"><div class="card-body d-flex justify-content-between align-items-center">
+            <div>
+              <i class="bi bi-house-door me-2"></i>
+              <strong>${DOMPurify.sanitize(a.classroom_name)}</strong>
+              <span class="badge bg-info ms-2">${DOMPurify.sanitize(a.role || 'ครูที่ปรึกษา')}</span>
+            </div>
+            <button class="btn btn-sm btn-outline-danger" data-del="${a.id}"><i class="bi bi-trash"></i></button>
+          </div></div>`).join('')}
+      </div>`;
+
+    document.getElementById('hr-save')?.addEventListener('click', async () => {
+      const res = await API.post('/api/homeroom', {
+        classroom_id: document.getElementById('hr-cls').value,
+        semester_id: document.getElementById('hr-sem').value
+      });
+      if (res.success) { App.toast('เพิ่มห้องสำเร็จ!'); this.render(area); }
+      else App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+    });
+
+    area.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('ลบการมอบหมายนี้?')) return;
+        const res = await API.del(`/api/homeroom/${btn.dataset.del}`);
+        if (res.success) { App.toast('ลบแล้ว'); this.render(area); }
+      });
+    });
+  }
+};
+
+// ==================== Home Visit Module ====================
+App.modules['home-visit'] = {
+  async render(area) {
+    const [clsRes, visitRes] = await Promise.all([
+      API.get('/api/classrooms'), API.get('/api/home-visit')
+    ]);
+    const classrooms = clsRes.success ? clsRes.data : [];
+    const visits = visitRes.success ? visitRes.data : [];
+
+    area.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="fw-bold mb-0"><i class="bi bi-geo-alt me-2"></i>เยี่ยมบ้าน</h4>
+        <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#hv-form"><i class="bi bi-plus-lg me-1"></i>เพิ่มบันทึก</button>
+      </div>
+      <div class="collapse mb-3" id="hv-form">
+        <div class="card border-0 shadow-sm"><div class="card-body">
+          <div class="row g-2 mb-2">
+            <div class="col-md-4"><select class="form-select" id="hv-cls">
+              <option value="">-- เลือกห้อง --</option>
+              ${classrooms.map(c => `<option value="${c.id}">${DOMPurify.sanitize(c.name)}</option>`).join('')}
+            </select></div>
+            <div class="col-md-4"><select class="form-select" id="hv-student" disabled>
+              <option value="">-- เลือกนักเรียน --</option>
+            </select></div>
+            <div class="col-md-4"><input class="form-control" id="hv-date" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-md-6"><input class="form-control" id="hv-addr" placeholder="ที่อยู่ที่เยี่ยม"></div>
+            <div class="col-md-3"><select class="form-select" id="hv-type">
+              <option value="in_person">เยี่ยมจริง</option>
+              <option value="phone">โทรศัพท์</option>
+              <option value="online">ออนไลน์</option>
+            </select></div>
+            <div class="col-md-3"><input class="form-control" id="hv-family" placeholder="ผู้ปกครองที่พบ"></div>
+          </div>
+          <div class="mb-2"><textarea class="form-control" id="hv-notes" rows="2" placeholder="บันทึกการเยี่ยม"></textarea></div>
+          <button class="btn btn-success" id="hv-save"><i class="bi bi-check-lg me-1"></i>บันทึก</button>
+        </div></div>
+      </div>
+      <div id="hv-list">
+        ${visits.length === 0 ? '<div class="text-muted text-center py-4">ยังไม่มีบันทึกการเยี่ยมบ้าน</div>' :
+          visits.map(v => `
+          <div class="card border-0 shadow-sm mb-2"><div class="card-body d-flex justify-content-between align-items-center">
+            <div>
+              <strong>${DOMPurify.sanitize(v.first_name)} ${DOMPurify.sanitize(v.last_name)}</strong>
+              <span class="text-muted small ms-2">${v.student_code}</span>
+              <span class="text-muted small ms-2">${v.visit_date || ''}</span>
+              <span class="badge bg-${v.visit_type==='in_person'?'success':'info'} ms-2">${v.visit_type==='in_person'?'เยี่ยมจริง':v.visit_type==='phone'?'โทรฯ':'ออนไลน์'}</span>
+              ${v.follow_up_needed ? '<span class="badge bg-warning text-dark ms-1">ต้องติดตาม</span>' : ''}
+            </div>
+            <button class="btn btn-sm btn-outline-danger" data-del="${v.id}"><i class="bi bi-trash"></i></button>
+          </div></div>`).join('')}
+      </div>`;
+
+    // Load students when classroom selected
+    document.getElementById('hv-cls')?.addEventListener('change', async (e) => {
+      const sel = document.getElementById('hv-student');
+      if (!e.target.value) { sel.disabled = true; sel.innerHTML = '<option value="">-- เลือกนักเรียน --</option>'; return; }
+      const res = await API.get(`/api/students?classroom_id=${e.target.value}`);
+      if (res.success) {
+        sel.innerHTML = '<option value="">-- เลือกนักเรียน --</option>' +
+          res.data.map(s => `<option value="${s.id}">${s.student_code} ${DOMPurify.sanitize(s.first_name)} ${DOMPurify.sanitize(s.last_name)}</option>`).join('');
+        sel.disabled = false;
+      }
+    });
+
+    document.getElementById('hv-save')?.addEventListener('click', async () => {
+      const res = await API.post('/api/home-visit', {
+        student_id: document.getElementById('hv-student').value,
+        visit_date: document.getElementById('hv-date').value,
+        visit_type: document.getElementById('hv-type').value,
+        address_visited: document.getElementById('hv-addr').value || null,
+        family_present: document.getElementById('hv-family').value || null,
+        raw_notes: document.getElementById('hv-notes').value || null
+      });
+      if (res.success) { App.toast('บันทึกเยี่ยมบ้านสำเร็จ!'); this.render(area); }
+      else App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+    });
+
+    area.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('ลบบันทึกนี้?')) return;
+        const res = await API.del(`/api/home-visit/${btn.dataset.del}`);
+        if (res.success) { App.toast('ลบแล้ว'); this.render(area); }
+      });
+    });
+  }
+};
+
+// ==================== SDQ Module ====================
+App.modules['sdq'] = {
+  async render(area) {
+    const [clsRes, sdqRes] = await Promise.all([
+      API.get('/api/classrooms'), API.get('/api/sdq')
+    ]);
+    const classrooms = clsRes.success ? clsRes.data : [];
+    const screenings = sdqRes.success ? sdqRes.data : [];
+    const riskColors = { 'ปกติ': 'success', 'เสี่ยง': 'warning', 'มีปัญหา': 'danger' };
+
+    area.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="fw-bold mb-0"><i class="bi bi-heart-pulse me-2"></i>SDQ</h4>
+        <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#sdq-form"><i class="bi bi-plus-lg me-1"></i>เพิ่มแบบคัดกรอง</button>
+      </div>
+      <div class="collapse mb-3" id="sdq-form">
+        <div class="card border-0 shadow-sm"><div class="card-body">
+          <div class="row g-2 mb-2">
+            <div class="col-md-4"><select class="form-select" id="sdq-cls">
+              <option value="">-- เลือกห้อง --</option>
+              ${classrooms.map(c => `<option value="${c.id}">${DOMPurify.sanitize(c.name)}</option>`).join('')}
+            </select></div>
+            <div class="col-md-4"><select class="form-select" id="sdq-student" disabled>
+              <option value="">-- เลือกนักเรียน --</option>
+            </select></div>
+            <div class="col-md-4"><input class="form-control" id="sdq-date" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col"><input class="form-control" id="sdq-emo" type="number" min="0" max="10" placeholder="อารมณ์ (0-10)"></div>
+            <div class="col"><input class="form-control" id="sdq-con" type="number" min="0" max="10" placeholder="ความประพฤติ (0-10)"></div>
+            <div class="col"><input class="form-control" id="sdq-hyp" type="number" min="0" max="10" placeholder="สมาธิ (0-10)"></div>
+            <div class="col"><input class="form-control" id="sdq-peer" type="number" min="0" max="10" placeholder="เพื่อน (0-10)"></div>
+            <div class="col"><input class="form-control" id="sdq-pro" type="number" min="0" max="10" placeholder="สังคม (0-10)"></div>
+          </div>
+          <button class="btn btn-success" id="sdq-save"><i class="bi bi-check-lg me-1"></i>บันทึก</button>
+          <small class="text-muted ms-2">คะแนนรวม (ไม่รวมสังคม): ปกติ 0-13, เสี่ยง 14-19, มีปัญหา 20+</small>
+        </div></div>
+      </div>
+      <div id="sdq-list">
+        ${screenings.length === 0 ? '<div class="text-muted text-center py-4">ยังไม่มีข้อมูล SDQ</div>' :
+          screenings.map(s => `
+          <div class="card border-0 shadow-sm mb-2"><div class="card-body d-flex justify-content-between align-items-center">
+            <div>
+              <strong>${DOMPurify.sanitize(s.first_name)} ${DOMPurify.sanitize(s.last_name)}</strong>
+              <span class="text-muted small ms-2">${s.student_code}</span>
+              <span class="text-muted small ms-2">${s.screen_date || ''}</span>
+              <span class="badge bg-${riskColors[s.risk_level] || 'secondary'} ms-2">${s.risk_level || '?'} (${s.total_difficulty})</span>
+            </div>
+            <button class="btn btn-sm btn-outline-danger" data-del="${s.id}"><i class="bi bi-trash"></i></button>
+          </div></div>`).join('')}
+      </div>`;
+
+    document.getElementById('sdq-cls')?.addEventListener('change', async (e) => {
+      const sel = document.getElementById('sdq-student');
+      if (!e.target.value) { sel.disabled = true; return; }
+      const res = await API.get(`/api/students?classroom_id=${e.target.value}`);
+      if (res.success) {
+        sel.innerHTML = '<option value="">-- เลือกนักเรียน --</option>' +
+          res.data.map(s => `<option value="${s.id}">${s.student_code} ${DOMPurify.sanitize(s.first_name)} ${DOMPurify.sanitize(s.last_name)}</option>`).join('');
+        sel.disabled = false;
+      }
+    });
+
+    document.getElementById('sdq-save')?.addEventListener('click', async () => {
+      const res = await API.post('/api/sdq', {
+        student_id: document.getElementById('sdq-student').value,
+        screen_date: document.getElementById('sdq-date').value,
+        emotional_score: parseInt(document.getElementById('sdq-emo').value) || 0,
+        conduct_score: parseInt(document.getElementById('sdq-con').value) || 0,
+        hyperactivity_score: parseInt(document.getElementById('sdq-hyp').value) || 0,
+        peer_score: parseInt(document.getElementById('sdq-peer').value) || 0,
+        prosocial_score: parseInt(document.getElementById('sdq-pro').value) || 0
+      });
+      if (res.success) {
+        App.toast(`บันทึก SDQ สำเร็จ! ระดับ: ${res.data.risk_level} (${res.data.total_difficulty})`);
+        this.render(area);
+      } else App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+    });
+
+    area.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('ลบข้อมูล SDQ นี้?')) return;
+        const res = await API.del(`/api/sdq/${btn.dataset.del}`);
+        if (res.success) { App.toast('ลบแล้ว'); this.render(area); }
+      });
+    });
+  }
+};
+
+// ==================== Care Record Module ====================
+App.modules['care-record'] = {
+  async render(area) {
+    const [clsRes, careRes] = await Promise.all([
+      API.get('/api/classrooms'), API.get('/api/care-record')
+    ]);
+    const classrooms = clsRes.success ? clsRes.data : [];
+    const records = careRes.success ? careRes.data : [];
+    const stepLabels = { 1: 'รู้จักผู้เรียน', 2: 'คัดกรอง', 3: 'ส่งเสริม/ป้องกัน', 4: 'แก้ไข', 5: 'ส่งต่อ' };
+
+    area.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="fw-bold mb-0"><i class="bi bi-clipboard2-heart me-2"></i>บันทึกการดูแล</h4>
+        <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#care-form"><i class="bi bi-plus-lg me-1"></i>เพิ่มบันทึก</button>
+      </div>
+      <div class="collapse mb-3" id="care-form">
+        <div class="card border-0 shadow-sm"><div class="card-body">
+          <div class="row g-2 mb-2">
+            <div class="col-md-3"><select class="form-select" id="cr-cls">
+              <option value="">-- เลือกห้อง --</option>
+              ${classrooms.map(c => `<option value="${c.id}">${DOMPurify.sanitize(c.name)}</option>`).join('')}
+            </select></div>
+            <div class="col-md-3"><select class="form-select" id="cr-student" disabled>
+              <option value="">-- เลือกนักเรียน --</option>
+            </select></div>
+            <div class="col-md-3"><select class="form-select" id="cr-step">
+              ${Object.entries(stepLabels).map(([k,v]) => `<option value="${k}">ขั้นที่ ${k}: ${v}</option>`).join('')}
+            </select></div>
+            <div class="col-md-3"><input class="form-control" id="cr-date" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
+          </div>
+          <div class="mb-2"><textarea class="form-control" id="cr-desc" rows="2" placeholder="รายละเอียด"></textarea></div>
+          <div class="mb-2"><textarea class="form-control" id="cr-action" rows="2" placeholder="สิ่งที่ดำเนินการ"></textarea></div>
+          <button class="btn btn-success" id="cr-save"><i class="bi bi-check-lg me-1"></i>บันทึก</button>
+        </div></div>
+      </div>
+      <div id="cr-list">
+        ${records.length === 0 ? '<div class="text-muted text-center py-4">ยังไม่มีบันทึกการดูแล</div>' :
+          records.map(r => `
+          <div class="card border-0 shadow-sm mb-2"><div class="card-body d-flex justify-content-between align-items-center">
+            <div>
+              <strong>${DOMPurify.sanitize(r.first_name)} ${DOMPurify.sanitize(r.last_name)}</strong>
+              <span class="text-muted small ms-2">${r.student_code}</span>
+              <span class="badge bg-primary ms-2">ขั้นที่ ${r.care_step}: ${stepLabels[r.care_step] || ''}</span>
+              <span class="text-muted small ms-2">${r.record_date || ''}</span>
+              ${r.description ? `<div class="text-muted small">${DOMPurify.sanitize(r.description).substring(0,80)}</div>` : ''}
+            </div>
+            <button class="btn btn-sm btn-outline-danger" data-del="${r.id}"><i class="bi bi-trash"></i></button>
+          </div></div>`).join('')}
+      </div>`;
+
+    document.getElementById('cr-cls')?.addEventListener('change', async (e) => {
+      const sel = document.getElementById('cr-student');
+      if (!e.target.value) { sel.disabled = true; return; }
+      const res = await API.get(`/api/students?classroom_id=${e.target.value}`);
+      if (res.success) {
+        sel.innerHTML = '<option value="">-- เลือกนักเรียน --</option>' +
+          res.data.map(s => `<option value="${s.id}">${s.student_code} ${DOMPurify.sanitize(s.first_name)} ${DOMPurify.sanitize(s.last_name)}</option>`).join('');
+        sel.disabled = false;
+      }
+    });
+
+    document.getElementById('cr-save')?.addEventListener('click', async () => {
+      const res = await API.post('/api/care-record', {
+        student_id: document.getElementById('cr-student').value,
+        care_step: parseInt(document.getElementById('cr-step').value),
+        record_date: document.getElementById('cr-date').value,
+        description: document.getElementById('cr-desc').value,
+        action_taken: document.getElementById('cr-action').value || null
+      });
+      if (res.success) { App.toast('บันทึกการดูแลสำเร็จ!'); this.render(area); }
+      else App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+    });
+
+    area.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('ลบบันทึกนี้?')) return;
+        const res = await API.del(`/api/care-record/${btn.dataset.del}`);
+        if (res.success) { App.toast('ลบแล้ว'); this.render(area); }
+      });
+    });
+  }
+};
+
+// ==================== Calendar Module ====================
+App.modules['calendar'] = {
+  async render(area) {
+    const now = new Date();
+    const month = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    const res = await API.get(`/api/calendar?month=${month}`);
+    const events = res.success ? res.data : [];
+    const typeLabels = { academic: 'วิชาการ', exam: 'สอบ', holiday: 'วันหยุด', meeting: 'ประชุม', event: 'กิจกรรม', personal: 'ส่วนตัว' };
+    const typeColors = { academic: 'primary', exam: 'danger', holiday: 'success', meeting: 'info', event: 'warning', personal: 'secondary' };
+
+    area.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="fw-bold mb-0"><i class="bi bi-calendar3 me-2"></i>ปฏิทิน</h4>
+        <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#cal-form"><i class="bi bi-plus-lg me-1"></i>เพิ่มกิจกรรม</button>
+      </div>
+      <div class="collapse mb-3" id="cal-form">
+        <div class="card border-0 shadow-sm"><div class="card-body">
+          <div class="row g-2 mb-2">
+            <div class="col-md-4"><input class="form-control" id="cal-title" placeholder="ชื่อกิจกรรม"></div>
+            <div class="col-md-3"><select class="form-select" id="cal-type">
+              <option value="">-- ประเภท --</option>
+              ${Object.entries(typeLabels).map(([k,v]) => `<option value="${k}">${v}</option>`).join('')}
+            </select></div>
+            <div class="col-md-3"><input class="form-control" id="cal-date" type="date"></div>
+            <div class="col-md-2"><button class="btn btn-success w-100" id="cal-save">เพิ่ม</button></div>
+          </div>
+          <div><textarea class="form-control" id="cal-notes" rows="2" placeholder="หมายเหตุ"></textarea></div>
+        </div></div>
+      </div>
+      <div id="cal-list">
+        ${events.length === 0 ? `<div class="text-muted text-center py-4">ไม่มีกิจกรรมในเดือนนี้ (${month})</div>` :
+          events.map(e => `
+          <div class="card border-0 shadow-sm mb-2"><div class="card-body d-flex justify-content-between align-items-center">
+            <div>
+              <span class="badge bg-${typeColors[e.event_type] || 'secondary'} me-2">${typeLabels[e.event_type] || e.event_type || ''}</span>
+              <strong>${DOMPurify.sanitize(e.title)}</strong>
+              <span class="text-muted small ms-2">${e.date}${e.end_date ? ' - '+e.end_date : ''}</span>
+              ${e.notes ? `<div class="text-muted small">${DOMPurify.sanitize(e.notes).substring(0,80)}</div>` : ''}
+            </div>
+            <button class="btn btn-sm btn-outline-danger" data-del="${e.id}"><i class="bi bi-trash"></i></button>
+          </div></div>`).join('')}
+      </div>`;
+
+    document.getElementById('cal-save')?.addEventListener('click', async () => {
+      const res = await API.post('/api/calendar', {
+        title: document.getElementById('cal-title').value,
+        event_type: document.getElementById('cal-type').value || null,
+        date: document.getElementById('cal-date').value,
+        notes: document.getElementById('cal-notes').value || null
+      });
+      if (res.success) { App.toast('เพิ่มกิจกรรมสำเร็จ!'); this.render(area); }
+      else App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+    });
+
+    area.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('ลบกิจกรรมนี้?')) return;
+        const res = await API.del(`/api/calendar/${btn.dataset.del}`);
+        if (res.success) { App.toast('ลบแล้ว'); this.render(area); }
+      });
+    });
+  }
+};
+
+// ==================== Documents Module ====================
+App.modules['documents'] = {
+  async render(area) {
+    const [typeRes, docRes] = await Promise.all([
+      API.get('/api/documents/types'), API.get('/api/documents')
+    ]);
+    const types = typeRes.success ? typeRes.data : [];
+    const docs = docRes.success ? docRes.data : [];
+
+    area.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="fw-bold mb-0"><i class="bi bi-file-earmark me-2"></i>เอกสาร</h4>
+        <div>
+          <button class="btn btn-outline-secondary me-1" data-bs-toggle="collapse" data-bs-target="#doc-type-form"><i class="bi bi-tag me-1"></i>ประเภท</button>
+          <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#doc-form"><i class="bi bi-plus-lg me-1"></i>สร้างเอกสาร</button>
+        </div>
+      </div>
+      <div class="collapse mb-3" id="doc-type-form">
+        <div class="card border-0 shadow-sm"><div class="card-body">
+          <div class="row g-2">
+            <div class="col-md-5"><input class="form-control" id="dt-name" placeholder="ชื่อประเภท"></div>
+            <div class="col-md-5"><input class="form-control" id="dt-cat" placeholder="หมวดหมู่ (เช่น วิชาการ, บริหาร)"></div>
+            <div class="col-md-2"><button class="btn btn-success w-100" id="dt-save">เพิ่ม</button></div>
+          </div>
+        </div></div>
+      </div>
+      <div class="collapse mb-3" id="doc-form">
+        <div class="card border-0 shadow-sm"><div class="card-body">
+          <div class="row g-2 mb-2">
+            <div class="col-md-6"><input class="form-control" id="doc-title" placeholder="ชื่อเอกสาร"></div>
+            <div class="col-md-4"><select class="form-select" id="doc-type">
+              <option value="">-- ประเภท --</option>
+              ${types.map(t => `<option value="${t.id}">${DOMPurify.sanitize(t.name)}</option>`).join('')}
+            </select></div>
+            <div class="col-md-2"><button class="btn btn-success w-100" id="doc-save">สร้าง</button></div>
+          </div>
+          <div><textarea class="form-control" id="doc-content" rows="3" placeholder="เนื้อหา"></textarea></div>
+        </div></div>
+      </div>
+      <div id="doc-list">
+        ${docs.length === 0 ? '<div class="text-muted text-center py-4">ยังไม่มีเอกสาร</div>' :
+          docs.map(d => `
+          <div class="card border-0 shadow-sm mb-2"><div class="card-body d-flex justify-content-between align-items-center">
+            <div>
+              <strong>${DOMPurify.sanitize(d.title)}</strong>
+              ${d.type_name ? `<span class="badge bg-info ms-2">${DOMPurify.sanitize(d.type_name)}</span>` : ''}
+              <span class="badge bg-${d.status==='final'?'success':'secondary'} ms-2">${d.status==='final'?'เสร็จสิ้น':'ร่าง'}</span>
+              <span class="text-muted small ms-2">${d.updated_at?.split('T')[0] || ''}</span>
+            </div>
+            <button class="btn btn-sm btn-outline-danger" data-del="${d.id}"><i class="bi bi-trash"></i></button>
+          </div></div>`).join('')}
+      </div>`;
+
+    document.getElementById('dt-save')?.addEventListener('click', async () => {
+      const res = await API.post('/api/documents/types', {
+        name: document.getElementById('dt-name').value,
+        category: document.getElementById('dt-cat').value || null
+      });
+      if (res.success) { App.toast('เพิ่มประเภทสำเร็จ!'); this.render(area); }
+      else App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+    });
+
+    document.getElementById('doc-save')?.addEventListener('click', async () => {
+      const res = await API.post('/api/documents', {
+        title: document.getElementById('doc-title').value,
+        document_type_id: document.getElementById('doc-type').value || null,
+        content: document.getElementById('doc-content').value || null
+      });
+      if (res.success) { App.toast('สร้างเอกสารสำเร็จ!'); this.render(area); }
+      else App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+    });
+
+    area.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('ลบเอกสารนี้?')) return;
+        const res = await API.del(`/api/documents/${btn.dataset.del}`);
+        if (res.success) { App.toast('ลบแล้ว'); this.render(area); }
+      });
+    });
+  }
+};
+
+// ==================== Cover Designer Module ====================
+App.modules['cover-designer'] = {
+  async render(area) {
+    const res = await API.get('/api/cover-designer');
+    const templates = res.success ? res.data : [];
+
+    area.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="fw-bold mb-0"><i class="bi bi-palette me-2"></i>ออกแบบปก</h4>
+        <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#cv-form"><i class="bi bi-plus-lg me-1"></i>สร้างเทมเพลต</button>
+      </div>
+      <div class="collapse mb-3" id="cv-form">
+        <div class="card border-0 shadow-sm"><div class="card-body">
+          <div class="row g-2 mb-2">
+            <div class="col-md-5"><input class="form-control" id="cv-name" placeholder="ชื่อเทมเพลต"></div>
+            <div class="col-md-5"><select class="form-select" id="cv-type">
+              <option value="">-- ประเภท --</option>
+              <option value="lesson_plan">แผนการสอน</option>
+              <option value="research">วิจัย</option>
+              <option value="sar">SAR</option>
+              <option value="portfolio">Portfolio</option>
+              <option value="general">ทั่วไป</option>
+            </select></div>
+            <div class="col-md-2"><button class="btn btn-success w-100" id="cv-save">สร้าง</button></div>
+          </div>
+          <div><textarea class="form-control" id="cv-data" rows="3" placeholder="ข้อมูลการออกแบบ (JSON หรือข้อความ)"></textarea></div>
+        </div></div>
+      </div>
+      <div class="row g-3" id="cv-list">
+        ${templates.length === 0 ? '<div class="col-12 text-muted text-center py-4">ยังไม่มีเทมเพลต</div>' :
+          templates.map(t => `
+          <div class="col-md-4">
+            <div class="card border-0 shadow-sm h-100"><div class="card-body text-center">
+              <i class="bi bi-image d-block display-4 text-muted mb-2"></i>
+              <strong>${DOMPurify.sanitize(t.name)}</strong>
+              ${t.template_type ? `<div class="badge bg-info">${DOMPurify.sanitize(t.template_type)}</div>` : ''}
+              <div class="mt-2"><button class="btn btn-sm btn-outline-danger" data-del="${t.id}"><i class="bi bi-trash me-1"></i>ลบ</button></div>
+            </div></div>
+          </div>`).join('')}
+      </div>`;
+
+    document.getElementById('cv-save')?.addEventListener('click', async () => {
+      const res = await API.post('/api/cover-designer', {
+        name: document.getElementById('cv-name').value,
+        template_type: document.getElementById('cv-type').value || null,
+        design_data: document.getElementById('cv-data').value || null
+      });
+      if (res.success) { App.toast('สร้างเทมเพลตสำเร็จ!'); this.render(area); }
+      else App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+    });
+
+    area.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('ลบเทมเพลตนี้?')) return;
+        const res = await API.del(`/api/cover-designer/${btn.dataset.del}`);
+        if (res.success) { App.toast('ลบแล้ว'); this.render(area); }
+      });
+    });
+  }
+};
+
+// ==================== Instruments Module ====================
+App.modules['instruments'] = {
+  async render(area) {
+    const res = await API.get('/api/instruments');
+    const items = res.success ? res.data : [];
+    const condLabels = { good: 'ดี', fair: 'พอใช้', poor: 'ชำรุด', repair: 'ซ่อม', lost: 'สูญหาย' };
+    const condColors = { good: 'success', fair: 'warning', poor: 'danger', repair: 'info', lost: 'dark' };
+
+    area.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="fw-bold mb-0"><i class="bi bi-music-note-beamed me-2"></i>เครื่องดนตรี</h4>
+        <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#inst-form"><i class="bi bi-plus-lg me-1"></i>เพิ่มเครื่องดนตรี</button>
+      </div>
+      <div class="collapse mb-3" id="inst-form">
+        <div class="card border-0 shadow-sm"><div class="card-body">
+          <div class="row g-2 mb-2">
+            <div class="col-md-4"><input class="form-control" id="ins-name" placeholder="ชื่อเครื่องดนตรี"></div>
+            <div class="col-md-3"><input class="form-control" id="ins-cat" placeholder="หมวด (เช่น เครื่องสาย, ลม)"></div>
+            <div class="col-md-2"><select class="form-select" id="ins-cond">
+              ${Object.entries(condLabels).map(([k,v]) => `<option value="${k}" ${k==='good'?'selected':''}>${v}</option>`).join('')}
+            </select></div>
+            <div class="col-md-1"><input class="form-control" id="ins-qty" type="number" value="1" min="1"></div>
+            <div class="col-md-2"><button class="btn btn-success w-100" id="ins-save">เพิ่ม</button></div>
+          </div>
+          <div class="row g-2">
+            <div class="col-md-4"><input class="form-control" id="ins-serial" placeholder="เลข S/N"></div>
+            <div class="col-md-4"><input class="form-control" id="ins-loc" placeholder="สถานที่เก็บ"></div>
+            <div class="col-md-4"><textarea class="form-control" id="ins-notes" rows="1" placeholder="หมายเหตุ"></textarea></div>
+          </div>
+        </div></div>
+      </div>
+      <div id="ins-list">
+        ${items.length === 0 ? '<div class="text-muted text-center py-4">ยังไม่มีเครื่องดนตรี</div>' :
+          items.map(i => `
+          <div class="card border-0 shadow-sm mb-2"><div class="card-body d-flex justify-content-between align-items-center">
+            <div>
+              <strong>${DOMPurify.sanitize(i.name)}</strong>
+              ${i.category ? `<span class="text-muted small ms-2">${DOMPurify.sanitize(i.category)}</span>` : ''}
+              <span class="badge bg-${condColors[i.condition] || 'secondary'} ms-2">${condLabels[i.condition] || i.condition}</span>
+              ${i.quantity > 1 ? `<span class="badge bg-info ms-1">${i.quantity} ชิ้น</span>` : ''}
+              ${i.storage_location ? `<span class="text-muted small ms-2"><i class="bi bi-geo"></i> ${DOMPurify.sanitize(i.storage_location)}</span>` : ''}
+            </div>
+            <button class="btn btn-sm btn-outline-danger" data-del="${i.id}"><i class="bi bi-trash"></i></button>
+          </div></div>`).join('')}
+      </div>`;
+
+    document.getElementById('ins-save')?.addEventListener('click', async () => {
+      const res = await API.post('/api/instruments', {
+        name: document.getElementById('ins-name').value,
+        category: document.getElementById('ins-cat').value || null,
+        condition: document.getElementById('ins-cond').value,
+        quantity: parseInt(document.getElementById('ins-qty').value) || 1,
+        serial_number: document.getElementById('ins-serial').value || null,
+        storage_location: document.getElementById('ins-loc').value || null,
+        notes: document.getElementById('ins-notes').value || null
+      });
+      if (res.success) { App.toast('เพิ่มเครื่องดนตรีสำเร็จ!'); this.render(area); }
+      else App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+    });
+
+    area.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('ลบเครื่องดนตรีนี้?')) return;
+        const res = await API.del(`/api/instruments/${btn.dataset.del}`);
+        if (res.success) { App.toast('ลบแล้ว'); this.render(area); }
+      });
+    });
+  }
+};
+
+// ==================== Quick Drop Module ====================
+App.modules['quick-drop'] = {
+  async render(area) {
+    const res = await API.get('/api/quick-drop');
+    const drops = res.success ? res.data : [];
+    const statusLabels = { pending: 'รอจัดหมวด', categorized: 'จัดแล้ว', linked: 'เชื่อมต่อแล้ว' };
+    const statusColors = { pending: 'warning', categorized: 'info', linked: 'success' };
+    const moduleLabels = { 'portfolio': 'Portfolio', 'classroom-materials': 'สื่อ', 'research': 'วิจัย', 'innovation': 'นวัตกรรม', 'documents': 'เอกสาร' };
+
+    area.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="fw-bold mb-0"><i class="bi bi-cloud-arrow-down me-2"></i>Quick Drop</h4>
+        <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#qd-form"><i class="bi bi-plus-lg me-1"></i>Drop ใหม่</button>
+      </div>
+      <div class="collapse mb-3" id="qd-form">
+        <div class="card border-0 shadow-sm"><div class="card-body">
+          <div class="mb-2"><textarea class="form-control" id="qd-content" rows="3" placeholder="โน้ต เนื้อหา หรือ URL ไฟล์"></textarea></div>
+          <div class="row g-2">
+            <div class="col-md-8"><input class="form-control" id="qd-url" placeholder="URL ไฟล์ (ไม่บังคับ)"></div>
+            <div class="col-md-4"><button class="btn btn-success w-100" id="qd-save"><i class="bi bi-cloud-arrow-down me-1"></i>Drop!</button></div>
+          </div>
+        </div></div>
+      </div>
+      <div id="qd-list">
+        ${drops.length === 0 ? '<div class="text-muted text-center py-4">ยังไม่มี Quick Drop</div>' :
+          drops.map(d => `
+          <div class="card border-0 shadow-sm mb-2"><div class="card-body">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <span class="badge bg-${statusColors[d.status] || 'secondary'} me-2">${statusLabels[d.status] || d.status}</span>
+                ${d.content ? `<span>${DOMPurify.sanitize(d.content).substring(0,100)}</span>` : ''}
+                ${d.file_url ? `<div class="small"><a href="${DOMPurify.sanitize(d.file_url)}" target="_blank"><i class="bi bi-link-45deg"></i> ไฟล์</a></div>` : ''}
+                <div class="text-muted small">${d.dropped_at || ''}</div>
+              </div>
+              <div class="d-flex gap-1">
+                <select class="form-select form-select-sm" style="width:auto" data-link="${d.id}">
+                  <option value="">-- เชื่อมโมดูล --</option>
+                  ${Object.entries(moduleLabels).map(([k,v]) => `<option value="${k}" ${d.linked_to_module===k?'selected':''}>${v}</option>`).join('')}
+                </select>
+                <button class="btn btn-sm btn-outline-danger" data-del="${d.id}"><i class="bi bi-trash"></i></button>
+              </div>
+            </div>
+          </div></div>`).join('')}
+      </div>`;
+
+    document.getElementById('qd-save')?.addEventListener('click', async () => {
+      const res = await API.post('/api/quick-drop', {
+        content: document.getElementById('qd-content').value || null,
+        file_url: document.getElementById('qd-url').value || null
+      });
+      if (res.success) { App.toast('Drop สำเร็จ!'); this.render(area); }
+      else App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
+    });
+
+    area.querySelectorAll('[data-link]').forEach(sel => {
+      sel.addEventListener('change', async () => {
+        const module = sel.value;
+        if (!module) return;
+        await API.put(`/api/quick-drop/${sel.dataset.link}`, {
+          linked_to_module: module, status: 'linked'
+        });
+        App.toast('เชื่อมต่อโมดูลแล้ว'); this.render(area);
+      });
+    });
+
+    area.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('ลบ Quick Drop นี้?')) return;
+        const res = await API.del(`/api/quick-drop/${btn.dataset.del}`);
+        if (res.success) { App.toast('ลบแล้ว'); this.render(area); }
+      });
+    });
   }
 };

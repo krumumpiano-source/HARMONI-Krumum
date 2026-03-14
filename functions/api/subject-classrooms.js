@@ -16,7 +16,8 @@ export async function onRequest(context) {
   if (method === 'GET') {
     const semesterId = url.searchParams.get('semester_id');
     let sql = `SELECT sc.*, s.code as subject_code, s.name as subject_name,
-               c.grade_level, c.room_number, c.name as classroom_name
+               c.grade_level, c.room_number, c.name as classroom_name,
+               (SELECT COUNT(*) FROM student_classrooms stc WHERE stc.classroom_id = sc.classroom_id AND stc.is_active = 1) as student_count
                FROM subject_classrooms sc
                JOIN subjects s ON sc.subject_id = s.id
                JOIN classrooms c ON sc.classroom_id = c.id

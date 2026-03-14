@@ -501,12 +501,11 @@ App.modules['dashboard'] = {
   async render(container) {
     container.innerHTML = '<div class="loading"></div>';
 
-    const [semRes, subRes, classRes, studentRes, attRes, calRes, logRes, postRes] = await Promise.all([
+    const [semRes, subRes, classRes, studentRes, calRes, logRes, postRes] = await Promise.all([
       API.get('/api/semesters'),
       API.get('/api/subjects'),
       API.get('/api/classrooms'),
       API.get('/api/students?limit=9999'),
-      API.get('/api/attendance'),
       API.get('/api/calendar'),
       API.get('/api/logbook'),
       API.get('/api/subject-classrooms')
@@ -516,20 +515,17 @@ App.modules['dashboard'] = {
     const subjects = subRes.success ? subRes.data : [];
     const classrooms = classRes.success ? classRes.data : [];
     const studentCount = studentRes.success ? studentRes.data.length : 0;
-    const attRecords = attRes.success ? (attRes.data || []) : [];
     const calEvents = calRes.success ? (calRes.data || []) : [];
     const logEntries = logRes.success ? (logRes.data || []) : [];
     const subjectClassrooms = postRes.success ? (postRes.data || []) : [];
 
     const active = semesters.find(s => s.is_active);
 
-    // Today's attendance
     const today = new Date().toISOString().slice(0, 10);
-    const todayAtt = attRecords.filter(a => a.date === today);
 
-    // Upcoming events (next 7 days)
+    // Upcoming events (next 7 days) — calendar API returns 'date' field
     const nextWeek = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
-    const upcoming = calEvents.filter(e => e.start_date >= today && e.start_date <= nextWeek).slice(0, 5);
+    const upcoming = calEvents.filter(e => e.date >= today && e.date <= nextWeek).slice(0, 5);
 
     // Recent log entries (last 5)
     const recentLogs = logEntries.slice(0, 5);
@@ -595,13 +591,6 @@ App.modules['dashboard'] = {
         </div>
       </div>
 
-      ${todayAtt.length > 0 ? `
-      <div class="alert alert-info d-flex align-items-center mb-3">
-        <i class="bi bi-calendar-check me-2 fs-5"></i>
-        <span>วันนี้เช็คชื่อแล้ว <strong>${todayAtt.length}</strong> รายการ</span>
-        <a href="#" class="ms-auto text-decoration-none" onclick="App.navigate('attendance')">ดูทั้งหมด →</a>
-      </div>` : ''}
-
       ${!active ? `
       <div class="alert alert-warning">
         <i class="bi bi-exclamation-triangle me-2"></i>
@@ -640,8 +629,8 @@ App.modules['dashboard'] = {
               ${upcoming.length > 0 ? upcoming.map(e => `
                 <div class="d-flex align-items-center py-2 border-bottom">
                   <div class="me-3 text-center" style="min-width:40px">
-                    <div class="fw-bold text-primary">${new Date(e.start_date).getDate()}</div>
-                    <small class="text-muted">${new Date(e.start_date).toLocaleDateString('th-TH', {month:'short'})}</small>
+                    <div class="fw-bold text-primary">${new Date(e.date).getDate()}</div>
+                    <small class="text-muted">${new Date(e.date).toLocaleDateString('th-TH', {month:'short'})}</small>
                   </div>
                   <div>
                     <strong class="small">${DOMPurify.sanitize(e.title)}</strong>
@@ -658,8 +647,8 @@ App.modules['dashboard'] = {
             <div class="card-body">
               ${recentLogs.length > 0 ? recentLogs.map(l => `
                 <div class="py-2 border-bottom">
-                  <strong class="small">${DOMPurify.sanitize(l.title || l.category || '')}</strong>
-                  <br><small class="text-muted">${l.log_date ? new Date(l.log_date).toLocaleDateString('th-TH') : ''} ${l.hours ? '(' + l.hours + ' ชม.)' : ''}</small>
+                  <strong class="small">${DOMPurify.sanitize(l.description || l.category || '')}</strong>
+                  <br><small class="text-muted">${l.entry_date ? new Date(l.entry_date).toLocaleDateString('th-TH') : ''} ${l.hours ? '(' + l.hours + ' ชม.)' : ''}</small>
                 </div>`).join('') : '<p class="text-muted small mb-0">ยังไม่มีบันทึก</p>'}
               <a href="#" class="btn btn-sm btn-outline-primary mt-2 w-100" onclick="App.navigate('logbook')">ดูสมุดบันทึก</a>
             </div>

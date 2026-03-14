@@ -44,15 +44,17 @@ export async function onRequest(context) {
 
     const posts = await dbAll(db, sql, params);
 
-    // For assignments, attach submission status
-    if (type === 'assignment') {
-      for (const post of posts) {
-        const sub = await dbFirst(db,
-          'SELECT id, status, score, submitted_at FROM assignment_submissions WHERE post_id = ? AND student_id = ?',
-          [post.id, studentId]
-        );
-        post.submission = sub || null;
-      }
+    // For assignments, attach submission status (batch query to avoid N+1)
+    if (type === 'assignment' && posts.length > 0) {
+      const postIds = posts.map(p => p.id);
+      const placeholders = postIds.map(() => '?').join(',');
+      const subs = await dbAll(db,
+        `SELECT id, post_id, status, score, submitted_at FROM assignment_submissions WHERE post_id IN (${placeholders}) AND student_id = ?`,
+        [...postIds, studentId]
+      );
+      const subMap = {};
+      for (const s of subs) subMap[s.post_id] = s;
+      for (const post of posts) post.submission = subMap[post.id] || null;
     }
 
     return success(posts);
@@ -165,21 +167,33 @@ export async function onRequest(context) {
   if (path === '/quizzes' || path === '/quizzes/') {
     if (method !== 'GET') return error('Method not allowed', 405);
 
-    // Get published tests linked to classroom_posts for student's classrooms
+    // Get published tests with latest attempt only (no duplicate rows)
     const quizzes = await dbAll(db, `
       SELECT cp.id AS post_id, cp.title, cp.due_date, cp.created_at,
              t.id AS test_id, t.time_limit_minutes, t.max_attempts, t.total_score,
-             s.name AS subject_name,
-             qa.id AS attempt_id, qa.total_score AS my_score, qa.submitted_at AS attempt_date
+             s.name AS subject_name
       FROM classroom_posts cp
       JOIN tests t ON t.id = cp.test_id
       JOIN subject_classrooms sc ON sc.id = cp.subject_classroom_id
       JOIN subjects s ON s.id = sc.subject_id
       JOIN student_classrooms stc ON stc.classroom_id = sc.classroom_id AND stc.student_id = ? AND stc.is_active = 1
-      LEFT JOIN quiz_attempts qa ON qa.test_id = t.id AND qa.student_id = ? AND qa.post_id = cp.id
       WHERE cp.post_type = 'quiz' AND cp.is_published = 1
       ORDER BY cp.created_at DESC
-    `, [studentId, studentId]);
+    `, [studentId]);
+
+    // Attach latest attempt + attempt count per quiz
+    for (const q of quizzes) {
+      const latest = await dbFirst(db,
+        'SELECT id AS attempt_id, total_score AS my_score, submitted_at AS attempt_date FROM quiz_attempts WHERE test_id = ? AND student_id = ? ORDER BY submitted_at DESC LIMIT 1',
+        [q.test_id, studentId]);
+      const countRow = await dbFirst(db,
+        'SELECT COUNT(*) AS cnt FROM quiz_attempts WHERE test_id = ? AND student_id = ?',
+        [q.test_id, studentId]);
+      q.attempt_id = latest?.attempt_id || null;
+      q.my_score = latest?.my_score ?? null;
+      q.attempt_count = countRow?.cnt || 0;
+      q.can_attempt = !q.max_attempts || q.attempt_count < q.max_attempts;
+    }
 
     return success(quizzes);
   }
@@ -214,6 +228,16 @@ export async function onRequest(context) {
         'SELECT id, question_text, question_type, options, points, sort_order FROM test_questions WHERE test_id = ? ORDER BY sort_order',
         [testId]);
 
+      // Strip any is_correct markers from options to prevent answer leaking
+      for (const q of questions) {
+        if (q.options) {
+          try {
+            const opts = JSON.parse(q.options);
+            q.options = JSON.stringify(opts.map(o => typeof o === 'object' ? (o.text || o.label || String(o)) : o));
+          } catch (e) { /* keep as-is */ }
+        }
+      }
+
       return success({ test: { id: test.id, title: test.title, time_limit_minutes: test.time_limit_minutes, total_score: test.total_score, post_id: test.post_id }, questions });
     }
 
@@ -231,6 +255,22 @@ export async function onRequest(context) {
       `, [studentId, testId]);
       if (!test) return error('ไม่พบแบบทดสอบ', 404);
 
+      // Server-side max_attempts check (prevent bypass)
+      const attemptCount = await dbFirst(db,
+        'SELECT COUNT(*) AS cnt FROM quiz_attempts WHERE test_id = ? AND student_id = ?',
+        [testId, studentId]);
+      if (test.max_attempts && attemptCount.cnt >= test.max_attempts) {
+        return error('ทำครบจำนวนครั้งแล้ว');
+      }
+
+      // Server-side time limit validation
+      if (test.time_limit_minutes && body.started_at) {
+        const elapsedMin = (Date.now() - new Date(body.started_at).getTime()) / 60000;
+        if (elapsedMin > test.time_limit_minutes + 1) {
+          return error('หมดเวลาทำแบบทดสอบ');
+        }
+      }
+
       // Auto-grade multiple choice
       const questions = await dbAll(db, 'SELECT * FROM test_questions WHERE test_id = ?', [testId]);
       let totalScore = 0;
@@ -239,17 +279,13 @@ export async function onRequest(context) {
       for (const q of questions) {
         const answer = body.answers[q.id];
         if (q.question_type === 'multiple_choice' || q.question_type === 'true_false') {
-          if (answer === q.correct_answer) {
+          if (answer && q.correct_answer && answer === q.correct_answer) {
             totalScore += q.points || 0;
           }
         } else {
           autoGraded = 0; // needs manual grading for essay/short_answer
         }
       }
-
-      const attemptCount = await dbFirst(db,
-        'SELECT COUNT(*) AS cnt FROM quiz_attempts WHERE test_id = ? AND student_id = ?',
-        [testId, studentId]);
 
       const id = generateUUID();
       await dbRun(db, `
@@ -280,6 +316,7 @@ export async function onRequest(context) {
   // Mark notification as read
   if (path.startsWith('/notifications/') && method === 'PUT') {
     const notifId = extractParam(path, '/notifications/');
+    if (!notifId) return error('Missing notification ID');
     await dbRun(db, 'UPDATE student_notifications SET is_read = 1 WHERE id = ? AND student_id = ?', [notifId, studentId]);
     return success({ updated: true });
   }

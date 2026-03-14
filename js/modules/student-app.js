@@ -1,8 +1,14 @@
 ﻿// HARMONI — Student App (student.html)
 
+// HTML attribute escape helper (prevents attribute injection)
+function escAttr(s) {
+  return String(s).replace(/[&"'<>]/g, c => ({'&':'&amp;','"':'&quot;',"'":'&#39;','<':'&lt;','>':'&gt;'})[c] || c);
+}
+
 const StudentApp = {
   currentTab: 'feed',
   quizTimer: null,
+  _submitting: false, // guard against double quiz submit
 
   async init() {
     if (API.token) {
@@ -43,6 +49,7 @@ const StudentApp = {
   switchTab(tab) {
     this.currentTab = tab;
     if (this.quizTimer) { clearInterval(this.quizTimer); this.quizTimer = null; }
+    this._submitting = false;
     document.querySelectorAll('.student-tab').forEach(el => {
       el.classList.toggle('active', el.dataset.tab === tab);
     });
@@ -88,7 +95,7 @@ const StudentApp = {
             <div class="d-flex justify-content-between align-items-start mb-2">
               <div>
                 <span class="badge bg-${typeColors[post.post_type] || 'secondary'} me-1">
-                  <i class="bi bi-${typeIcons[post.post_type] || 'chat'} me-1"></i>${typeLabels[post.post_type] || post.post_type}
+                  <i class="bi bi-${typeIcons[post.post_type] || 'chat'} me-1"></i>${typeLabels[post.post_type] || escAttr(post.post_type)}
                 </span>
                 <span class="badge bg-light text-dark">${DOMPurify.sanitize(post.subject_name || '')}</span>
               </div>
@@ -116,7 +123,7 @@ const StudentApp = {
 
     container.innerHTML = `
       <h5 class="fw-bold mb-3"><i class="bi bi-file-earmark-text me-2"></i>งานที่ได้รับ</h5>
-      ${res.data.map(a => {
+      ${res.data.map((a, idx) => {
         const sub = a.submission;
         const statusBadge = sub
           ? (sub.status === 'graded' ? `<span class="badge bg-success">ตรวจแล้ว ${sub.score !== null ? sub.score + ' คะแนน' : ''}</span>`
@@ -133,19 +140,26 @@ const StudentApp = {
               <small class="text-muted">${a.due_date ? 'กำหนดส่ง: ' + new Date(a.due_date).toLocaleDateString('th-TH') : 'ไม่มีกำหนดส่ง'}</small>
               ${!sub || sub.status !== 'graded' ? `
                 <div class="mt-2">
-                  <button class="btn btn-sm btn-primary" onclick="StudentApp.openSubmitForm('${a.id}', '${DOMPurify.sanitize(a.title).replace(/'/g, "\\'")}')">
+                  <button class="btn btn-sm btn-primary btn-submit-assignment" data-post-id="${escAttr(a.id)}" data-title="${escAttr(a.title)}">
                     <i class="bi bi-upload me-1"></i>${sub ? 'ส่งใหม่' : 'ส่งงาน'}
                   </button>
                 </div>` : ''}
             </div>
           </div>`;
       }).join('')}`;
+
+    // Bind submit buttons via addEventListener (no inline onclick)
+    container.querySelectorAll('.btn-submit-assignment').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.openSubmitForm(btn.dataset.postId, btn.dataset.title);
+      });
+    });
   },
 
   openSubmitForm(postId, title) {
     const content = document.getElementById('student-content');
     content.innerHTML = `
-      <h5 class="fw-bold mb-3"><i class="bi bi-upload me-2"></i>ส่งงาน: ${title}</h5>
+      <h5 class="fw-bold mb-3"><i class="bi bi-upload me-2"></i>ส่งงาน: ${DOMPurify.sanitize(title)}</h5>
       <div class="card border-0 shadow-sm">
         <div class="card-body">
           <div class="mb-3">
@@ -157,13 +171,14 @@ const StudentApp = {
             <input id="submit-url" type="url" class="form-control" placeholder="https://...">
           </div>
           <div class="d-flex gap-2">
-            <button class="btn btn-primary" onclick="StudentApp.submitAssignment('${postId}')">
-              <i class="bi bi-send me-1"></i>ส่ง
-            </button>
-            <button class="btn btn-outline-secondary" onclick="StudentApp.switchTab('assignments')">ยกเลิก</button>
+            <button class="btn btn-primary" id="btn-do-submit"><i class="bi bi-send me-1"></i>ส่ง</button>
+            <button class="btn btn-outline-secondary" id="btn-cancel-submit">ยกเลิก</button>
           </div>
         </div>
       </div>`;
+
+    document.getElementById('btn-do-submit').addEventListener('click', () => this.submitAssignment(postId));
+    document.getElementById('btn-cancel-submit').addEventListener('click', () => this.switchTab('assignments'));
   },
 
   async submitAssignment(postId) {
@@ -171,7 +186,7 @@ const StudentApp = {
     const url = document.getElementById('submit-url').value.trim();
     if (!text && !url) { this.toast('กรุณากรอกคำตอบหรือแนบลิงก์', 'danger'); return; }
 
-    const res = await API.post(`/api/student/submit/${postId}`, { text, url: url || null });
+    const res = await API.post(`/api/student/submit/${encodeURIComponent(postId)}`, { text, url: url || null });
     if (res.success) {
       this.toast('ส่งงานเรียบร้อย');
       this.switchTab('assignments');
@@ -199,25 +214,34 @@ const StudentApp = {
           <div class="card-body">
             <div class="d-flex justify-content-between align-items-center mb-2">
               <h6 class="fw-bold mb-0">${DOMPurify.sanitize(q.title)}</h6>
-              ${q.attempt_id ? `<span class="badge bg-success">${q.my_score}/${q.total_score} คะแนน</span>` : '<span class="badge bg-warning text-dark">ยังไม่ทำ</span>'}
+              ${q.attempt_id
+                ? `<span class="badge bg-success">${q.my_score}/${q.total_score} คะแนน</span>`
+                : '<span class="badge bg-warning text-dark">ยังไม่ทำ</span>'}
             </div>
             <small class="text-muted d-block">${DOMPurify.sanitize(q.subject_name || '')}</small>
             ${q.time_limit_minutes ? `<small class="text-muted"><i class="bi bi-clock me-1"></i>${q.time_limit_minutes} นาที</small>` : ''}
-            ${!q.attempt_id ? `
+            ${q.max_attempts ? `<small class="text-muted ms-2"><i class="bi bi-arrow-repeat me-1"></i>ครั้งที่ ${q.attempt_count || 0}/${q.max_attempts}</small>` : ''}
+            ${q.can_attempt ? `
               <div class="mt-2">
-                <button class="btn btn-sm btn-danger" onclick="StudentApp.startQuiz('${q.test_id}')">
-                  <i class="bi bi-play-fill me-1"></i>เริ่มทำ
+                <button class="btn btn-sm btn-danger btn-start-quiz" data-test-id="${escAttr(q.test_id)}">
+                  <i class="bi bi-play-fill me-1"></i>${q.attempt_id ? 'ทำอีกครั้ง' : 'เริ่มทำ'}
                 </button>
               </div>` : ''}
           </div>
         </div>`).join('')}`;
+
+    // Bind quiz start buttons via addEventListener
+    container.querySelectorAll('.btn-start-quiz').forEach(btn => {
+      btn.addEventListener('click', () => this.startQuiz(btn.dataset.testId));
+    });
   },
 
   async startQuiz(testId) {
     const container = document.getElementById('student-content');
     container.innerHTML = '<div class="loading"></div>';
+    this._submitting = false;
 
-    const res = await API.get(`/api/student/quiz/${testId}`);
+    const res = await API.get(`/api/student/quiz/${encodeURIComponent(testId)}`);
     if (!res.success) {
       this.toast(res.error || 'ไม่สามารถโหลดแบบทดสอบ', 'danger');
       this.switchTab('quizzes');
@@ -237,30 +261,40 @@ const StudentApp = {
         ${questions.map((q, i) => {
           let opts = [];
           try { opts = JSON.parse(q.options || '[]'); } catch(e) {}
+          const qId = escAttr(q.id);
           return `
             <div class="card border-0 shadow-sm mb-3">
               <div class="card-body">
                 <p class="fw-bold mb-2">ข้อ ${i + 1}. ${DOMPurify.sanitize(q.question_text)} <small class="text-muted">(${q.points} คะแนน)</small></p>
-                ${q.question_type === 'multiple_choice' ? opts.map((o, oi) => `
+                ${q.question_type === 'multiple_choice' ? opts.map((o, oi) => {
+                  const optVal = escAttr(String(o));
+                  return `
                   <div class="form-check">
-                    <input class="form-check-input" type="radio" name="q_${q.id}" value="${DOMPurify.sanitize(String(o))}" id="q_${q.id}_${oi}">
-                    <label class="form-check-label" for="q_${q.id}_${oi}">${DOMPurify.sanitize(String(o))}</label>
-                  </div>`).join('') : ''}
+                    <input class="form-check-input" type="radio" name="q_${qId}" value="${optVal}" id="q_${qId}_${oi}">
+                    <label class="form-check-label" for="q_${qId}_${oi}">${DOMPurify.sanitize(String(o))}</label>
+                  </div>`;
+                }).join('') : ''}
                 ${q.question_type === 'true_false' ? `
-                  <div class="form-check"><input class="form-check-input" type="radio" name="q_${q.id}" value="true" id="q_${q.id}_t"><label class="form-check-label" for="q_${q.id}_t">ถูก</label></div>
-                  <div class="form-check"><input class="form-check-input" type="radio" name="q_${q.id}" value="false" id="q_${q.id}_f"><label class="form-check-label" for="q_${q.id}_f">ผิด</label></div>` : ''}
+                  <div class="form-check"><input class="form-check-input" type="radio" name="q_${qId}" value="true" id="q_${qId}_t"><label class="form-check-label" for="q_${qId}_t">ถูก</label></div>
+                  <div class="form-check"><input class="form-check-input" type="radio" name="q_${qId}" value="false" id="q_${qId}_f"><label class="form-check-label" for="q_${qId}_f">ผิด</label></div>` : ''}
                 ${q.question_type === 'short_answer' || q.question_type === 'essay' ? `
-                  <textarea class="form-control" name="q_${q.id}" rows="${q.question_type === 'essay' ? 4 : 1}" placeholder="พิมพ์คำตอบ..."></textarea>` : ''}
+                  <textarea class="form-control" name="q_${qId}" rows="${q.question_type === 'essay' ? 4 : 1}" placeholder="พิมพ์คำตอบ..."></textarea>` : ''}
               </div>
             </div>`;
         }).join('')}
         <div class="d-flex gap-2">
-          <button type="button" class="btn btn-primary" onclick="StudentApp.submitQuiz('${testId}', '${test.post_id}', '${startedAt}')">
-            <i class="bi bi-check-lg me-1"></i>ส่งคำตอบ
-          </button>
-          <button type="button" class="btn btn-outline-secondary" onclick="StudentApp.switchTab('quizzes')">ยกเลิก</button>
+          <button type="button" class="btn btn-primary" id="btn-submit-quiz"><i class="bi bi-check-lg me-1"></i>ส่งคำตอบ</button>
+          <button type="button" class="btn btn-outline-secondary" id="btn-cancel-quiz">ยกเลิก</button>
         </div>
       </form>`;
+
+    // Bind buttons via addEventListener
+    document.getElementById('btn-submit-quiz').addEventListener('click', () => {
+      this.submitQuiz(test.id, test.post_id, startedAt);
+    });
+    document.getElementById('btn-cancel-quiz').addEventListener('click', () => {
+      this.switchTab('quizzes');
+    });
 
     // Timer
     if (timeLeft) {
@@ -268,12 +302,14 @@ const StudentApp = {
       const updateTimer = () => {
         if (timeLeft <= 0) {
           clearInterval(this.quizTimer);
-          this.submitQuiz(testId, test.post_id, startedAt);
+          this.quizTimer = null;
+          this.submitQuiz(test.id, test.post_id, startedAt);
           return;
         }
         const m = Math.floor(timeLeft / 60);
         const s = timeLeft % 60;
         timerEl.textContent = `${m}:${String(s).padStart(2, '0')}`;
+        if (timeLeft <= 60) timerEl.classList.add('bg-danger', 'animate__animated', 'animate__pulse');
         timeLeft--;
       };
       updateTimer();
@@ -282,20 +318,24 @@ const StudentApp = {
   },
 
   async submitQuiz(testId, postId, startedAt) {
+    // Guard against double submission (timer + manual click race condition)
+    if (this._submitting) return;
+    this._submitting = true;
+
     if (this.quizTimer) { clearInterval(this.quizTimer); this.quizTimer = null; }
 
     const form = document.getElementById('quiz-form');
-    if (!form) return;
+    if (!form) { this._submitting = false; return; }
     const formData = new FormData(form);
     const answers = {};
     for (const [key, value] of formData.entries()) {
       if (key.startsWith('q_')) {
-        answers[key.replace('q_', '')] = value;
+        answers[key.substring(2)] = value;
       }
     }
 
     const timeSpent = Math.round((Date.now() - new Date(startedAt).getTime()) / 1000);
-    const res = await API.post(`/api/student/quiz/${testId}/submit`, {
+    const res = await API.post(`/api/student/quiz/${encodeURIComponent(testId)}/submit`, {
       answers, started_at: startedAt, time_spent: timeSpent
     });
 
@@ -307,12 +347,12 @@ const StudentApp = {
           <i class="bi bi-check-circle text-success" style="font-size:4rem"></i>
           <h4 class="fw-bold mt-3">ส่งคำตอบเรียบร้อย!</h4>
           ${d.auto_graded ? `<p class="fs-5">คะแนน: <strong>${d.total_score}/${d.max_score}</strong></p>` : '<p class="text-muted">รอครูตรวจให้คะแนน</p>'}
-          <button class="btn btn-primary mt-3" onclick="StudentApp.switchTab('quizzes')">
-            <i class="bi bi-arrow-left me-1"></i>กลับ
-          </button>
+          <button class="btn btn-primary mt-3" id="btn-back-quizzes"><i class="bi bi-arrow-left me-1"></i>กลับ</button>
         </div>`;
+      document.getElementById('btn-back-quizzes').addEventListener('click', () => this.switchTab('quizzes'));
     } else {
       this.toast(res.error || 'ส่งคำตอบไม่สำเร็จ', 'danger');
+      this._submitting = false;
     }
   },
 
@@ -348,7 +388,7 @@ const StudentApp = {
               <tr>
                 <td>${DOMPurify.sanitize(g.subject_name || g.subject_code || '')}</td>
                 <td>${g.total_score ?? '-'}</td>
-                <td><span class="badge bg-primary fs-6">${g.grade || '-'}</span></td>
+                <td><span class="badge bg-primary fs-6">${escAttr(g.grade || '-')}</span></td>
               </tr>`).join('')}
             </tbody></table></div></div></div>` : ''}
       ${hasScores ? `
@@ -379,7 +419,7 @@ const StudentApp = {
     container.innerHTML = `
       <h5 class="fw-bold mb-3"><i class="bi bi-bell me-2"></i>แจ้งเตือน</h5>
       ${res.data.map(n => `
-        <div class="card border-0 shadow-sm mb-2 ${n.is_read ? '' : 'border-start border-primary border-3'}" onclick="StudentApp.markNotifRead('${n.id}', this)">
+        <div class="card border-0 shadow-sm mb-2 notif-card ${n.is_read ? '' : 'border-start border-primary border-3'}" data-notif-id="${escAttr(n.id)}">
           <div class="card-body py-2">
             <div class="d-flex justify-content-between">
               <strong class="small">${DOMPurify.sanitize(n.title)}</strong>
@@ -388,10 +428,18 @@ const StudentApp = {
             <p class="text-muted small mb-0">${DOMPurify.sanitize(n.message || '')}</p>
           </div>
         </div>`).join('')}`;
+
+    // Bind notification click via addEventListener
+    container.querySelectorAll('.notif-card').forEach(card => {
+      card.addEventListener('click', () => {
+        this.markNotifRead(card.dataset.notifId, card);
+      });
+    });
   },
 
   async markNotifRead(notifId, el) {
-    await API.put(`/api/student/notifications/${notifId}`);
+    if (!notifId) return;
+    await API.put(`/api/student/notifications/${encodeURIComponent(notifId)}`);
     el.classList.remove('border-start', 'border-primary', 'border-3');
     this.loadNotificationBadge();
   },
@@ -404,6 +452,7 @@ const StudentApp = {
 
     container.innerHTML = `
       <h5 class="fw-bold mb-3"><i class="bi bi-person me-2"></i>โปรไฟล์</h5>
+      ${!res.success ? '<div class="alert alert-danger">ไม่สามารถโหลดโปรไฟล์ได้</div>' : ''}
       <div class="card border-0 shadow-sm mb-3">
         <div class="card-body text-center">
           <i class="bi bi-person-circle fs-1 text-muted d-block mb-3"></i>
@@ -418,7 +467,7 @@ const StudentApp = {
           <div class="card border-0 shadow-sm mb-2">
             <div class="card-body py-2">
               <strong>${DOMPurify.sanitize(c.classroom_name)}</strong>
-              <small class="text-muted d-block">ปีการศึกษา ${c.academic_year} ภาคเรียนที่ ${c.semester}</small>
+              <small class="text-muted d-block">ปีการศึกษา ${escAttr(c.academic_year)} ภาคเรียนที่ ${escAttr(c.semester)}</small>
             </div>
           </div>`).join('')}` : ''}
       <div class="mt-3">

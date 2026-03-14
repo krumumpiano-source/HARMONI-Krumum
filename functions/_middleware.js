@@ -26,7 +26,7 @@ const CSP = [
   "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com",
   "img-src 'self' data: blob: https:",
-  "connect-src 'self' https://generativelanguage.googleapis.com https://api.groq.com https://www.googleapis.com",
+  "connect-src 'self' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com https://fonts.gstatic.com https://generativelanguage.googleapis.com https://api.groq.com https://www.googleapis.com",
   "media-src 'self' blob:",
   "worker-src 'self' blob:"
 ].join('; ');

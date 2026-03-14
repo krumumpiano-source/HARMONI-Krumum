@@ -120,6 +120,8 @@
 
   <!-- Sidebar + Content -->
   <div class="d-flex" style="padding-top:56px">
+    <!-- Sidebar Overlay (mobile) -->
+    <div id="sidebar-overlay" class="sidebar-overlay"></div>
     <!-- Sidebar -->
     <nav id="sidebar" class="bg-white border-end shadow-sm">
       <div class="sidebar-menu p-2">
@@ -135,18 +137,23 @@
         <a class="sidebar-link" data-module="post-lesson"><i class="bi bi-chat-square-text"></i><span>บันทึกหลังสอน</span></a>
         <a class="sidebar-link" data-module="portfolio"><i class="bi bi-briefcase"></i><span>เก็บผลงาน</span></a>
 
-        <div class="sidebar-section text-muted small fw-semibold px-3 py-2 mt-2">การสอน</div>
+        <div class="sidebar-section text-muted small fw-semibold px-3 py-2 mt-2 sidebar-toggle-section" data-target="sec-teaching"><i class="bi bi-chevron-down me-1 toggle-icon"></i>การสอน</div>
+        <div id="sec-teaching" class="sidebar-collapsible">
         <a class="sidebar-link" data-module="course-structure"><i class="bi bi-diagram-3"></i><span>โครงสร้างรายวิชา</span></a>
         <a class="sidebar-link" data-module="lesson-plan"><i class="bi bi-journal-text"></i><span>แผนการจัดการเรียนรู้</span></a>
         <a class="sidebar-link" data-module="classroom-materials"><i class="bi bi-folder2-open"></i><span>สื่อการสอน</span></a>
+        </div>
 
-        <div class="sidebar-section text-muted small fw-semibold px-3 py-2 mt-2">การวัดผล</div>
+        <div class="sidebar-section text-muted small fw-semibold px-3 py-2 mt-2 sidebar-toggle-section" data-target="sec-assessment"><i class="bi bi-chevron-down me-1 toggle-icon"></i>การวัดผล</div>
+        <div id="sec-assessment" class="sidebar-collapsible">
         <a class="sidebar-link" data-module="assessment"><i class="bi bi-clipboard-check"></i><span>เครื่องมือวัดผล</span></a>
         <a class="sidebar-link" data-module="test"><i class="bi bi-pencil-square"></i><span>แบบทดสอบ</span></a>
         <a class="sidebar-link" data-module="scores"><i class="bi bi-graph-up"></i><span>คะแนน</span></a>
         <a class="sidebar-link" data-module="grade-result"><i class="bi bi-award"></i><span>ผลการเรียน/เกรด</span></a>
+        </div>
 
-        <div class="sidebar-section text-muted small fw-semibold px-3 py-2 mt-2">งานวิชาการ</div>
+        <div class="sidebar-section text-muted small fw-semibold px-3 py-2 mt-2 sidebar-toggle-section" data-target="sec-academic"><i class="bi bi-chevron-down me-1 toggle-icon"></i>งานวิชาการ</div>
+        <div id="sec-academic" class="sidebar-collapsible collapsed">
         <a class="sidebar-link" data-module="research"><i class="bi bi-search"></i><span>วิจัยในชั้นเรียน</span></a>
         <a class="sidebar-link" data-module="pa"><i class="bi bi-file-earmark-bar-graph"></i><span>PA (วPA)</span></a>
         <a class="sidebar-link" data-module="sar"><i class="bi bi-file-earmark-ruled"></i><span>SAR</span></a>
@@ -154,19 +161,24 @@
         <a class="sidebar-link" data-module="plc"><i class="bi bi-people"></i><span>PLC</span></a>
         <a class="sidebar-link" data-module="logbook"><i class="bi bi-journal-bookmark"></i><span>สมุดบันทึก</span></a>
         <a class="sidebar-link" data-module="awards"><i class="bi bi-trophy"></i><span>เกียรติบัตร/รางวัล</span></a>
+        </div>
 
-        <div class="sidebar-section text-muted small fw-semibold px-3 py-2 mt-2">ระบบดูแลช่วยเหลือ</div>
+        <div class="sidebar-section text-muted small fw-semibold px-3 py-2 mt-2 sidebar-toggle-section" data-target="sec-care"><i class="bi bi-chevron-down me-1 toggle-icon"></i>ระบบดูแลช่วยเหลือ</div>
+        <div id="sec-care" class="sidebar-collapsible collapsed">
         <a class="sidebar-link" data-module="homeroom"><i class="bi bi-house-heart"></i><span>ครูที่ปรึกษา</span></a>
         <a class="sidebar-link" data-module="home-visit"><i class="bi bi-geo-alt"></i><span>เยี่ยมบ้าน</span></a>
         <a class="sidebar-link" data-module="sdq"><i class="bi bi-heart-pulse"></i><span>SDQ</span></a>
         <a class="sidebar-link" data-module="care-record"><i class="bi bi-shield-check"></i><span>บันทึกการดูแล</span></a>
+        </div>
 
-        <div class="sidebar-section text-muted small fw-semibold px-3 py-2 mt-2">เครื่องมือ</div>
+        <div class="sidebar-section text-muted small fw-semibold px-3 py-2 mt-2 sidebar-toggle-section" data-target="sec-tools"><i class="bi bi-chevron-down me-1 toggle-icon"></i>เครื่องมือ</div>
+        <div id="sec-tools" class="sidebar-collapsible collapsed">
         <a class="sidebar-link" data-module="calendar"><i class="bi bi-calendar3"></i><span>ปฏิทิน</span></a>
         <a class="sidebar-link" data-module="documents"><i class="bi bi-file-earmark"></i><span>เอกสาร</span></a>
         <a class="sidebar-link" data-module="cover-designer"><i class="bi bi-brush"></i><span>ออกแบบปก</span></a>
         <a class="sidebar-link" data-module="instruments"><i class="bi bi-music-note-list"></i><span>เครื่องดนตรี</span></a>
         <a class="sidebar-link" data-module="quick-drop"><i class="bi bi-cloud-upload"></i><span>Quick Drop</span></a>
+        </div>
       </div>
     </nav>
 

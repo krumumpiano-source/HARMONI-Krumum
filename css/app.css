@@ -230,3 +230,53 @@ body {
 .badge-submitted { background: #17a2b8; color: #fff; }
 .badge-graded { background: #28a745; color: #fff; }
 .badge-returned { background: #dc3545; color: #fff; }
+
+/* Sidebar overlay (mobile) */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  top: 56px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 1039;
+}
+
+.sidebar-overlay.show {
+  display: block;
+}
+
+/* Collapsible sidebar sections */
+.sidebar-collapsible {
+  overflow: hidden;
+  max-height: 500px;
+  transition: max-height 0.25s ease;
+}
+
+.sidebar-collapsible.collapsed {
+  max-height: 0;
+}
+
+.sidebar-toggle-section {
+  user-select: none;
+}
+
+.sidebar-toggle-section:hover {
+  color: var(--primary) !important;
+}
+
+.toggle-icon {
+  font-size: 10px;
+  transition: transform 0.2s;
+}
+
+/* Inline add forms */
+.inline-add-form {
+  border-radius: 0 0 12px 12px;
+}
+
+/* Clickable stat cards */
+.stat-card {
+  cursor: pointer;
+}

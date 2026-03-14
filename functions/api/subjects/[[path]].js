@@ -30,13 +30,13 @@ export async function onRequest(context) {
     }
     if (method === 'POST') {
       const body = await parseBody(request);
-      if (!body || !body.code || !body.name_th) {
+      if (!body || !body.code || !body.name) {
         return error('กรุณากรอกรหัสวิชาและชื่อวิชา');
       }
       const id = generateUUID();
       await dbRun(env.DB,
-        'INSERT INTO subjects (id, teacher_id, code, name_th, name_en, subject_type, credits, hours_per_week, description, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [id, env.user.id, body.code, body.name_th, body.name_en || null, body.subject_type || 'required', body.credits || 1, body.hours_per_week || 1, body.description || null, now()]
+        'INSERT INTO subjects (id, teacher_id, code, name, subject_type, credits, hours_per_week, grade_level, description, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [id, env.user.id, body.code, body.name, body.subject_type || 'regular', body.credits || 1, body.hours_per_week || 1, body.grade_level || null, body.description || null, now()]
       );
       return success({ id });
     }
@@ -56,8 +56,8 @@ export async function onRequest(context) {
       const body = await parseBody(request);
       if (!body) return error('ข้อมูลไม่ถูกต้อง');
       await dbRun(env.DB,
-        'UPDATE subjects SET code = COALESCE(?, code), name_th = COALESCE(?, name_th), name_en = COALESCE(?, name_en), subject_type = COALESCE(?, subject_type), credits = COALESCE(?, credits), hours_per_week = COALESCE(?, hours_per_week), description = COALESCE(?, description), updated_at = ? WHERE id = ? AND teacher_id = ?',
-        [body.code, body.name_th, body.name_en, body.subject_type, body.credits, body.hours_per_week, body.description, now(), id, env.user.id]
+        'UPDATE subjects SET code = COALESCE(?, code), name = COALESCE(?, name), subject_type = COALESCE(?, subject_type), credits = COALESCE(?, credits), hours_per_week = COALESCE(?, hours_per_week), grade_level = COALESCE(?, grade_level), description = COALESCE(?, description), updated_at = ? WHERE id = ? AND teacher_id = ?',
+        [body.code, body.name, body.subject_type, body.credits, body.hours_per_week, body.grade_level, body.description, now(), id, env.user.id]
       );
       return success({ message: 'อัปเดตวิชาแล้ว' });
     }

@@ -130,6 +130,7 @@ const App = {
     // Close sidebar on mobile
     if (window.innerWidth < 992) {
       document.getElementById('sidebar').classList.remove('show');
+      document.getElementById('sidebar-overlay').classList.remove('show');
     }
   },
 
@@ -273,6 +274,36 @@ document.addEventListener('DOMContentLoaded', () => {
   // Sidebar toggle (mobile)
   document.getElementById('sidebar-toggle').addEventListener('click', () => {
     document.getElementById('sidebar').classList.toggle('show');
+    document.getElementById('sidebar-overlay').classList.toggle('show');
+  });
+
+  // Sidebar overlay click to close
+  document.getElementById('sidebar-overlay').addEventListener('click', () => {
+    document.getElementById('sidebar').classList.remove('show');
+    document.getElementById('sidebar-overlay').classList.remove('show');
+  });
+
+  // Collapsible sidebar sections
+  document.querySelectorAll('.sidebar-toggle-section').forEach(el => {
+    el.style.cursor = 'pointer';
+    el.addEventListener('click', () => {
+      const target = document.getElementById(el.dataset.target);
+      if (target) {
+        target.classList.toggle('collapsed');
+        const icon = el.querySelector('.toggle-icon');
+        if (icon) {
+          icon.className = target.classList.contains('collapsed')
+            ? 'bi bi-chevron-right me-1 toggle-icon'
+            : 'bi bi-chevron-down me-1 toggle-icon';
+        }
+      }
+    });
+    // Set initial icon state
+    const target = document.getElementById(el.dataset.target);
+    if (target && target.classList.contains('collapsed')) {
+      const icon = el.querySelector('.toggle-icon');
+      if (icon) icon.className = 'bi bi-chevron-right me-1 toggle-icon';
+    }
   });
 
   // Logout
@@ -474,12 +505,13 @@ App.modules['dashboard'] = {
       API.get('/api/semesters'),
       API.get('/api/subjects'),
       API.get('/api/classrooms'),
-      API.get('/api/students?limit=1')
+      API.get('/api/students?limit=9999')
     ]);
 
     const semesters = semRes.success ? semRes.data : [];
     const subjects = subRes.success ? subRes.data : [];
     const classrooms = classRes.success ? classRes.data : [];
+    const studentCount = studentRes.success ? studentRes.data.length : 0;
 
     const active = semesters.find(s => s.is_active);
 
@@ -535,7 +567,7 @@ App.modules['dashboard'] = {
               <div class="d-flex justify-content-between align-items-center">
                 <div>
                   <div class="small opacity-75">นักเรียน</div>
-                  <div class="fs-3 fw-bold">${studentRes.success ? studentRes.data.length : 0}</div>
+                  <div class="fs-3 fw-bold">${studentCount}</div>
                 </div>
                 <i class="bi bi-people fs-2 opacity-50"></i>
               </div>
@@ -583,9 +615,9 @@ App.modules['dashboard'] = {
                 <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
                   <div>
                     <strong>${DOMPurify.sanitize(s.code)}</strong>
-                    <span class="text-muted ms-2">${DOMPurify.sanitize(s.name_th)}</span>
+                    <span class="text-muted ms-2">${DOMPurify.sanitize(s.name)}</span>
                   </div>
-                  <span class="badge bg-light text-dark">${s.subject_type}</span>
+                  <span class="badge bg-light text-dark">${s.subject_type === 'regular' ? 'พื้นฐาน' : s.subject_type === 'elective' ? 'เพิ่มเติม' : s.subject_type === 'activity' ? 'กิจกรรม' : s.subject_type}</span>
                 </div>`).join('') : '<p class="text-muted mb-0">ยังไม่มีวิชา</p>'}
             </div>
           </div>
@@ -683,8 +715,8 @@ App.modules['settings'] = {
                 ${subjects.map(sub => `
                 <tr>
                   <td>${DOMPurify.sanitize(sub.code)}</td>
-                  <td>${DOMPurify.sanitize(sub.name_th)}</td>
-                  <td>${sub.subject_type}</td>
+                  <td>${DOMPurify.sanitize(sub.name)}</td>
+                  <td>${sub.subject_type === 'regular' ? 'พื้นฐาน' : sub.subject_type === 'elective' ? 'เพิ่มเติม' : sub.subject_type === 'activity' ? 'กิจกรรม' : sub.subject_type}</td>
                   <td>${sub.credits}</td>
                   <td class="text-end">
                     <button class="btn btn-sm btn-outline-danger" onclick="App.modules.settings.deleteSubject('${sub.id}')"><i class="bi bi-trash"></i></button>
@@ -738,31 +770,69 @@ App.modules['settings'] = {
       App.toast('บันทึกข้อมูลครูแล้ว');
     });
 
-    document.getElementById('btn-add-semester').addEventListener('click', async () => {
-      const year = prompt('ปีการศึกษา (เช่น 2568):');
-      const sem = prompt('ภาคเรียนที่ (1 หรือ 2):');
-      if (year && sem) {
-        await API.post('/api/semesters', { academic_year: parseInt(year), semester: parseInt(sem) });
-        App.navigate('settings');
-      }
+    document.getElementById('btn-add-semester').addEventListener('click', () => {
+      const card = document.getElementById('btn-add-semester').closest('.card');
+      const existing = card.querySelector('.inline-add-form');
+      if (existing) { existing.remove(); return; }
+      const form = document.createElement('div');
+      form.className = 'inline-add-form p-3 border-top bg-light';
+      form.innerHTML = `
+        <div class="row g-2 align-items-end">
+          <div class="col-5"><label class="form-label small mb-1">ปีการศึกษา</label><input type="number" class="form-control form-control-sm" id="add-sem-year" value="2568" min="2500"></div>
+          <div class="col-4"><label class="form-label small mb-1">ภาคเรียน</label><select class="form-select form-select-sm" id="add-sem-num"><option value="1">1</option><option value="2">2</option></select></div>
+          <div class="col-3 d-flex gap-1"><button class="btn btn-sm btn-primary flex-fill" id="add-sem-save"><i class="bi bi-check-lg"></i></button><button class="btn btn-sm btn-outline-secondary" onclick="this.closest('.inline-add-form').remove()"><i class="bi bi-x-lg"></i></button></div>
+        </div>`;
+      card.appendChild(form);
+      document.getElementById('add-sem-save').addEventListener('click', async () => {
+        const year = parseInt(document.getElementById('add-sem-year').value);
+        const sem = parseInt(document.getElementById('add-sem-num').value);
+        if (year && sem) { await API.post('/api/semesters', { academic_year: year, semester: sem }); App.navigate('settings'); }
+      });
     });
 
-    document.getElementById('btn-add-subject').addEventListener('click', async () => {
-      const code = prompt('รหัสวิชา:');
-      const name = prompt('ชื่อวิชา:');
-      if (code && name) {
-        await API.post('/api/subjects', { code, name_th: name });
-        App.navigate('settings');
-      }
+    document.getElementById('btn-add-subject').addEventListener('click', () => {
+      const card = document.getElementById('btn-add-subject').closest('.card');
+      const existing = card.querySelector('.inline-add-form');
+      if (existing) { existing.remove(); return; }
+      const form = document.createElement('div');
+      form.className = 'inline-add-form p-3 border-top bg-light';
+      form.innerHTML = `
+        <div class="row g-2 align-items-end">
+          <div class="col-3"><label class="form-label small mb-1">รหัสวิชา</label><input type="text" class="form-control form-control-sm" id="add-sub-code" placeholder="ศ21101"></div>
+          <div class="col-4"><label class="form-label small mb-1">ชื่อวิชา</label><input type="text" class="form-control form-control-sm" id="add-sub-name" placeholder="ดนตรี"></div>
+          <div class="col-3"><label class="form-label small mb-1">ประเภท</label><select class="form-select form-select-sm" id="add-sub-type"><option value="regular">พื้นฐาน</option><option value="elective">เพิ่มเติม</option><option value="activity">กิจกรรม</option></select></div>
+          <div class="col-2 d-flex gap-1"><button class="btn btn-sm btn-primary flex-fill" id="add-sub-save"><i class="bi bi-check-lg"></i></button><button class="btn btn-sm btn-outline-secondary" onclick="this.closest('.inline-add-form').remove()"><i class="bi bi-x-lg"></i></button></div>
+        </div>`;
+      card.appendChild(form);
+      document.getElementById('add-sub-save').addEventListener('click', async () => {
+        const code = document.getElementById('add-sub-code').value.trim();
+        const name = document.getElementById('add-sub-name').value.trim();
+        const type = document.getElementById('add-sub-type').value;
+        if (code && name) { await API.post('/api/subjects', { code, name, subject_type: type }); App.navigate('settings'); }
+        else { App.toast('กรุณากรอกรหัสและชื่อวิชา', 'warning'); }
+      });
     });
 
-    document.getElementById('btn-add-classroom').addEventListener('click', async () => {
-      const grade = prompt('ระดับชั้น (1-6):');
-      const room = prompt('ห้องที่:');
-      if (grade && room) {
-        await API.post('/api/classrooms', { grade_level: parseInt(grade), room_number: parseInt(room) });
-        App.navigate('settings');
-      }
+    document.getElementById('btn-add-classroom').addEventListener('click', () => {
+      const card = document.getElementById('btn-add-classroom').closest('.card');
+      const existing = card.querySelector('.inline-add-form');
+      if (existing) { existing.remove(); return; }
+      const form = document.createElement('div');
+      form.className = 'inline-add-form p-3 border-top bg-light';
+      form.innerHTML = `
+        <div class="row g-2 align-items-end">
+          <div class="col-4"><label class="form-label small mb-1">ระดับชั้น</label><select class="form-select form-select-sm" id="add-cls-grade"><option value="1">ม.1</option><option value="2">ม.2</option><option value="3">ม.3</option><option value="4">ม.4</option><option value="5">ม.5</option><option value="6">ม.6</option></select></div>
+          <div class="col-3"><label class="form-label small mb-1">ห้องที่</label><input type="number" class="form-control form-control-sm" id="add-cls-room" value="1" min="1"></div>
+          <div class="col-3"><label class="form-label small mb-1">ชื่อ (ไม่บังคับ)</label><input type="text" class="form-control form-control-sm" id="add-cls-name" placeholder=""></div>
+          <div class="col-2 d-flex gap-1"><button class="btn btn-sm btn-primary flex-fill" id="add-cls-save"><i class="bi bi-check-lg"></i></button><button class="btn btn-sm btn-outline-secondary" onclick="this.closest('.inline-add-form').remove()"><i class="bi bi-x-lg"></i></button></div>
+        </div>`;
+      card.appendChild(form);
+      document.getElementById('add-cls-save').addEventListener('click', async () => {
+        const grade = parseInt(document.getElementById('add-cls-grade').value);
+        const room = parseInt(document.getElementById('add-cls-room').value);
+        const name = document.getElementById('add-cls-name').value.trim();
+        if (grade && room) { await API.post('/api/classrooms', { grade_level: grade, room_number: room, name: name || undefined }); App.navigate('settings'); }
+      });
     });
   },
 

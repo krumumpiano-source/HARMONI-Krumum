@@ -15,7 +15,7 @@ export async function onRequest(context) {
 
   if (method === 'GET') {
     const semesterId = url.searchParams.get('semester_id');
-    let sql = `SELECT sc.*, s.code as subject_code, s.name_th as subject_name,
+    let sql = `SELECT sc.*, s.code as subject_code, s.name as subject_name,
                c.grade_level, c.room_number, c.name as classroom_name
                FROM subject_classrooms sc
                JOIN subjects s ON sc.subject_id = s.id
@@ -37,8 +37,8 @@ export async function onRequest(context) {
     }
     const id = generateUUID();
     await dbRun(env.DB,
-      'INSERT INTO subject_classrooms (id, teacher_id, subject_id, classroom_id, semester_id, schedule_day, schedule_time, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, env.user.id, body.subject_id, body.classroom_id, body.semester_id, body.schedule_day || null, body.schedule_time || null, now()]
+      'INSERT INTO subject_classrooms (id, teacher_id, subject_id, classroom_id, semester_id, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [id, env.user.id, body.subject_id, body.classroom_id, body.semester_id, now()]
     );
     return success({ id });
   }

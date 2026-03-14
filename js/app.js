@@ -991,3 +991,245 @@ App.modules['admin'] = {
     }
   }
 };
+
+// ==================== Register Attendance Module ====================
+
+App.modules['attendance'] = {
+  selectedClassroom: null,
+  selectedDate: new Date().toISOString().split('T')[0],
+
+  async render(container) {
+    container.innerHTML = '<div class="loading"></div>';
+
+    // Load classrooms
+    const classRes = await API.get('/api/classrooms');
+    const classrooms = classRes.success ? classRes.data : [];
+
+    if (classrooms.length === 0) {
+      container.innerHTML = `
+        <h4 class="fw-bold mb-4"><i class="bi bi-calendar-check me-2 text-primary"></i>เช็คชื่อ</h4>
+        <div class="alert alert-warning">
+          <i class="bi bi-exclamation-triangle me-2"></i>ยังไม่มีห้องเรียน — <a href="#" class="alert-link" onclick="App.navigate('settings')">ไปเพิ่มห้องเรียนก่อน</a>
+        </div>`;
+      return;
+    }
+
+    if (!this.selectedClassroom) this.selectedClassroom = classrooms[0].id;
+
+    container.innerHTML = `
+      <h4 class="fw-bold mb-4"><i class="bi bi-calendar-check me-2 text-primary"></i>เช็คชื่อ</h4>
+
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+          <div class="row g-2 align-items-end">
+            <div class="col-md-4 col-6">
+              <label class="form-label small mb-1"><i class="bi bi-building me-1"></i>ห้องเรียน</label>
+              <select class="form-select" id="att-classroom">
+                ${classrooms.map(c => `<option value="${c.id}" ${c.id === this.selectedClassroom ? 'selected' : ''}>${DOMPurify.sanitize(c.name)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="col-md-3 col-6">
+              <label class="form-label small mb-1"><i class="bi bi-calendar3 me-1"></i>วันที่</label>
+              <input type="date" class="form-control" id="att-date" value="${this.selectedDate}">
+            </div>
+            <div class="col-md-3 col-6">
+              <label class="form-label small mb-1"><i class="bi bi-clock me-1"></i>คาบที่</label>
+              <select class="form-select" id="att-period">
+                <option value="">ทั้งวัน</option>
+                <option value="1">คาบ 1</option><option value="2">คาบ 2</option>
+                <option value="3">คาบ 3</option><option value="4">คาบ 4</option>
+                <option value="5">คาบ 5</option><option value="6">คาบ 6</option>
+                <option value="7">คาบ 7</option><option value="8">คาบ 8</option>
+              </select>
+            </div>
+            <div class="col-md-2 col-6">
+              <button class="btn btn-primary w-100" id="att-load"><i class="bi bi-search me-1"></i>โหลด</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="att-student-list"></div>`;
+
+    // Event: load
+    document.getElementById('att-load').addEventListener('click', () => this.loadStudents());
+    document.getElementById('att-classroom').addEventListener('change', (e) => {
+      this.selectedClassroom = e.target.value;
+    });
+    document.getElementById('att-date').addEventListener('change', (e) => {
+      this.selectedDate = e.target.value;
+    });
+
+    // Auto-load
+    this.loadStudents();
+  },
+
+  async loadStudents() {
+    const classroomId = document.getElementById('att-classroom').value;
+    const date = document.getElementById('att-date').value;
+    const period = document.getElementById('att-period').value;
+    const listEl = document.getElementById('att-student-list');
+    listEl.innerHTML = '<div class="loading"></div>';
+
+    let url = `/api/attendance?classroom_id=${classroomId}&date=${date}`;
+    if (period) url += `&period=${period}`;
+
+    const res = await API.get(url);
+    const students = res.success ? res.data : [];
+
+    if (students.length === 0) {
+      listEl.innerHTML = `
+        <div class="alert alert-info">
+          <i class="bi bi-info-circle me-2"></i>ยังไม่มีนักเรียนในห้องนี้ — <a href="#" class="alert-link" onclick="App.navigate('settings')">ไปเพิ่มนักเรียนในตั้งค่า</a>
+        </div>`;
+      return;
+    }
+
+    const statusOptions = [
+      { value: 'present', label: 'มา', color: 'success', icon: 'check-circle' },
+      { value: 'late', label: 'สาย', color: 'warning', icon: 'clock' },
+      { value: 'absent', label: 'ขาด', color: 'danger', icon: 'x-circle' },
+      { value: 'leave', label: 'ลา', color: 'info', icon: 'dash-circle' }
+    ];
+
+    listEl.innerHTML = `
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+          <span class="fw-semibold"><i class="bi bi-people me-2"></i>นักเรียน ${students.length} คน</span>
+          <div class="btn-group btn-group-sm">
+            <button class="btn btn-outline-success" onclick="App.modules.attendance.markAll('present')" title="มาทุกคน"><i class="bi bi-check-all me-1"></i>มาทั้งหมด</button>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th style="width:50px">#</th>
+                  <th>ชื่อ</th>
+                  <th style="width:280px" class="text-center">สถานะ</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${students.map((s, i) => `
+                <tr data-student-id="${s.id}">
+                  <td class="text-muted">${i + 1}</td>
+                  <td>
+                    <strong>${DOMPurify.sanitize(s.first_name)} ${DOMPurify.sanitize(s.last_name)}</strong>
+                    ${s.nickname ? `<span class="text-muted small ms-1">(${DOMPurify.sanitize(s.nickname)})</span>` : ''}
+                  </td>
+                  <td>
+                    <div class="btn-group w-100" role="group">
+                      ${statusOptions.map(opt => `
+                        <button type="button" class="btn btn-sm btn-${s.status === opt.value ? opt.color : 'outline-' + opt.color} att-status-btn"
+                          data-student="${s.id}" data-status="${opt.value}" title="${opt.label}">
+                          <i class="bi bi-${opt.icon} me-1 d-none d-sm-inline"></i>${opt.label}
+                        </button>`).join('')}
+                    </div>
+                  </td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card-footer bg-white text-end">
+          <span class="me-3 small text-muted" id="att-summary"></span>
+          <button class="btn btn-primary" id="att-save">
+            <i class="bi bi-check-lg me-1"></i>บันทึกเช็คชื่อ
+          </button>
+        </div>
+      </div>`;
+
+    // Status button clicks
+    document.querySelectorAll('.att-status-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const studentId = btn.dataset.student;
+        const status = btn.dataset.status;
+        // Toggle: deselect all in this group, select this one
+        const row = btn.closest('tr');
+        row.querySelectorAll('.att-status-btn').forEach(b => {
+          const s = statusOptions.find(o => o.value === b.dataset.status);
+          b.className = `btn btn-sm btn-${b === btn ? s.color : 'outline-' + s.color} att-status-btn`;
+        });
+        this.updateSummary();
+      });
+    });
+
+    // Save
+    document.getElementById('att-save').addEventListener('click', () => this.save());
+
+    this.updateSummary();
+  },
+
+  markAll(status) {
+    const statusOptions = {
+      present: 'success', late: 'warning', absent: 'danger', leave: 'info'
+    };
+    document.querySelectorAll('tr[data-student-id]').forEach(row => {
+      row.querySelectorAll('.att-status-btn').forEach(btn => {
+        const s = btn.dataset.status;
+        const isTarget = s === status;
+        btn.className = `btn btn-sm btn-${isTarget ? statusOptions[s] : 'outline-' + statusOptions[s]} att-status-btn`;
+      });
+    });
+    this.updateSummary();
+  },
+
+  updateSummary() {
+    const rows = document.querySelectorAll('tr[data-student-id]');
+    let present = 0, late = 0, absent = 0, leave = 0, unmarked = 0;
+    rows.forEach(row => {
+      const active = row.querySelector('.att-status-btn.btn-success, .att-status-btn.btn-warning, .att-status-btn.btn-danger, .att-status-btn.btn-info');
+      if (!active) { unmarked++; return; }
+      const st = active.dataset.status;
+      if (st === 'present') present++;
+      if (st === 'late') late++;
+      if (st === 'absent') absent++;
+      if (st === 'leave') leave++;
+    });
+    const el = document.getElementById('att-summary');
+    if (el) {
+      el.innerHTML = `<span class="text-success">มา ${present}</span> · <span class="text-warning">สาย ${late}</span> · <span class="text-danger">ขาด ${absent}</span> · <span class="text-info">ลา ${leave}</span>${unmarked > 0 ? ` · <span class="text-muted">ยังไม่เช็ค ${unmarked}</span>` : ''}`;
+    }
+  },
+
+  async save() {
+    const classroomId = document.getElementById('att-classroom').value;
+    const date = document.getElementById('att-date').value;
+    const period = document.getElementById('att-period').value;
+    const statusColors = { present: 'success', late: 'warning', absent: 'danger', leave: 'info' };
+
+    const records = [];
+    document.querySelectorAll('tr[data-student-id]').forEach(row => {
+      const studentId = row.dataset.studentId;
+      // Find active button (not outline)
+      const active = row.querySelector('.att-status-btn.btn-success, .att-status-btn.btn-warning, .att-status-btn.btn-danger, .att-status-btn.btn-info');
+      if (active) {
+        records.push({ student_id: studentId, status: active.dataset.status });
+      }
+    });
+
+    if (records.length === 0) {
+      App.toast('กรุณาเลือกสถานะอย่างน้อย 1 คน', 'warning');
+      return;
+    }
+
+    // Get active semester
+    const semRes = await API.get('/api/semesters');
+    const activeSem = semRes.success ? semRes.data.find(s => s.is_active) : null;
+
+    const res = await API.post('/api/attendance', {
+      classroom_id: classroomId,
+      date,
+      period: period ? parseInt(period) : null,
+      semester_id: activeSem?.id || null,
+      records
+    });
+
+    if (res.success) {
+      App.toast(`บันทึกเช็คชื่อ ${records.length} คนสำเร็จ!`);
+    } else {
+      App.toast(res.error || 'บันทึกไม่สำเร็จ', 'danger');
+    }
+  }
+};

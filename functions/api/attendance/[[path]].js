@@ -27,9 +27,11 @@ export async function onRequest(context) {
 
     // Get students in this classroom
     const students = await dbAll(env.DB,
-      `SELECT id, student_code, prefix, first_name, last_name, nickname, gender
-       FROM students WHERE teacher_id = ? AND classroom_id = ?
-       ORDER BY student_code`,
+      `SELECT s.id, s.student_code, s.prefix, s.first_name, s.last_name, s.nickname, s.gender
+       FROM students s
+       JOIN student_classrooms sc ON sc.student_id = s.id AND sc.is_active = 1
+       WHERE s.teacher_id = ? AND sc.classroom_id = ?
+       ORDER BY sc.student_number`,
       [env.user.id, classroomId]
     );
 
@@ -104,10 +106,11 @@ export async function onRequest(context) {
               COUNT(CASE WHEN ar.status = 'leave' THEN 1 END) as leave_count,
               COUNT(ar.id) as total_count
        FROM students s
+       JOIN student_classrooms sc ON sc.student_id = s.id AND sc.is_active = 1
        LEFT JOIN attendance_records ar ON s.id = ar.student_id AND ar.teacher_id = ?
        ${semesterId ? 'AND ar.semester_id = ?' : ''}
-       WHERE s.teacher_id = ? AND s.classroom_id = ?
-       GROUP BY s.id ORDER BY s.student_code`,
+       WHERE s.teacher_id = ? AND sc.classroom_id = ?
+       GROUP BY s.id ORDER BY sc.student_number`,
       semesterId
         ? [env.user.id, semesterId, env.user.id, classroomId]
         : [env.user.id, env.user.id, classroomId]

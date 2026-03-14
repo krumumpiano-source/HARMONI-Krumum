@@ -55,7 +55,7 @@ export async function onRequest(context) {
     `, [
       id, env.user.id,
       body.title,
-      body.message || null,
+      body.message || '',
       body.notification_type || 'system',
       body.related_module || null,
       body.related_id || null,

@@ -23,18 +23,21 @@ export async function onRequest(context) {
       const semesterId = url.searchParams.get('semester_id');
       const { limit, offset } = paginate(url);
 
-      let sql = 'SELECT * FROM students WHERE teacher_id = ?';
+      let sql = `SELECT s.*, sc.classroom_id, sc.semester_id, sc.student_number
+                 FROM students s
+                 JOIN student_classrooms sc ON sc.student_id = s.id AND sc.is_active = 1
+                 WHERE s.teacher_id = ?`;
       const params = [env.user.id];
 
       if (classroomId) {
-        sql += ' AND classroom_id = ?';
+        sql += ' AND sc.classroom_id = ?';
         params.push(classroomId);
       }
       if (semesterId) {
-        sql += ' AND semester_id = ?';
+        sql += ' AND sc.semester_id = ?';
         params.push(semesterId);
       }
-      sql += ' ORDER BY student_number LIMIT ? OFFSET ?';
+      sql += ' ORDER BY sc.student_number LIMIT ? OFFSET ?';
       params.push(limit, offset);
 
       return success(await dbAll(env.DB, sql, params));
@@ -47,14 +50,21 @@ export async function onRequest(context) {
       }
       const id = generateUUID();
       await dbRun(env.DB,
-        `INSERT INTO students (id, teacher_id, classroom_id, semester_id, student_code, student_number,
-         title, first_name, last_name, nickname, gender, birth_date, phone, email, photo_url, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, env.user.id, body.classroom_id || null, body.semester_id || null, body.student_code,
-         body.student_number || null, body.title || null, body.first_name, body.last_name,
+        `INSERT INTO students (id, teacher_id, student_code, prefix, first_name, last_name,
+         nickname, gender, birth_date, phone, photo_url, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, env.user.id, body.student_code,
+         body.prefix || body.title || null, body.first_name, body.last_name,
          body.nickname || null, body.gender || null, body.birth_date || null,
-         body.phone || null, body.email || null, body.photo_url || null, now()]
+         body.phone || null, body.photo_url || null, now()]
       );
+      if (body.classroom_id && body.semester_id) {
+        await dbRun(env.DB,
+          `INSERT INTO student_classrooms (id, student_id, classroom_id, semester_id, student_number, is_active)
+           VALUES (?, ?, ?, ?, ?, 1)`,
+          [generateUUID(), id, body.classroom_id, body.semester_id, body.student_number || 0]
+        );
+      }
       return success({ id });
     }
   }
@@ -71,13 +81,19 @@ export async function onRequest(context) {
       if (!s.student_code || !s.first_name || !s.last_name) continue;
       const id = generateUUID();
       await dbRun(env.DB,
-        `INSERT INTO students (id, teacher_id, classroom_id, semester_id, student_code, student_number,
-         title, first_name, last_name, nickname, gender, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, env.user.id, body.classroom_id || null, body.semester_id || null,
-         s.student_code, s.student_number || null, s.title || null,
+        `INSERT INTO students (id, teacher_id, student_code, prefix, first_name, last_name,
+         nickname, gender, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, env.user.id, s.student_code, s.prefix || s.title || null,
          s.first_name, s.last_name, s.nickname || null, s.gender || null, now()]
       );
+      if (body.classroom_id && body.semester_id) {
+        await dbRun(env.DB,
+          `INSERT INTO student_classrooms (id, student_id, classroom_id, semester_id, student_number, is_active)
+           VALUES (?, ?, ?, ?, ?, 1)`,
+          [generateUUID(), id, body.classroom_id, body.semester_id, s.student_number || 0]
+        );
+      }
       imported++;
     }
     return success({ imported });
@@ -99,15 +115,15 @@ export async function onRequest(context) {
       const body = await parseBody(request);
       if (!body) return error('ข้อมูลไม่ถูกต้อง');
       await dbRun(env.DB,
-        `UPDATE students SET classroom_id = COALESCE(?, classroom_id), semester_id = COALESCE(?, semester_id),
-         student_code = COALESCE(?, student_code), student_number = COALESCE(?, student_number),
-         title = COALESCE(?, title), first_name = COALESCE(?, first_name), last_name = COALESCE(?, last_name),
+        `UPDATE students SET
+         student_code = COALESCE(?, student_code), prefix = COALESCE(?, prefix),
+         first_name = COALESCE(?, first_name), last_name = COALESCE(?, last_name),
          nickname = COALESCE(?, nickname), gender = COALESCE(?, gender), birth_date = COALESCE(?, birth_date),
-         phone = COALESCE(?, phone), email = COALESCE(?, email), photo_url = COALESCE(?, photo_url),
+         phone = COALESCE(?, phone), photo_url = COALESCE(?, photo_url),
          updated_at = ? WHERE id = ? AND teacher_id = ?`,
-        [body.classroom_id, body.semester_id, body.student_code, body.student_number,
-         body.title, body.first_name, body.last_name, body.nickname, body.gender,
-         body.birth_date, body.phone, body.email, body.photo_url, now(), id, env.user.id]
+        [body.student_code, body.prefix || body.title, body.first_name, body.last_name,
+         body.nickname, body.gender, body.birth_date, body.phone, body.photo_url,
+         now(), id, env.user.id]
       );
       return success({ message: 'อัปเดตข้อมูลนักเรียนแล้ว' });
     }

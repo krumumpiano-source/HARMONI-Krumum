@@ -4301,10 +4301,10 @@ App.modules['evidence-pool'] = {
       </div>
       <div id="ep-filter" class="btn-group mb-3">
         <button class="btn btn-sm btn-outline-secondary active" data-pa="">ทั้งหมด</button>
-        <button class="btn btn-sm btn-outline-primary" data-pa="pa1">PA1 การสอน</button>
-        <button class="btn btn-sm btn-outline-success" data-pa="pa2">PA2 สนับสนุน</button>
-        <button class="btn btn-sm btn-outline-warning" data-pa="pa3">PA3 วิจัย</button>
-        <button class="btn btn-sm btn-outline-info" data-pa="pa4">PA4 อื่นๆ</button>
+        <button class="btn btn-sm btn-outline-primary" data-pa="teaching_hours">PA1 การสอน</button>
+        <button class="btn btn-sm btn-outline-success" data-pa="support_hours">PA2 สนับสนุน</button>
+        <button class="btn btn-sm btn-outline-warning" data-pa="challenging_task">PA3 วิจัย</button>
+        <button class="btn btn-sm btn-outline-info" data-pa="other_hours">PA4 อื่นๆ</button>
       </div>
       <div id="ep-list"><div class="loading"></div></div>`;
 
@@ -4319,7 +4319,7 @@ App.modules['evidence-pool'] = {
         return;
       }
       const typeLabels = { teaching: 'การสอน', support: 'สนับสนุน', research: 'วิจัย', innovation: 'นวัตกรรม', other: 'อื่นๆ' };
-      const paLabels = { pa1: 'PA1', pa2: 'PA2', pa3: 'PA3', pa4: 'PA4' };
+      const paLabels = { teaching_hours: 'PA1', support_hours: 'PA2', challenging_task: 'PA3', other_hours: 'PA4' };
       list.innerHTML = `
         <div class="row g-3">${res.data.map(ev => `
           <div class="col-md-6 col-lg-4">
@@ -4371,7 +4371,7 @@ App.modules['evidence-pool'] = {
             <div class="col-md-3"><label class="form-label">ประเภท</label>
               <select id="ep-type" class="form-select"><option value="teaching">การสอน</option><option value="support">สนับสนุน</option><option value="research">วิจัย</option><option value="innovation">นวัตกรรม</option><option value="other">อื่นๆ</option></select></div>
             <div class="col-md-3"><label class="form-label">หมวด PA</label>
-              <select id="ep-pa" class="form-select"><option value="pa1">PA1</option><option value="pa2">PA2</option><option value="pa3">PA3</option><option value="pa4">PA4</option></select></div>
+              <select id="ep-pa" class="form-select"><option value="teaching_hours">PA1</option><option value="support_hours">PA2</option><option value="challenging_task">PA3</option><option value="other_hours">PA4</option></select></div>
             <div class="col-12"><label class="form-label">รายละเอียด</label><textarea id="ep-desc" class="form-control" rows="3"></textarea></div>
           </div>
           <div class="mt-3"><button class="btn btn-primary" id="ep-save"><i class="bi bi-check-lg me-1"></i>บันทึก</button>

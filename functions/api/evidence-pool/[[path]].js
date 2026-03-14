@@ -41,52 +41,52 @@ export async function onRequest(context) {
     // Source modules and their mapping to evidence_type + pa_category
     const sources = [
       {
-        module: 'post_lesson_notes',
-        sql: `SELECT id, topic as title, reflection as description, lesson_date as created_at
-              FROM post_lesson_notes WHERE teacher_id = ? AND semester_id = ?`,
-        type: 'teaching', pa: 'pa1'
+        module: 'teaching_logs',
+        sql: `SELECT id, topic as title, observations as description, date as created_at
+              FROM teaching_logs WHERE teacher_id = ? AND semester_id = ?`,
+        type: 'teaching', pa: 'teaching_hours'
       },
       {
         module: 'lesson_plans',
         sql: `SELECT id, title, objectives as description, created_at
               FROM lesson_plans WHERE teacher_id = ? AND semester_id = ?`,
-        type: 'teaching', pa: 'pa1'
+        type: 'teaching', pa: 'teaching_hours'
       },
       {
         module: 'home_visits',
-        sql: `SELECT id, visit_purpose as title, findings as description, visit_date as created_at
+        sql: `SELECT id, visit_type as title, official_notes as description, visit_date as created_at
               FROM home_visits WHERE teacher_id = ?`,
-        type: 'support', pa: 'pa2'
+        type: 'support', pa: 'support_hours'
       },
       {
         module: 'sdq_screenings',
-        sql: `SELECT id, 'SDQ ' || screen_date as title, interpretation as description, screen_date as created_at
+        sql: `SELECT id, 'SDQ ' || screen_date as title, ai_interpretation as description, screen_date as created_at
               FROM sdq_screenings WHERE teacher_id = ?`,
-        type: 'support', pa: 'pa2'
+        type: 'support', pa: 'support_hours'
       },
       {
         module: 'care_records',
-        sql: `SELECT id, issue_type as title, details as description, record_date as created_at
+        sql: `SELECT id, 'ดูแลช่วยเหลือ ขั้น ' || care_step as title, description, record_date as created_at
               FROM care_records WHERE teacher_id = ?`,
-        type: 'support', pa: 'pa2'
+        type: 'support', pa: 'support_hours'
       },
       {
-        module: 'research_records',
-        sql: `SELECT id, title, abstract as description, created_at
-              FROM research_records WHERE teacher_id = ?`,
-        type: 'research', pa: 'pa3'
+        module: 'researches',
+        sql: `SELECT id, title, conclusion as description, created_at
+              FROM researches WHERE teacher_id = ? AND semester_id = ?`,
+        type: 'research', pa: 'challenging_task'
       },
       {
-        module: 'innovation_records',
+        module: 'innovations',
         sql: `SELECT id, title, description, created_at
-              FROM innovation_records WHERE teacher_id = ?`,
-        type: 'innovation', pa: 'pa3'
+              FROM innovations WHERE teacher_id = ? AND semester_id = ?`,
+        type: 'innovation', pa: 'challenging_task'
       },
       {
         module: 'plc_records',
-        sql: `SELECT id, topic as title, discussion_summary as description, meeting_date as created_at
-              FROM plc_records WHERE teacher_id = ?`,
-        type: 'other', pa: 'pa4'
+        sql: `SELECT id, topic as title, outcomes as description, session_date as created_at
+              FROM plc_records WHERE teacher_id = ? AND semester_id = ?`,
+        type: 'other', pa: 'other_hours'
       }
     ];
 

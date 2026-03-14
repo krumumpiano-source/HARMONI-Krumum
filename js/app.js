@@ -112,18 +112,19 @@ const App = {
     }
   },
 
-  navigate(moduleName) {
+  navigate(moduleName, params) {
     // Update sidebar active state
     document.querySelectorAll('.sidebar-link').forEach(el => {
       el.classList.toggle('active', el.dataset.module === moduleName);
     });
 
     this.currentModule = moduleName;
+    this.currentParams = params || null;
     const area = document.getElementById('content-area');
 
     // Load module
     if (this.modules[moduleName]) {
-      this.modules[moduleName].render(area);
+      this.modules[moduleName].render(area, params);
     } else {
       area.innerHTML = `
         <div class="d-flex justify-content-between align-items-center mb-4">
@@ -182,7 +183,8 @@ const App = {
       'documents': 'เอกสาร',
       'cover-designer': 'ออกแบบปก',
       'instruments': 'เครื่องดนตรี',
-      'quick-drop': 'Quick Drop'
+      'quick-drop': 'Quick Drop',
+      'classroom-live': 'ห้องเรียน'
     };
     return titles[name] || name;
   },
@@ -519,196 +521,430 @@ async function saveSetup() {
 // ==================== Register Dashboard Module ====================
 
 App.modules['dashboard'] = {
+  dayNames: ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์'],
+  periodTimes: [
+    '08.20–09.10', '09.10–10.00', '10.20–11.10', '11.10–12.00',
+    '12.20–13.10', '13.10–14.00', '14.00–14.50',
+    '15.00–15.50', '15.50–16.40', '16.40–17.30'
+  ],
+
   async render(container) {
     container.innerHTML = '<div class="loading"></div>';
 
-    const [semRes, subRes, classRes, studentRes, calRes, logRes, postRes] = await Promise.all([
+    const [semRes, subRes, clsRes] = await Promise.all([
       API.get('/api/semesters'),
       API.get('/api/subjects'),
-      API.get('/api/classrooms'),
-      API.get('/api/students?limit=9999'),
-      API.get('/api/calendar'),
-      API.get('/api/logbook'),
-      API.get('/api/subject-classrooms')
+      API.get('/api/classrooms')
     ]);
 
     const semesters = semRes.success ? semRes.data : [];
-    const subjects = subRes.success ? subRes.data : [];
-    const classrooms = classRes.success ? classRes.data : [];
-    const studentCount = studentRes.success ? studentRes.data.length : 0;
-    const calEvents = calRes.success ? (calRes.data || []) : [];
-    const logEntries = logRes.success ? (logRes.data || []) : [];
-    const subjectClassrooms = postRes.success ? (postRes.data || []) : [];
+    const activeSem = semesters.find(s => s.is_active);
+    this.subjects = subRes.success ? subRes.data : [];
+    this.classrooms = clsRes.success ? clsRes.data : [];
+    this.activeSemId = activeSem?.id || '';
 
-    const active = semesters.find(s => s.is_active);
+    if (!activeSem) {
+      container.innerHTML = `<div class="alert alert-warning"><i class="bi bi-exclamation-triangle me-2"></i>ยังไม่ได้ตั้งค่าภาคเรียน — <a href="#" class="alert-link" onclick="App.navigate('settings')">ไปตั้งค่าเริ่มต้น</a></div>`;
+      return;
+    }
 
-    const today = new Date().toISOString().slice(0, 10);
+    const schedRes = await API.get(`/api/schedule?semester_id=${activeSem.id}`);
+    this.slots = schedRes.success ? schedRes.data : [];
 
-    // Upcoming events (next 7 days) — calendar API returns 'date' field
-    const nextWeek = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
-    const upcoming = calEvents.filter(e => e.date >= today && e.date <= nextWeek).slice(0, 5);
+    // Determine current day (Mon=1..Fri=5) and current period
+    const now = new Date();
+    const jsDay = now.getDay(); // 0=Sun..6=Sat
+    this.currentDay = (jsDay >= 1 && jsDay <= 5) ? jsDay : 0;
+    const mins = now.getHours() * 60 + now.getMinutes();
+    const periodRanges = [
+      [500,550],[550,600],[620,670],[670,720],
+      [740,790],[790,840],[840,890],
+      [900,950],[950,1000],[1000,1050]
+    ];
+    this.currentPeriod = 0;
+    periodRanges.forEach((r, i) => { if (mins >= r[0] && mins < r[1]) this.currentPeriod = i + 1; });
 
-    // Recent log entries (last 5)
-    const recentLogs = logEntries.slice(0, 5);
+    const paletteClasses = ['bg-primary','bg-success','bg-info','bg-warning','bg-danger','bg-secondary','bg-purple'];
+    const subjectColorMap = {};
+    this.subjects.forEach((s, i) => { subjectColorMap[s.id] = paletteClasses[i % paletteClasses.length]; });
 
     container.innerHTML = `
-      <div class="d-flex justify-content-between align-items-center mb-4">
-        <h4 class="fw-bold mb-0"><i class="bi bi-speedometer2 me-2 text-primary"></i>แดชบอร์ด</h4>
-        ${active ? `<span class="badge bg-primary fs-6">ปี ${active.academic_year} ภาค ${active.semester}</span>` : ''}
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="fw-bold mb-0"><i class="bi bi-calendar-week me-2 text-primary"></i>ตารางสอน</h4>
+        <span class="badge bg-primary fs-6">ปี ${activeSem.academic_year} ภาค ${activeSem.semester}</span>
+      </div>
+      <p class="text-muted small mb-3"><i class="bi bi-info-circle me-1"></i>กดช่องว่างเพื่อเพิ่มคาบ · กดช่องที่มีวิชาเพื่อเข้าห้องเรียน</p>
+
+      <div class="table-responsive">
+        <table class="table table-bordered text-center align-middle mb-0" id="dash-timetable" style="font-size:0.85rem">
+          <thead>
+            <tr class="table-dark">
+              <th style="width:80px" rowspan="2">วัน</th>
+              ${[1,2,3,4,5,6,7,8,9,10].map(p => `<th style="min-width:90px">คาบ ${p}</th>`).join('')}
+            </tr>
+            <tr class="table-light">
+              ${this.periodTimes.map(t => `<th class="text-muted" style="font-size:0.65rem;font-weight:normal">${t}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${this.dayNames.map((day, idx) => {
+              const dayNum = idx + 1;
+              const isToday = dayNum === this.currentDay;
+              return `
+              <tr${isToday ? ' class="table-active"' : ''}>
+                <td class="fw-semibold ${isToday ? 'bg-primary text-white' : 'bg-light'}">${day}${isToday ? '<br><span class="badge bg-light text-primary" style="font-size:0.6rem">วันนี้</span>' : ''}</td>
+                ${[1,2,3,4,5,6,7,8,9,10].map(p => {
+                  const slot = this.slots.find(s => s.day_of_week === dayNum && s.period === p);
+                  const isCurrent = isToday && p === this.currentPeriod;
+                  if (slot) {
+                    const colorClass = subjectColorMap[slot.subject_id] || 'bg-primary';
+                    return `<td class="dash-slot filled p-1" data-slot-id="${slot.id}" data-classroom-id="${slot.classroom_id}" data-subject-id="${slot.subject_id}" data-day="${dayNum}" data-period="${p}" role="button" style="cursor:pointer;${isCurrent ? 'box-shadow:inset 0 0 0 3px #ff5722;' : ''}">
+                      <span class="badge ${colorClass} d-block mb-1" style="font-size:0.75rem">${DOMPurify.sanitize(slot.subject_code || '')}</span>
+                      <div class="text-muted" style="font-size:0.65rem">${DOMPurify.sanitize(slot.classroom_name || '')}</div>
+                    </td>`;
+                  }
+                  // Break periods (after 2,4 → lunch break markers in header already, just show empty)
+                  return `<td class="dash-slot empty" data-day="${dayNum}" data-period="${p}" role="button" style="cursor:pointer;${isCurrent ? 'background:#fff3e0;' : ''}" title="กดเพื่อเพิ่มคาบ">
+                    <span class="text-muted" style="font-size:0.7rem">—</span>
+                  </td>`;
+                }).join('')}
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
       </div>
 
-      <div class="row g-3 mb-4">
-        <div class="col-md-3 col-6">
-          <div class="card stat-card bg-primary bg-gradient text-white" style="cursor:pointer" onclick="App.navigate('settings')">
-            <div class="card-body">
-              <div class="d-flex justify-content-between align-items-center">
-                <div>
-                  <div class="small opacity-75">ภาคเรียน</div>
-                  <div class="fs-3 fw-bold">${semesters.length}</div>
-                </div>
-                <i class="bi bi-calendar3 fs-2 opacity-50"></i>
-              </div>
+      <div class="row g-3 mt-3">
+        <div class="col-md-8">
+          <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-semibold"><i class="bi bi-palette me-2"></i>สัญลักษณ์วิชา</div>
+            <div class="card-body d-flex flex-wrap gap-2">
+              ${this.subjects.length > 0 ? this.subjects.map((s, i) => `<span class="badge ${paletteClasses[i % paletteClasses.length]} py-2 px-3">${DOMPurify.sanitize(s.code)} ${DOMPurify.sanitize(s.name)}</span>`).join('') : '<span class="text-muted small">ยังไม่มีวิชา — <a href="#" onclick="App.navigate(\'settings\')">ไปตั้งค่า</a></span>'}
             </div>
           </div>
         </div>
-        <div class="col-md-3 col-6">
-          <div class="card stat-card bg-success bg-gradient text-white" style="cursor:pointer" onclick="App.navigate('course-structure')">
-            <div class="card-body">
-              <div class="d-flex justify-content-between align-items-center">
-                <div>
-                  <div class="small opacity-75">วิชา</div>
-                  <div class="fs-3 fw-bold">${subjects.length}</div>
-                </div>
-                <i class="bi bi-book fs-2 opacity-50"></i>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-3 col-6">
-          <div class="card stat-card bg-info bg-gradient text-white" style="cursor:pointer" onclick="App.navigate('student-classroom')">
-            <div class="card-body">
-              <div class="d-flex justify-content-between align-items-center">
-                <div>
-                  <div class="small opacity-75">ห้องเรียน</div>
-                  <div class="fs-3 fw-bold">${classrooms.length}</div>
-                </div>
-                <i class="bi bi-building fs-2 opacity-50"></i>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-3 col-6">
-          <div class="card stat-card bg-warning bg-gradient text-white" style="cursor:pointer" onclick="App.navigate('student-classroom')">
-            <div class="card-body">
-              <div class="d-flex justify-content-between align-items-center">
-                <div>
-                  <div class="small opacity-75">นักเรียน</div>
-                  <div class="fs-3 fw-bold">${studentCount}</div>
-                </div>
-                <i class="bi bi-people fs-2 opacity-50"></i>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      ${!active ? `
-      <div class="alert alert-warning">
-        <i class="bi bi-exclamation-triangle me-2"></i>
-        ยังไม่ได้ตั้งค่าภาคเรียน — <a href="#" class="alert-link" onclick="App.navigate('settings')">ไปตั้งค่าเริ่มต้น</a>
-      </div>` : ''}
-
-      <div class="row g-3">
         <div class="col-md-4">
           <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white fw-semibold"><i class="bi bi-lightning me-2"></i>ใช้งานด่วน</div>
+            <div class="card-header bg-white fw-semibold"><i class="bi bi-bar-chart me-2"></i>สรุป</div>
             <div class="card-body">
+              <div class="d-flex justify-content-between mb-1"><span>คาบสอนทั้งหมด</span><strong>${this.slots.length}</strong></div>
+              <div class="d-flex justify-content-between mb-1"><span>วิชาที่สอน</span><strong>${this.subjects.length}</strong></div>
+              <div class="d-flex justify-content-between"><span>ห้องเรียน</span><strong>${this.classrooms.length}</strong></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Add Slot Modal -->
+      <div class="modal fade" id="dashAddModal" tabindex="-1">
+        <div class="modal-dialog modal-sm">
+          <div class="modal-content">
+            <div class="modal-header"><h6 class="modal-title"><i class="bi bi-plus-circle me-2"></i>เพิ่มคาบเรียน</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+              <div class="mb-2" id="dash-modal-info"></div>
+              <div class="mb-2"><label class="form-label small mb-1">วิชา</label>
+                <select class="form-select" id="dash-add-subject">${this.subjects.map(s => `<option value="${s.id}">${DOMPurify.sanitize(s.code)} ${DOMPurify.sanitize(s.name)}</option>`).join('')}</select>
+              </div>
+              <div class="mb-2"><label class="form-label small mb-1">ห้องเรียน</label>
+                <select class="form-select" id="dash-add-classroom">${this.classrooms.map(c => `<option value="${c.id}">${DOMPurify.sanitize(c.name)}</option>`).join('')}</select>
+              </div>
+            </div>
+            <div class="modal-footer"><button class="btn btn-primary btn-sm" id="dash-add-confirm"><i class="bi bi-check-lg me-1"></i>เพิ่ม</button></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Slot Actions Modal (for filled slots — enter classroom or edit/delete) -->
+      <div class="modal fade" id="dashSlotModal" tabindex="-1">
+        <div class="modal-dialog modal-sm">
+          <div class="modal-content">
+            <div class="modal-header"><h6 class="modal-title" id="dashSlotTitle"></h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+              <div id="dashSlotInfo" class="mb-3"></div>
               <div class="d-grid gap-2">
-                <button class="btn btn-outline-primary text-start" onclick="App.navigate('attendance')">
-                  <i class="bi bi-calendar-check me-2"></i>เช็คชื่อ
-                </button>
-                <button class="btn btn-outline-primary text-start" onclick="App.navigate('schedule')">
-                  <i class="bi bi-clock-history me-2"></i>ตารางสอน/คิวงาน
-                </button>
-                <button class="btn btn-outline-primary text-start" onclick="App.navigate('student-classroom')">
-                  <i class="bi bi-send me-2"></i>สั่งงาน/ตรวจงาน
-                </button>
-                <button class="btn btn-outline-primary text-start" onclick="App.navigate('post-lesson')">
-                  <i class="bi bi-chat-square-text me-2"></i>บันทึกหลังสอน
-                </button>
-                <button class="btn btn-outline-primary text-start" onclick="App.navigate('portfolio')">
-                  <i class="bi bi-briefcase me-2"></i>เก็บผลงาน
-                </button>
+                <button class="btn btn-primary" id="dash-enter-class"><i class="bi bi-box-arrow-in-right me-2"></i>เข้าห้องเรียน</button>
+                <button class="btn btn-outline-danger btn-sm" id="dash-del-slot"><i class="bi bi-trash me-1"></i>ลบคาบนี้</button>
               </div>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-4">
-          <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white fw-semibold"><i class="bi bi-calendar-event me-2"></i>กิจกรรมที่จะถึง</div>
-            <div class="card-body">
-              ${upcoming.length > 0 ? upcoming.map(e => `
-                <div class="d-flex align-items-center py-2 border-bottom">
-                  <div class="me-3 text-center" style="min-width:40px">
-                    <div class="fw-bold text-primary">${new Date(e.date).getDate()}</div>
-                    <small class="text-muted">${new Date(e.date).toLocaleDateString('th-TH', {month:'short'})}</small>
-                  </div>
-                  <div>
-                    <strong class="small">${DOMPurify.sanitize(e.title)}</strong>
-                    ${e.event_type ? `<br><span class="badge bg-light text-dark">${DOMPurify.sanitize(e.event_type)}</span>` : ''}
-                  </div>
-                </div>`).join('') : '<p class="text-muted small mb-0">ไม่มีกิจกรรมใน 7 วัน</p>'}
-              <a href="#" class="btn btn-sm btn-outline-primary mt-2 w-100" onclick="App.navigate('calendar')">ดูปฏิทิน</a>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-4">
-          <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white fw-semibold"><i class="bi bi-journal-text me-2"></i>บันทึกล่าสุด</div>
-            <div class="card-body">
-              ${recentLogs.length > 0 ? recentLogs.map(l => `
-                <div class="py-2 border-bottom">
-                  <strong class="small">${DOMPurify.sanitize(l.description || l.category || '')}</strong>
-                  <br><small class="text-muted">${l.entry_date ? new Date(l.entry_date).toLocaleDateString('th-TH') : ''} ${l.hours ? '(' + l.hours + ' ชม.)' : ''}</small>
-                </div>`).join('') : '<p class="text-muted small mb-0">ยังไม่มีบันทึก</p>'}
-              <a href="#" class="btn btn-sm btn-outline-primary mt-2 w-100" onclick="App.navigate('logbook')">ดูสมุดบันทึก</a>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="row g-3 mt-1">
-        <div class="col-md-6">
-          <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white fw-semibold"><i class="bi bi-book me-2"></i>วิชาที่สอน</div>
-            <div class="card-body">
-              ${subjects.length > 0 ? subjects.map(s => `
-                <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
-                  <div>
-                    <strong>${DOMPurify.sanitize(s.code)}</strong>
-                    <span class="text-muted ms-2">${DOMPurify.sanitize(s.name)}</span>
-                  </div>
-                  <span class="badge bg-light text-dark">${s.subject_type === 'regular' ? 'พื้นฐาน' : s.subject_type === 'elective' ? 'เพิ่มเติม' : s.subject_type === 'activity' ? 'กิจกรรม' : s.subject_type}</span>
-                </div>`).join('') : '<p class="text-muted mb-0">ยังไม่มีวิชา</p>'}
-            </div>
-          </div>
-        </div>
-        <div class="col-md-6">
-          <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white fw-semibold"><i class="bi bi-building me-2"></i>ห้องเรียนที่สอน</div>
-            <div class="card-body">
-              ${subjectClassrooms.length > 0 ? subjectClassrooms.slice(0, 10).map(sc => `
-                <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
-                  <div>
-                    <strong>${DOMPurify.sanitize(sc.subject_name || sc.subject_code || '')}</strong>
-                    <span class="text-muted ms-2">${DOMPurify.sanitize(sc.classroom_name || '')}</span>
-                  </div>
-                  <span class="badge bg-primary">${sc.student_count || 0} คน</span>
-                </div>`).join('') : '<p class="text-muted mb-0">ยังไม่มีห้องเรียน</p>'}
             </div>
           </div>
         </div>
       </div>`;
+
+    // === Event Bindings ===
+
+    // Empty cell → add modal
+    container.querySelectorAll('.dash-slot.empty').forEach(td => {
+      td.addEventListener('click', () => {
+        const day = parseInt(td.dataset.day);
+        const period = parseInt(td.dataset.period);
+        this._pendingDay = day;
+        this._pendingPeriod = period;
+        document.getElementById('dash-modal-info').innerHTML =
+          `<span class="badge bg-info">${this.dayNames[day - 1]}</span> <span class="badge bg-secondary">คาบ ${period}</span> <span class="text-muted small">${this.periodTimes[period - 1]}</span>`;
+        new bootstrap.Modal(document.getElementById('dashAddModal')).show();
+      });
+    });
+
+    // Add confirm
+    document.getElementById('dash-add-confirm').addEventListener('click', async () => {
+      const subId = document.getElementById('dash-add-subject').value;
+      const clsId = document.getElementById('dash-add-classroom').value;
+      if (!subId || !clsId) { App.toast('เลือกวิชาและห้องเรียน', 'danger'); return; }
+      const res = await API.post('/api/schedule', {
+        semester_id: this.activeSemId,
+        subject_id: subId,
+        classroom_id: clsId,
+        day_of_week: this._pendingDay,
+        period: this._pendingPeriod
+      });
+      bootstrap.Modal.getInstance(document.getElementById('dashAddModal'))?.hide();
+      if (res.success) { App.toast('เพิ่มคาบแล้ว'); App.navigate('dashboard'); }
+      else App.toast(res.error || 'เพิ่มไม่สำเร็จ', 'danger');
+    });
+
+    // Filled cell → slot actions modal
+    container.querySelectorAll('.dash-slot.filled').forEach(td => {
+      td.addEventListener('click', () => {
+        this._selectedSlotId = td.dataset.slotId;
+        this._selectedClassroomId = td.dataset.classroomId;
+        this._selectedSubjectId = td.dataset.subjectId;
+        const day = parseInt(td.dataset.day);
+        const period = parseInt(td.dataset.period);
+        const slot = this.slots.find(s => s.id === td.dataset.slotId);
+        document.getElementById('dashSlotTitle').textContent = slot ? `${slot.subject_code} — ${slot.classroom_name}` : 'คาบเรียน';
+        document.getElementById('dashSlotInfo').innerHTML = `
+          <div class="mb-1"><span class="badge bg-info">${this.dayNames[day - 1]}</span> <span class="badge bg-secondary">คาบ ${period}</span> <span class="text-muted small">${this.periodTimes[period - 1]}</span></div>
+          ${slot ? `<div class="small text-muted">วิชา: ${DOMPurify.sanitize(slot.subject_name || slot.subject_code)}<br>ห้อง: ${DOMPurify.sanitize(slot.classroom_name)}</div>` : ''}`;
+        new bootstrap.Modal(document.getElementById('dashSlotModal')).show();
+      });
+    });
+
+    // Enter classroom
+    document.getElementById('dash-enter-class').addEventListener('click', () => {
+      bootstrap.Modal.getInstance(document.getElementById('dashSlotModal'))?.hide();
+      App.navigate('classroom-live', {
+        classroom_id: this._selectedClassroomId,
+        subject_id: this._selectedSubjectId,
+        semester_id: this.activeSemId
+      });
+    });
+
+    // Delete slot
+    document.getElementById('dash-del-slot').addEventListener('click', async () => {
+      if (!confirm('ลบคาบนี้ออกจากตารางสอน?')) return;
+      const res = await API.del(`/api/schedule/${this._selectedSlotId}`);
+      bootstrap.Modal.getInstance(document.getElementById('dashSlotModal'))?.hide();
+      if (res.success) { App.toast('ลบคาบแล้ว'); App.navigate('dashboard'); }
+      else App.toast(res.error || 'ลบไม่สำเร็จ', 'danger');
+    });
+  }
+};
+
+// ==================== Classroom Live (ห้องเรียน) Module ====================
+App.modules['classroom-live'] = {
+  async render(container, params) {
+    if (!params || !params.classroom_id || !params.subject_id) {
+      container.innerHTML = '<div class="alert alert-warning">ไม่พบข้อมูลห้องเรียน — กรุณากลับไปที่ตารางสอน</div>';
+      return;
+    }
+
+    container.innerHTML = '<div class="loading"></div>';
+
+    const { classroom_id, subject_id, semester_id } = params;
+
+    const [clsRes, subRes, studRes, postsRes, attRes] = await Promise.all([
+      API.get(`/api/classrooms/${classroom_id}`),
+      API.get(`/api/subjects/${subject_id}`),
+      API.get(`/api/students?classroom_id=${classroom_id}&semester_id=${encodeURIComponent(semester_id || '')}`),
+      API.get(`/api/student-classroom?classroom_id=${classroom_id}&subject_id=${subject_id}&semester_id=${encodeURIComponent(semester_id || '')}`),
+      API.get(`/api/attendance?classroom_id=${classroom_id}&date=${new Date().toISOString().slice(0, 10)}`)
+    ]);
+
+    const cls = clsRes.success ? clsRes.data : {};
+    const sub = subRes.success ? subRes.data : {};
+    const students = studRes.success ? (Array.isArray(studRes.data) ? studRes.data : []) : [];
+    const posts = postsRes.success ? (Array.isArray(postsRes.data) ? postsRes.data : []) : [];
+    const todayAtt = attRes.success ? (Array.isArray(attRes.data) ? attRes.data : []) : [];
+
+    const today = new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const checkedCount = todayAtt.filter(s => s.status).length;
+    const totalStudents = students.length || todayAtt.length;
+
+    // Count assignments from posts
+    const assignments = posts.filter(p => p.post_type === 'assignment');
+    const pendingAssignments = assignments.filter(a => {
+      const submitted = a.submitted_count || 0;
+      const total = a.student_count || totalStudents;
+      return submitted < total;
+    });
+
+    container.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+          <a href="#" class="text-decoration-none text-muted small" onclick="App.navigate('dashboard')"><i class="bi bi-arrow-left me-1"></i>กลับตารางสอน</a>
+          <h4 class="fw-bold mb-0 mt-1"><i class="bi bi-mortarboard me-2 text-primary"></i>${DOMPurify.sanitize(sub.code || '')} ${DOMPurify.sanitize(sub.name || 'วิชา')}</h4>
+          <span class="text-muted">${DOMPurify.sanitize(cls.name || 'ห้องเรียน')} · ${today}</span>
+        </div>
+        <span class="badge bg-primary fs-6">${totalStudents} คน</span>
+      </div>
+
+      <!-- Quick Action Buttons -->
+      <div class="row g-2 mb-4">
+        <div class="col-6 col-md-3">
+          <button class="btn btn-outline-success w-100 py-3 cl-action" data-action="attendance">
+            <i class="bi bi-calendar-check d-block fs-3 mb-1"></i>
+            <div class="small fw-semibold">เช็คชื่อ</div>
+            <div class="text-muted" style="font-size:0.7rem">${checkedCount > 0 ? 'เช็คแล้ว ' + checkedCount + '/' + totalStudents : 'ยังไม่เช็ค'}</div>
+          </button>
+        </div>
+        <div class="col-6 col-md-3">
+          <button class="btn btn-outline-primary w-100 py-3 cl-action" data-action="assign">
+            <i class="bi bi-send d-block fs-3 mb-1"></i>
+            <div class="small fw-semibold">สั่งงาน</div>
+            <div class="text-muted" style="font-size:0.7rem">${assignments.length} งาน</div>
+          </button>
+        </div>
+        <div class="col-6 col-md-3">
+          <button class="btn btn-outline-warning w-100 py-3 cl-action" data-action="grade">
+            <i class="bi bi-pencil-square d-block fs-3 mb-1"></i>
+            <div class="small fw-semibold">ตรวจงาน/ให้คะแนน</div>
+            <div class="text-muted" style="font-size:0.7rem">${pendingAssignments.length} รอตรวจ</div>
+          </button>
+        </div>
+        <div class="col-6 col-md-3">
+          <button class="btn btn-outline-info w-100 py-3 cl-action" data-action="post-lesson">
+            <i class="bi bi-chat-square-text d-block fs-3 mb-1"></i>
+            <div class="small fw-semibold">บันทึกหลังสอน</div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Tab navigation -->
+      <ul class="nav nav-tabs" id="cl-tabs">
+        <li class="nav-item"><a class="nav-link active" data-tab="students" href="#">นักเรียน (${totalStudents})</a></li>
+        <li class="nav-item"><a class="nav-link" data-tab="tasks" href="#">งาน/ภาระงาน (${assignments.length})</a></li>
+        <li class="nav-item"><a class="nav-link" data-tab="scores" href="#">คะแนน</a></li>
+      </ul>
+      <div id="cl-tab-content" class="border border-top-0 rounded-bottom p-3 bg-white shadow-sm"></div>`;
+
+    // Tab switching
+    const tabContent = document.getElementById('cl-tab-content');
+    const renderTab = (tabName) => {
+      document.querySelectorAll('#cl-tabs .nav-link').forEach(l => l.classList.toggle('active', l.dataset.tab === tabName));
+
+      if (tabName === 'students') {
+        if (students.length === 0) {
+          tabContent.innerHTML = '<div class="empty-state"><i class="bi bi-people d-block"></i><p>ยังไม่มีนักเรียนในห้องนี้</p></div>';
+          return;
+        }
+        tabContent.innerHTML = `
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead class="table-light">
+                <tr><th style="width:40px">#</th><th>รหัส</th><th>ชื่อ-นามสกุล</th><th>สถานะวันนี้</th></tr>
+              </thead>
+              <tbody>
+                ${students.map((s, i) => {
+                  const att = todayAtt.find(a => a.id === s.id);
+                  const statusBadge = att?.status ? {
+                    present: '<span class="badge bg-success">มา</span>',
+                    late: '<span class="badge bg-warning text-dark">สาย</span>',
+                    absent: '<span class="badge bg-danger">ขาด</span>',
+                    leave: '<span class="badge bg-info">ลา</span>'
+                  }[att.status] || '<span class="badge bg-secondary">-</span>' : '<span class="badge bg-light text-muted">ยังไม่เช็ค</span>';
+                  return `<tr>
+                    <td>${i + 1}</td>
+                    <td><code>${DOMPurify.sanitize(s.student_code || '')}</code></td>
+                    <td>${DOMPurify.sanitize(s.prefix || '')} ${DOMPurify.sanitize(s.first_name || '')} ${DOMPurify.sanitize(s.last_name || '')} ${s.nickname ? '<small class="text-muted">(' + DOMPurify.sanitize(s.nickname) + ')</small>' : ''}</td>
+                    <td>${statusBadge}</td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>`;
+      }
+
+      if (tabName === 'tasks') {
+        tabContent.innerHTML = `
+          <div class="d-flex justify-content-between mb-3">
+            <span class="text-muted small">${assignments.length} งานทั้งหมด</span>
+            <button class="btn btn-sm btn-primary" id="cl-new-task"><i class="bi bi-plus-lg me-1"></i>สร้างงานใหม่</button>
+          </div>
+          ${assignments.length > 0 ? assignments.map(a => `
+            <div class="card border-0 shadow-sm mb-2">
+              <div class="card-body py-2 px-3">
+                <div class="d-flex justify-content-between align-items-center">
+                  <div>
+                    <strong class="small">${DOMPurify.sanitize(a.title || 'งาน')}</strong>
+                    ${a.due_date ? `<br><small class="text-muted"><i class="bi bi-clock me-1"></i>กำหนดส่ง: ${new Date(a.due_date).toLocaleDateString('th-TH')}</small>` : ''}
+                  </div>
+                  <div class="text-end">
+                    ${a.max_score ? `<span class="badge bg-light text-dark">${a.max_score} คะแนน</span>` : ''}
+                    <span class="badge bg-${(a.submitted_count || 0) >= totalStudents ? 'success' : 'warning'} ms-1">${a.submitted_count || 0}/${totalStudents} ส่ง</span>
+                  </div>
+                </div>
+              </div>
+            </div>`).join('') : '<div class="empty-state"><i class="bi bi-clipboard d-block"></i><p>ยังไม่มีงาน — กดปุ่ม "สร้างงานใหม่" เพื่อเริ่ม</p></div>'}`;
+
+        document.getElementById('cl-new-task')?.addEventListener('click', () => {
+          tabContent.innerHTML = `
+            <div class="card border-0 shadow-sm"><div class="card-body">
+              <h6 class="fw-bold mb-3">สร้างงานใหม่</h6>
+              <div class="row g-2 mb-2">
+                <div class="col-md-6"><label class="form-label small mb-1">หัวข้อ *</label><input id="cl-task-title" class="form-control" placeholder="เช่น ใบงานที่ 1"></div>
+                <div class="col-md-3"><label class="form-label small mb-1">กำหนดส่ง</label><input type="date" class="form-control" id="cl-task-due"></div>
+                <div class="col-md-3"><label class="form-label small mb-1">คะแนนเต็ม</label><input type="number" class="form-control" id="cl-task-score" placeholder="10"></div>
+              </div>
+              <div class="mb-2"><label class="form-label small mb-1">รายละเอียด</label><textarea id="cl-task-desc" class="form-control" rows="2" placeholder="คำอธิบายงาน (ไม่บังคับ)"></textarea></div>
+              <button class="btn btn-primary btn-sm" id="cl-task-save"><i class="bi bi-check-lg me-1"></i>บันทึก</button>
+              <button class="btn btn-outline-secondary btn-sm ms-1" id="cl-task-cancel">ยกเลิก</button>
+            </div></div>`;
+
+          document.getElementById('cl-task-save').addEventListener('click', async () => {
+            const title = document.getElementById('cl-task-title').value.trim();
+            if (!title) { App.toast('ระบุหัวข้องาน', 'danger'); return; }
+            const res = await API.post('/api/student-classroom', {
+              classroom_id, subject_id, semester_id,
+              title,
+              content: document.getElementById('cl-task-desc').value,
+              post_type: 'assignment',
+              due_date: document.getElementById('cl-task-due').value || null,
+              max_score: parseInt(document.getElementById('cl-task-score').value) || null
+            });
+            if (res.success) { App.toast('สร้างงานแล้ว'); renderTab('tasks'); }
+            else App.toast(res.error || 'สร้างไม่สำเร็จ', 'danger');
+          });
+          document.getElementById('cl-task-cancel').addEventListener('click', () => renderTab('tasks'));
+        });
+      }
+
+      if (tabName === 'scores') {
+        tabContent.innerHTML = `
+          <div class="text-center py-4">
+            <i class="bi bi-graph-up fs-1 text-muted d-block mb-2"></i>
+            <p class="text-muted">กดที่งานในแท็บ "งาน/ภาระงาน" เพื่อให้คะแนนรายคน</p>
+            <button class="btn btn-sm btn-outline-primary" onclick="App.navigate('scores')"><i class="bi bi-graph-up me-1"></i>ไปหน้าคะแนนเต็ม</button>
+          </div>`;
+      }
+    };
+
+    document.querySelectorAll('#cl-tabs .nav-link').forEach(link => {
+      link.addEventListener('click', (e) => { e.preventDefault(); renderTab(link.dataset.tab); });
+    });
+
+    // Quick action buttons
+    container.querySelectorAll('.cl-action').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const action = btn.dataset.action;
+        if (action === 'attendance') App.navigate('attendance');
+        if (action === 'assign') renderTab('tasks');
+        if (action === 'grade') renderTab('tasks');
+        if (action === 'post-lesson') App.navigate('post-lesson');
+      });
+    });
+
+    // Initial tab
+    renderTab('students');
   }
 };
 
@@ -1490,7 +1726,12 @@ App.modules['post-lesson'] = {
 
 App.modules['schedule'] = {
   dayNames: ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์'],
-  periods: [1, 2, 3, 4, 5, 6, 7, 8],
+  periods: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+  periodTimes: [
+    '08.20–09.10', '09.10–10.00', '10.20–11.10', '11.10–12.00',
+    '12.20–13.10', '13.10–14.00', '14.00–14.50',
+    '15.00–15.50', '15.50–16.40', '16.40–17.30'
+  ],
 
   async render(container) {
     container.innerHTML = '<div class="loading"></div>';
@@ -1522,8 +1763,11 @@ App.modules['schedule'] = {
         <table class="table table-bordered text-center align-middle mb-0" id="schedule-grid">
           <thead class="table-primary">
             <tr>
-              <th style="width:90px">วัน / คาบ</th>
-              ${this.periods.map(p => `<th style="min-width:100px">คาบ ${p}</th>`).join('')}
+              <th style="width:90px" rowspan="2">วัน / คาบ</th>
+              ${this.periods.map(p => `<th style="min-width:90px">คาบ ${p}</th>`).join('')}
+            </tr>
+            <tr>
+              ${this.periodTimes.map(t => `<th class="text-muted" style="font-size:0.65rem;font-weight:normal">${t}</th>`).join('')}
             </tr>
           </thead>
           <tbody>

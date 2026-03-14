@@ -34,7 +34,7 @@ export async function onRequest(context) {
     if (!body || !body.semester_id || !body.subject_id || !body.classroom_id || !body.day_of_week || !body.period) {
       return error('Missing required fields');
     }
-    if (body.day_of_week < 1 || body.day_of_week > 5 || body.period < 1 || body.period > 8) {
+    if (body.day_of_week < 1 || body.day_of_week > 5 || body.period < 1 || body.period > 10) {
       return error('Invalid day or period');
     }
     const id = 'sched-' + generateUUID().slice(0, 8);
@@ -55,6 +55,19 @@ export async function onRequest(context) {
 
   // Delete
   const slotId = extractParam(path, '/api/schedule/');
+  if (slotId && method === 'PUT') {
+    const body = await parseBody(request);
+    if (!body) return error('ข้อมูลไม่ถูกต้อง');
+    const fields = [];
+    const params = [];
+    if (body.subject_id) { fields.push('subject_id = ?'); params.push(body.subject_id); }
+    if (body.classroom_id) { fields.push('classroom_id = ?'); params.push(body.classroom_id); }
+    if (body.notes !== undefined) { fields.push('notes = ?'); params.push(body.notes); }
+    if (fields.length === 0) return error('ไม่มีข้อมูลที่จะอัปเดต');
+    params.push(slotId, env.user.id);
+    await dbRun(env.DB, `UPDATE schedule_slots SET ${fields.join(', ')} WHERE id = ? AND teacher_id = ?`, params);
+    return success({ updated: true });
+  }
   if (slotId && method === 'DELETE') {
     await dbRun(env.DB, 'DELETE FROM schedule_slots WHERE id = ? AND teacher_id = ?', [slotId, env.user.id]);
     return success({ deleted: true });

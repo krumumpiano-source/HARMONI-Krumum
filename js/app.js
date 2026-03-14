@@ -543,13 +543,12 @@ App.modules['dashboard'] = {
     this.classrooms = clsRes.success ? clsRes.data : [];
     this.activeSemId = activeSem?.id || '';
 
-    if (!activeSem) {
-      container.innerHTML = `<div class="alert alert-warning"><i class="bi bi-exclamation-triangle me-2"></i>ยังไม่ได้ตั้งค่าภาคเรียน — <a href="#" class="alert-link" onclick="App.navigate('settings')">ไปตั้งค่าเริ่มต้น</a></div>`;
-      return;
+    let schedSlots = [];
+    if (activeSem) {
+      const schedRes = await API.get(`/api/schedule?semester_id=${activeSem.id}`);
+      schedSlots = schedRes.success ? schedRes.data : [];
     }
-
-    const schedRes = await API.get(`/api/schedule?semester_id=${activeSem.id}`);
-    this.slots = schedRes.success ? schedRes.data : [];
+    this.slots = schedSlots;
 
     // Determine current day (Mon=1..Fri=5) and current period
     const now = new Date();
@@ -571,8 +570,9 @@ App.modules['dashboard'] = {
     container.innerHTML = `
       <div class="d-flex justify-content-between align-items-center mb-3">
         <h4 class="fw-bold mb-0"><i class="bi bi-calendar-week me-2 text-primary"></i>ตารางสอน</h4>
-        <span class="badge bg-primary fs-6">ปี ${activeSem.academic_year} ภาค ${activeSem.semester}</span>
+        ${activeSem ? `<span class="badge bg-primary fs-6">ปี ${activeSem.academic_year} ภาค ${activeSem.semester}</span>` : ''}
       </div>
+      ${!activeSem ? `<div class="alert alert-warning mb-3"><i class="bi bi-exclamation-triangle me-2"></i>ยังไม่ได้ตั้งค่าภาคเรียน — <a href="#" class="alert-link" onclick="App.navigate('settings')">ไปตั้งค่าเริ่มต้น</a> เพื่อเริ่มใช้งานตารางสอน</div>` : ''}
       <p class="text-muted small mb-3"><i class="bi bi-info-circle me-1"></i>กดช่องว่างเพื่อเพิ่มคาบ · กดช่องที่มีวิชาเพื่อเข้าห้องเรียน</p>
 
       <div class="table-responsive">
@@ -675,6 +675,14 @@ App.modules['dashboard'] = {
     // Empty cell → add modal
     container.querySelectorAll('.dash-slot.empty').forEach(td => {
       td.addEventListener('click', () => {
+        if (!this.activeSemId) {
+          App.toast('ตั้งค่าภาคเรียนก่อน แล้วค่อยเพิ่มคาบ', 'danger');
+          return;
+        }
+        if (this.subjects.length === 0 || this.classrooms.length === 0) {
+          App.toast('เพิ่มวิชาและห้องเรียนในตั้งค่าก่อน', 'danger');
+          return;
+        }
         const day = parseInt(td.dataset.day);
         const period = parseInt(td.dataset.period);
         this._pendingDay = day;

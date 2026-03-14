@@ -1233,3 +1233,150 @@ App.modules['attendance'] = {
     }
   }
 };
+
+// ==================== Register Post-Lesson Module ====================
+
+App.modules['post-lesson'] = {
+  async render(container) {
+    container.innerHTML = '<div class="loading"></div>';
+
+    const [classRes, subRes, logsRes] = await Promise.all([
+      API.get('/api/classrooms'),
+      API.get('/api/subjects'),
+      API.get('/api/post-lesson')
+    ]);
+
+    const classrooms = classRes.success ? classRes.data : [];
+    const subjects = subRes.success ? subRes.data : [];
+    const logs = logsRes.success ? logsRes.data : [];
+    const today = new Date().toISOString().split('T')[0];
+
+    container.innerHTML = `
+      <h4 class="fw-bold mb-4"><i class="bi bi-chat-square-text me-2 text-primary"></i>บันทึกหลังสอน</h4>
+
+      <!-- New Entry Form -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-semibold"><i class="bi bi-plus-circle me-2"></i>เขียนบันทึกใหม่</div>
+        <div class="card-body">
+          <div class="row g-2 mb-3">
+            <div class="col-md-3 col-6">
+              <label class="form-label small mb-1">วันที่</label>
+              <input type="date" class="form-control" id="pl-date" value="${today}">
+            </div>
+            <div class="col-md-3 col-6">
+              <label class="form-label small mb-1">ห้องเรียน</label>
+              <select class="form-select" id="pl-classroom">
+                <option value="">— เลือก —</option>
+                ${classrooms.map(c => `<option value="${c.id}">${DOMPurify.sanitize(c.name)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="col-md-3 col-6">
+              <label class="form-label small mb-1">วิชา</label>
+              <select class="form-select" id="pl-subject">
+                <option value="">— เลือก —</option>
+                ${subjects.map(s => `<option value="${s.id}">${DOMPurify.sanitize(s.code)} ${DOMPurify.sanitize(s.name)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="col-md-3 col-6">
+              <label class="form-label small mb-1">คาบที่</label>
+              <select class="form-select" id="pl-period">
+                <option value="">—</option>
+                <option>1</option><option>2</option><option>3</option><option>4</option>
+                <option>5</option><option>6</option><option>7</option><option>8</option>
+              </select>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small mb-1"><i class="bi bi-journal-text me-1"></i>เนื้อหาที่สอน</label>
+            <input type="text" class="form-control" id="pl-topic" placeholder="เช่น จังหวะ 4/4 การอ่านโน้ตดนตรี">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small mb-1"><i class="bi bi-activity me-1"></i>กิจกรรม / สิ่งที่ทำ</label>
+            <textarea class="form-control" id="pl-activities" rows="2" placeholder="เช่น ให้นักเรียนตบจังหวะตามโน้ต ฝึกปฏิบัติเครื่องดนตรี"></textarea>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-md-6">
+              <label class="form-label small mb-1"><i class="bi bi-eye me-1"></i>สิ่งที่สังเกต / จุดเด่น</label>
+              <textarea class="form-control" id="pl-observations" rows="2" placeholder="นักเรียนให้ความร่วมมือดี..."></textarea>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small mb-1"><i class="bi bi-exclamation-triangle me-1"></i>ปัญหา / ข้อควรปรับปรุง</label>
+              <textarea class="form-control" id="pl-issues" rows="2" placeholder="นักเรียนบางคนยังจับจังหวะไม่ได้..."></textarea>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small mb-1"><i class="bi bi-arrow-right-circle me-1"></i>แผนสอนคาบต่อไป</label>
+            <textarea class="form-control" id="pl-next" rows="2" placeholder="ทบทวนจังหวะ + เพิ่มเนื้อหาใหม่..."></textarea>
+          </div>
+          <button class="btn btn-primary" id="pl-save"><i class="bi bi-check-lg me-1"></i>บันทึก</button>
+        </div>
+      </div>
+
+      <!-- Past Logs -->
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold"><i class="bi bi-clock-history me-2"></i>บันทึกที่ผ่านมา</div>
+        <div class="card-body" id="pl-logs-list">
+          ${logs.length === 0 ? '<p class="text-muted mb-0">ยังไม่มีบันทึก</p>' :
+            logs.map(log => `
+            <div class="border rounded-3 p-3 mb-2 bg-light">
+              <div class="d-flex justify-content-between align-items-start mb-2">
+                <div>
+                  <strong>${log.date}</strong>
+                  ${log.classroom_name ? `<span class="badge bg-info ms-2">${DOMPurify.sanitize(log.classroom_name)}</span>` : ''}
+                  ${log.subject_name ? `<span class="badge bg-primary ms-1">${DOMPurify.sanitize(log.subject_code)}</span>` : ''}
+                  ${log.period ? `<span class="text-muted small ms-2">คาบ ${log.period}</span>` : ''}
+                </div>
+                <button class="btn btn-sm btn-outline-danger" onclick="App.modules['post-lesson'].deleteLog('${log.id}')"><i class="bi bi-trash"></i></button>
+              </div>
+              ${log.topic ? `<div class="mb-1"><strong>เนื้อหา:</strong> ${DOMPurify.sanitize(log.topic)}</div>` : ''}
+              ${log.activities ? `<div class="mb-1 small"><strong>กิจกรรม:</strong> ${DOMPurify.sanitize(log.activities)}</div>` : ''}
+              ${log.observations ? `<div class="mb-1 small text-success"><i class="bi bi-check-circle me-1"></i>${DOMPurify.sanitize(log.observations)}</div>` : ''}
+              ${log.issues ? `<div class="mb-1 small text-danger"><i class="bi bi-exclamation-circle me-1"></i>${DOMPurify.sanitize(log.issues)}</div>` : ''}
+              ${log.next_plan ? `<div class="small text-primary"><i class="bi bi-arrow-right me-1"></i>${DOMPurify.sanitize(log.next_plan)}</div>` : ''}
+            </div>`).join('')}
+        </div>
+      </div>`;
+
+    // Save event
+    document.getElementById('pl-save').addEventListener('click', () => this.save());
+  },
+
+  async save() {
+    const date = document.getElementById('pl-date').value;
+    if (!date) { App.toast('กรุณาเลือกวันที่', 'warning'); return; }
+
+    const semRes = await API.get('/api/semesters');
+    const activeSem = semRes.success ? semRes.data.find(s => s.is_active) : null;
+
+    const res = await API.post('/api/post-lesson', {
+      date,
+      classroom_id: document.getElementById('pl-classroom').value || null,
+      subject_id: document.getElementById('pl-subject').value || null,
+      period: document.getElementById('pl-period').value ? parseInt(document.getElementById('pl-period').value) : null,
+      semester_id: activeSem?.id || null,
+      topic: document.getElementById('pl-topic').value.trim(),
+      activities: document.getElementById('pl-activities').value.trim(),
+      observations: document.getElementById('pl-observations').value.trim(),
+      issues: document.getElementById('pl-issues').value.trim(),
+      next_plan: document.getElementById('pl-next').value.trim()
+    });
+
+    if (res.success) {
+      App.toast('บันทึกหลังสอนสำเร็จ!');
+      App.navigate('post-lesson'); // Reload to show new entry
+    } else {
+      App.toast(res.error || 'บันทึกไม่สำเร็จ', 'danger');
+    }
+  },
+
+  async deleteLog(id) {
+    if (!confirm('ลบบันทึกนี้?')) return;
+    const res = await API.del(`/api/post-lesson/${id}`);
+    if (res.success) {
+      App.toast('ลบบันทึกแล้ว');
+      App.navigate('post-lesson');
+    } else {
+      App.toast(res.error || 'ลบไม่สำเร็จ', 'danger');
+    }
+  }
+};

@@ -1872,3 +1872,812 @@ App.modules['portfolio'] = {
     }
   }
 };
+
+// ==================== Register Course-Structure Module ====================
+
+App.modules['course-structure'] = {
+  async render(container) {
+    container.innerHTML = '<div class="loading"></div>';
+
+    const [semRes, subRes, clsRes] = await Promise.all([
+      API.get('/api/semesters'),
+      API.get('/api/subjects'),
+      API.get('/api/classrooms')
+    ]);
+
+    const semesters = semRes.success ? semRes.data : [];
+    const activeSem = semesters.find(s => s.is_active);
+    const subjects = subRes.success ? subRes.data : [];
+    const classrooms = clsRes.success ? clsRes.data : [];
+
+    if (!activeSem) {
+      container.innerHTML = '<div class="alert alert-warning">ไม่พบภาคเรียนที่เปิดใช้งาน</div>';
+      return;
+    }
+    this.activeSemId = activeSem.id;
+
+    container.innerHTML = `
+      <h4 class="fw-bold mb-4"><i class="bi bi-diagram-3 me-2 text-primary"></i>โครงสร้างรายวิชา</h4>
+      <div class="row g-2 mb-4">
+        <div class="col-md-4">
+          <select class="form-select" id="cs-subject">
+            <option value="">— เลือกวิชา —</option>
+            ${subjects.map(s => `<option value="${s.id}">${DOMPurify.sanitize(s.code)} ${DOMPurify.sanitize(s.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <select class="form-select" id="cs-classroom">
+            <option value="">— เลือกห้องเรียน —</option>
+            ${classrooms.map(c => `<option value="${c.id}">${DOMPurify.sanitize(c.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <button class="btn btn-primary w-100" id="cs-load"><i class="bi bi-search me-1"></i>โหลดโครงสร้าง</button>
+        </div>
+      </div>
+      <div id="cs-content"></div>`;
+
+    document.getElementById('cs-load').addEventListener('click', () => this.loadStructure());
+  },
+
+  async loadStructure() {
+    const subjectId = document.getElementById('cs-subject').value;
+    const classroomId = document.getElementById('cs-classroom').value;
+    if (!subjectId || !classroomId) { App.toast('เลือกวิชาและห้องเรียนก่อน', 'warning'); return; }
+
+    const area = document.getElementById('cs-content');
+    area.innerHTML = '<div class="loading"></div>';
+
+    const res = await API.get(`/api/course-structure?subject_id=${subjectId}&classroom_id=${classroomId}`);
+    const structures = res.success ? res.data : [];
+    const cs = structures[0] || null;
+
+    area.innerHTML = `
+      <!-- Course info form -->
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-white fw-semibold"><i class="bi bi-info-circle me-2"></i>ข้อมูลรายวิชา</div>
+        <div class="card-body">
+          <div class="row g-2 mb-2">
+            <div class="col-md-3">
+              <label class="form-label small mb-1">จำนวนชั่วโมง</label>
+              <input type="number" class="form-control" id="cs-hours" value="${cs?.total_hours || ''}" placeholder="40">
+            </div>
+            <div class="col-md-9">
+              <label class="form-label small mb-1">สัดส่วนคะแนน</label>
+              <input type="text" class="form-control" id="cs-score-dist" value="${DOMPurify.sanitize(cs?.score_distribution || '')}" placeholder="เช่น คะแนนระหว่างเรียน 70 : สอบปลายภาค 30">
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small mb-1">จุดประสงค์การเรียนรู้</label>
+            <textarea class="form-control" id="cs-objectives" rows="2" placeholder="ตัวชี้วัด / ผลการเรียนรู้ที่คาดหวัง">${DOMPurify.sanitize(cs?.learning_objectives || '')}</textarea>
+          </div>
+          <button class="btn btn-primary btn-sm" id="cs-save"><i class="bi bi-check-lg me-1"></i>บันทึกโครงสร้าง</button>
+        </div>
+      </div>
+
+      <!-- Units -->
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+          <span class="fw-semibold"><i class="bi bi-list-ol me-2"></i>หน่วยการเรียนรู้</span>
+          ${cs ? `<button class="btn btn-sm btn-outline-primary" id="cs-add-unit"><i class="bi bi-plus-lg me-1"></i>เพิ่มหน่วย</button>` : ''}
+        </div>
+        <div class="card-body" id="cs-units-area">
+          ${cs ? '<div class="loading"></div>' : '<p class="text-muted mb-0">บันทึกโครงสร้างก่อนเพื่อเพิ่มหน่วยการเรียนรู้</p>'}
+        </div>
+      </div>`;
+
+    document.getElementById('cs-save').addEventListener('click', () => this.saveStructure(subjectId, classroomId));
+
+    if (cs) {
+      this.currentCSId = cs.id;
+      document.getElementById('cs-add-unit').addEventListener('click', () => this.addUnit());
+      this.loadUnits(cs.id);
+    }
+  },
+
+  async saveStructure(subjectId, classroomId) {
+    const res = await API.post('/api/course-structure', {
+      subject_id: subjectId,
+      classroom_id: classroomId,
+      semester_id: this.activeSemId,
+      total_hours: document.getElementById('cs-hours').value ? parseFloat(document.getElementById('cs-hours').value) : null,
+      score_distribution: document.getElementById('cs-score-dist').value.trim(),
+      learning_objectives: document.getElementById('cs-objectives').value.trim()
+    });
+    if (res.success) {
+      App.toast(res.data.updated ? 'อัพเดตโครงสร้างแล้ว' : 'สร้างโครงสร้างแล้ว!');
+      this.loadStructure();
+    } else {
+      App.toast(res.error || 'บันทึกไม่สำเร็จ', 'danger');
+    }
+  },
+
+  async loadUnits(csId) {
+    const res = await API.get(`/api/course-structure/units/${csId}`);
+    const units = res.success ? res.data : [];
+    const area = document.getElementById('cs-units-area');
+    if (units.length === 0) {
+      area.innerHTML = '<p class="text-muted mb-0">ยังไม่มีหน่วยการเรียนรู้ — กดปุ่ม "เพิ่มหน่วย"</p>';
+      return;
+    }
+    area.innerHTML = units.map(u => `
+      <div class="border rounded-3 p-3 mb-2 bg-light d-flex justify-content-between align-items-start">
+        <div>
+          <strong>หน่วยที่ ${u.unit_number}:</strong> ${DOMPurify.sanitize(u.title)}
+          ${u.hours ? `<span class="badge bg-info ms-2">${u.hours} ชม.</span>` : ''}
+          ${u.description ? `<div class="small text-muted mt-1">${DOMPurify.sanitize(u.description)}</div>` : ''}
+        </div>
+        <button class="btn btn-sm btn-outline-danger" onclick="App.modules['course-structure'].deleteUnit('${u.id}')"><i class="bi bi-trash"></i></button>
+      </div>`).join('');
+  },
+
+  async addUnit() {
+    const title = prompt('ชื่อหน่วยการเรียนรู้:');
+    if (!title) return;
+    const num = prompt('หน่วยที่:', '1');
+    const hours = prompt('จำนวนชั่วโมง:', '');
+    const res = await API.post('/api/course-structure/units', {
+      course_structure_id: this.currentCSId,
+      title,
+      unit_number: parseInt(num) || 1,
+      hours: hours ? parseFloat(hours) : null
+    });
+    if (res.success) {
+      App.toast('เพิ่มหน่วยแล้ว');
+      this.loadUnits(this.currentCSId);
+    } else {
+      App.toast(res.error || 'เพิ่มไม่สำเร็จ', 'danger');
+    }
+  },
+
+  async deleteUnit(id) {
+    if (!confirm('ลบหน่วยนี้?')) return;
+    const res = await API.del(`/api/course-structure/units/${id}`);
+    if (res.success) { App.toast('ลบหน่วยแล้ว'); this.loadUnits(this.currentCSId); }
+    else App.toast(res.error || 'ลบไม่สำเร็จ', 'danger');
+  }
+};
+
+// ==================== Register Lesson Plan Module ====================
+
+App.modules['lesson-plan'] = {
+  async render(container) {
+    container.innerHTML = '<div class="loading"></div>';
+
+    const [semRes, subRes, clsRes] = await Promise.all([
+      API.get('/api/semesters'),
+      API.get('/api/subjects'),
+      API.get('/api/classrooms')
+    ]);
+
+    const activeSem = (semRes.success ? semRes.data : []).find(s => s.is_active);
+    const subjects = subRes.success ? subRes.data : [];
+    const classrooms = clsRes.success ? clsRes.data : [];
+
+    if (!activeSem) {
+      container.innerHTML = '<div class="alert alert-warning">ไม่พบภาคเรียนที่เปิดใช้งาน</div>';
+      return;
+    }
+    this.activeSemId = activeSem.id;
+    this.subjects = subjects;
+    this.classrooms = classrooms;
+
+    container.innerHTML = `
+      <h4 class="fw-bold mb-4"><i class="bi bi-journal-text me-2 text-primary"></i>แผนการจัดการเรียนรู้</h4>
+      <p class="text-muted small mb-3">เลือกวิชาเพื่อดูหน่วยการเรียนรู้ แล้วกดเขียนแผน</p>
+      <div class="row g-2 mb-4">
+        <div class="col-md-4">
+          <select class="form-select" id="lp-subject">
+            <option value="">— เลือกวิชา —</option>
+            ${subjects.map(s => `<option value="${s.id}">${DOMPurify.sanitize(s.code)} ${DOMPurify.sanitize(s.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <select class="form-select" id="lp-classroom">
+            <option value="">— เลือกห้องเรียน —</option>
+            ${classrooms.map(c => `<option value="${c.id}">${DOMPurify.sanitize(c.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <button class="btn btn-primary w-100" id="lp-load"><i class="bi bi-search me-1"></i>โหลดแผน</button>
+        </div>
+      </div>
+      <div id="lp-content"></div>`;
+
+    document.getElementById('lp-load').addEventListener('click', () => this.loadPlans());
+  },
+
+  async loadPlans() {
+    const subjectId = document.getElementById('lp-subject').value;
+    const classroomId = document.getElementById('lp-classroom').value;
+    if (!subjectId || !classroomId) { App.toast('เลือกวิชาและห้องเรียนก่อน', 'warning'); return; }
+
+    const area = document.getElementById('lp-content');
+    area.innerHTML = '<div class="loading"></div>';
+
+    // Get course structure + units first
+    const csRes = await API.get(`/api/course-structure?subject_id=${subjectId}&classroom_id=${classroomId}`);
+    const cs = (csRes.success ? csRes.data : [])[0];
+
+    if (!cs) {
+      area.innerHTML = '<div class="alert alert-info">ยังไม่มีโครงสร้างรายวิชา — กรุณาไปตั้งค่าที่เมนู "โครงสร้างรายวิชา" ก่อน</div>';
+      return;
+    }
+
+    const unitsRes = await API.get(`/api/course-structure/units/${cs.id}`);
+    const units = unitsRes.success ? unitsRes.data : [];
+    this.units = units;
+
+    if (units.length === 0) {
+      area.innerHTML = '<div class="alert alert-info">ยังไม่มีหน่วยการเรียนรู้ — กรุณาไปเพิ่มที่ "โครงสร้างรายวิชา" ก่อน</div>';
+      return;
+    }
+
+    // Get all plans for this teacher
+    const plansRes = await API.get('/api/lesson-plan');
+    const allPlans = plansRes.success ? plansRes.data : [];
+
+    area.innerHTML = units.map(u => {
+      const unitPlans = allPlans.filter(p => p.learning_unit_id === u.id);
+      return `
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">หน่วยที่ ${u.unit_number}: ${DOMPurify.sanitize(u.title)}</span>
+          <button class="btn btn-sm btn-outline-primary" onclick="App.modules['lesson-plan'].showCreateForm('${u.id}', ${u.unit_number})"><i class="bi bi-plus-lg me-1"></i>เขียนแผน</button>
+        </div>
+        <div class="card-body">
+          ${unitPlans.length === 0 ? '<p class="text-muted small mb-0">ยังไม่มีแผนสำหรับหน่วยนี้</p>' :
+          unitPlans.map(p => `
+            <div class="border rounded-3 p-2 mb-2 bg-light d-flex justify-content-between align-items-start">
+              <div>
+                <strong>แผนที่ ${p.plan_number || '-'}:</strong> ${DOMPurify.sanitize(p.title)}
+                ${p.date ? `<span class="text-muted small ms-2">${p.date}</span>` : ''}
+                ${p.period ? `<span class="badge bg-secondary ms-1">คาบ ${p.period}</span>` : ''}
+              </div>
+              <button class="btn btn-sm btn-outline-danger" onclick="App.modules['lesson-plan'].deletePlan('${p.id}')"><i class="bi bi-trash"></i></button>
+            </div>`).join('')}
+        </div>
+      </div>`;
+    }).join('');
+  },
+
+  showCreateForm(unitId, unitNum) {
+    const area = document.getElementById('lp-content');
+    area.insertAdjacentHTML('afterbegin', `
+    <div class="card border-0 shadow-sm mb-3 border-primary" id="lp-form-card" style="border-left:4px solid var(--bs-primary)!important">
+      <div class="card-header bg-white fw-semibold"><i class="bi bi-pencil me-2"></i>เขียนแผนใหม่ — หน่วยที่ ${unitNum}</div>
+      <div class="card-body">
+        <div class="row g-2 mb-2">
+          <div class="col-md-3">
+            <label class="form-label small mb-1">แผนที่</label>
+            <input type="number" class="form-control" id="lp-num" value="1">
+          </div>
+          <div class="col-md-5">
+            <label class="form-label small mb-1">ชื่อแผน</label>
+            <input type="text" class="form-control" id="lp-title" placeholder="เช่น การฝึกจังหวะ 4/4">
+          </div>
+          <div class="col-md-2">
+            <label class="form-label small mb-1">วันที่</label>
+            <input type="date" class="form-control" id="lp-date">
+          </div>
+          <div class="col-md-2">
+            <label class="form-label small mb-1">คาบ</label>
+            <input type="number" class="form-control" id="lp-period" min="1" max="8">
+          </div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small mb-1">จุดประสงค์</label>
+          <textarea class="form-control" id="lp-objectives" rows="2" placeholder="นักเรียนสามารถ..."></textarea>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small mb-1">เนื้อหา</label>
+          <textarea class="form-control" id="lp-content-text" rows="2" placeholder="เนื้อหาที่สอน..."></textarea>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small mb-1">ขั้นตอนการเรียนรู้</label>
+          <textarea class="form-control" id="lp-steps" rows="3" placeholder="ขั้นนำ: ...&#10;ขั้นสอน: ...&#10;ขั้นสรุป: ..."></textarea>
+        </div>
+        <div class="row g-2 mb-2">
+          <div class="col-md-6">
+            <label class="form-label small mb-1">สื่อ/อุปกรณ์</label>
+            <input type="text" class="form-control" id="lp-materials" placeholder="เช่น กลอง, คีย์บอร์ด, ใบงาน">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small mb-1">การวัดผล</label>
+            <input type="text" class="form-control" id="lp-assessment" placeholder="เช่น สังเกตการปฏิบัติ, ใบงาน">
+          </div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="App.modules['lesson-plan'].savePlan('${unitId}')"><i class="bi bi-check-lg me-1"></i>บันทึกแผน</button>
+        <button class="btn btn-outline-secondary btn-sm ms-1" onclick="document.getElementById('lp-form-card').remove()">ยกเลิก</button>
+      </div>
+    </div>`);
+    document.getElementById('lp-title').focus();
+  },
+
+  async savePlan(unitId) {
+    const title = document.getElementById('lp-title').value.trim();
+    if (!title) { App.toast('กรุณากรอกชื่อแผน', 'warning'); return; }
+
+    // Need a lesson_model_id — create a default one if none exists
+    let modelId = this._defaultModelId;
+    if (!modelId) {
+      modelId = 'model-default';
+    }
+
+    const res = await API.post('/api/lesson-plan', {
+      learning_unit_id: unitId,
+      semester_id: this.activeSemId,
+      lesson_model_id: modelId,
+      plan_number: parseInt(document.getElementById('lp-num').value) || 1,
+      title,
+      date: document.getElementById('lp-date').value || null,
+      period: document.getElementById('lp-period').value ? parseInt(document.getElementById('lp-period').value) : null,
+      objectives: document.getElementById('lp-objectives').value.trim(),
+      content: document.getElementById('lp-content-text').value.trim(),
+      steps: document.getElementById('lp-steps').value.trim(),
+      materials: document.getElementById('lp-materials').value.trim(),
+      assessment_notes: document.getElementById('lp-assessment').value.trim()
+    });
+
+    if (res.success) {
+      App.toast('บันทึกแผนสำเร็จ!');
+      this.loadPlans();
+    } else {
+      App.toast(res.error || 'บันทึกไม่สำเร็จ', 'danger');
+    }
+  },
+
+  async deletePlan(id) {
+    if (!confirm('ลบแผนนี้?')) return;
+    const res = await API.del(`/api/lesson-plan/${id}`);
+    if (res.success) { App.toast('ลบแผนแล้ว'); this.loadPlans(); }
+    else App.toast(res.error || 'ลบไม่สำเร็จ', 'danger');
+  }
+};
+
+// ==================== Register Classroom-Materials Module ====================
+
+App.modules['classroom-materials'] = {
+  types: ['ใบงาน', 'วิดีโอ', 'เสียง', 'สไลด์', 'เอกสาร', 'อื่นๆ'],
+
+  async render(container) {
+    container.innerHTML = '<div class="loading"></div>';
+
+    const [subRes, matRes] = await Promise.all([
+      API.get('/api/subjects'),
+      API.get('/api/classroom-materials')
+    ]);
+
+    const subjects = subRes.success ? subRes.data : [];
+    const materials = matRes.success ? matRes.data : [];
+
+    container.innerHTML = `
+      <h4 class="fw-bold mb-4"><i class="bi bi-folder2-open me-2 text-primary"></i>สื่อการสอน</h4>
+
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-semibold"><i class="bi bi-plus-circle me-2"></i>เพิ่มสื่อ</div>
+        <div class="card-body">
+          <div class="row g-2 mb-2">
+            <div class="col-md-4">
+              <input type="text" class="form-control" id="mat-title" placeholder="ชื่อสื่อ เช่น ใบงานจังหวะดนตรี">
+            </div>
+            <div class="col-md-3">
+              <select class="form-select" id="mat-type">
+                <option value="">— ประเภท —</option>
+                ${this.types.map(t => `<option value="${t}">${t}</option>`).join('')}
+              </select>
+            </div>
+            <div class="col-md-3">
+              <select class="form-select" id="mat-subject">
+                <option value="">— วิชา (ไม่บังคับ) —</option>
+                ${subjects.map(s => `<option value="${s.id}">${DOMPurify.sanitize(s.code)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="col-md-2">
+              <button class="btn btn-primary w-100" id="mat-save"><i class="bi bi-plus-lg"></i></button>
+            </div>
+          </div>
+          <div class="row g-2">
+            <div class="col-md-6">
+              <input type="text" class="form-control" id="mat-url" placeholder="ลิงก์ไฟล์ / Google Drive / YouTube (ไม่บังคับ)">
+            </div>
+            <div class="col-md-6">
+              <input type="text" class="form-control" id="mat-desc" placeholder="รายละเอียด (ไม่บังคับ)">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="mat-list">
+        ${materials.length === 0 ? '<p class="text-muted">ยังไม่มีสื่อ</p>' :
+        materials.map(m => `
+          <div class="card border-0 shadow-sm mb-2">
+            <div class="card-body p-3 d-flex justify-content-between align-items-start">
+              <div>
+                <strong>${DOMPurify.sanitize(m.title)}</strong>
+                ${m.material_type ? `<span class="badge bg-secondary ms-2">${DOMPurify.sanitize(m.material_type)}</span>` : ''}
+                ${m.subject_code ? `<span class="badge bg-primary ms-1">${DOMPurify.sanitize(m.subject_code)}</span>` : ''}
+                ${m.description ? `<div class="small text-muted mt-1">${DOMPurify.sanitize(m.description)}</div>` : ''}
+                ${m.file_url ? `<div class="small mt-1"><a href="${DOMPurify.sanitize(m.file_url)}" target="_blank" rel="noopener"><i class="bi bi-link-45deg"></i> ดูสื่อ</a></div>` : ''}
+              </div>
+              <button class="btn btn-sm btn-outline-danger" onclick="App.modules['classroom-materials'].deleteMat('${m.id}')"><i class="bi bi-trash"></i></button>
+            </div>
+          </div>`).join('')}
+      </div>`;
+
+    document.getElementById('mat-save').addEventListener('click', () => this.saveMat());
+  },
+
+  async saveMat() {
+    const title = document.getElementById('mat-title').value.trim();
+    if (!title) { App.toast('กรุณากรอกชื่อสื่อ', 'warning'); return; }
+
+    const res = await API.post('/api/classroom-materials', {
+      title,
+      material_type: document.getElementById('mat-type').value || null,
+      subject_id: document.getElementById('mat-subject').value || null,
+      file_url: document.getElementById('mat-url').value.trim() || null,
+      description: document.getElementById('mat-desc').value.trim() || null
+    });
+
+    if (res.success) {
+      App.toast('เพิ่มสื่อสำเร็จ!');
+      App.navigate('classroom-materials');
+    } else {
+      App.toast(res.error || 'เพิ่มไม่สำเร็จ', 'danger');
+    }
+  },
+
+  async deleteMat(id) {
+    if (!confirm('ลบสื่อนี้?')) return;
+    const res = await API.del(`/api/classroom-materials/${id}`);
+    if (res.success) { App.toast('ลบสื่อแล้ว'); App.navigate('classroom-materials'); }
+    else App.toast(res.error || 'ลบไม่สำเร็จ', 'danger');
+  }
+};
+
+// ==================== Register Scores Module ====================
+
+App.modules['scores'] = {
+  scoreTypes: ['เก็บคะแนน', 'สอบย่อย', 'สอบกลางภาค', 'สอบปลายภาค', 'ปฏิบัติ', 'จิตพิสัย', 'อื่นๆ'],
+
+  async render(container) {
+    container.innerHTML = '<div class="loading"></div>';
+
+    const [semRes, subRes, clsRes] = await Promise.all([
+      API.get('/api/semesters'),
+      API.get('/api/subjects'),
+      API.get('/api/classrooms')
+    ]);
+
+    const activeSem = (semRes.success ? semRes.data : []).find(s => s.is_active);
+    const subjects = subRes.success ? subRes.data : [];
+    const classrooms = clsRes.success ? clsRes.data : [];
+
+    if (!activeSem) {
+      container.innerHTML = '<div class="alert alert-warning">ไม่พบภาคเรียนที่เปิดใช้งาน</div>';
+      return;
+    }
+    this.activeSemId = activeSem.id;
+
+    container.innerHTML = `
+      <h4 class="fw-bold mb-4"><i class="bi bi-graph-up me-2 text-primary"></i>คะแนน</h4>
+
+      <div class="row g-2 mb-4">
+        <div class="col-md-3">
+          <select class="form-select" id="sc2-classroom">
+            <option value="">— ห้องเรียน —</option>
+            ${classrooms.map(c => `<option value="${c.id}">${DOMPurify.sanitize(c.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <select class="form-select" id="sc2-subject">
+            <option value="">— วิชา —</option>
+            ${subjects.map(s => `<option value="${s.id}">${DOMPurify.sanitize(s.code)} ${DOMPurify.sanitize(s.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <select class="form-select" id="sc2-type">
+            ${this.scoreTypes.map(t => `<option value="${t}">${t}</option>`).join('')}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <button class="btn btn-primary w-100" id="sc2-load"><i class="bi bi-search me-1"></i>โหลดรายชื่อ</button>
+        </div>
+      </div>
+
+      <div id="sc2-content"></div>`;
+
+    document.getElementById('sc2-load').addEventListener('click', () => this.loadStudents());
+  },
+
+  async loadStudents() {
+    const classroomId = document.getElementById('sc2-classroom').value;
+    const subjectId = document.getElementById('sc2-subject').value;
+    if (!classroomId || !subjectId) { App.toast('เลือกห้องเรียนและวิชาก่อน', 'warning'); return; }
+
+    const area = document.getElementById('sc2-content');
+    area.innerHTML = '<div class="loading"></div>';
+
+    this.classroomId = classroomId;
+    this.subjectId = subjectId;
+
+    const stRes = await API.get(`/api/students?classroom_id=${classroomId}&limit=9999`);
+    const students = stRes.success ? stRes.data : [];
+
+    if (students.length === 0) {
+      area.innerHTML = '<p class="text-muted">ไม่พบนักเรียนในห้องนี้</p>';
+      return;
+    }
+
+    area.innerHTML = `
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+          <span class="fw-semibold"><i class="bi bi-pencil-square me-2"></i>ลงคะแนน — <span id="sc2-type-label">${document.getElementById('sc2-type').value}</span></span>
+          <div>
+            <label class="me-2 small">คะแนนเต็ม:</label>
+            <input type="number" class="form-control form-control-sm d-inline-block" style="width:80px" id="sc2-max" value="10">
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+              <tr><th style="width:60px">เลขที่</th><th>ชื่อ-นามสกุล</th><th style="width:100px">คะแนน</th></tr>
+            </thead>
+            <tbody>
+              ${students.map(s => `
+              <tr>
+                <td>${DOMPurify.sanitize(s.student_code)}</td>
+                <td>${DOMPurify.sanitize(s.first_name)} ${DOMPurify.sanitize(s.last_name)}</td>
+                <td><input type="number" class="form-control form-control-sm score-input" data-sid="${s.id}" step="0.5" min="0"></td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div class="card-footer bg-white">
+          <button class="btn btn-primary" id="sc2-save"><i class="bi bi-check-lg me-1"></i>บันทึกคะแนน</button>
+          <button class="btn btn-outline-info ms-2" id="sc2-view-summary"><i class="bi bi-bar-chart me-1"></i>ดูสรุป</button>
+        </div>
+      </div>`;
+
+    document.getElementById('sc2-save').addEventListener('click', () => this.saveScores());
+    document.getElementById('sc2-view-summary').addEventListener('click', () => this.viewSummary());
+  },
+
+  async saveScores() {
+    const maxScore = parseFloat(document.getElementById('sc2-max').value);
+    if (!maxScore) { App.toast('กรุณาระบุคะแนนเต็ม', 'warning'); return; }
+
+    const records = [];
+    document.querySelectorAll('.score-input').forEach(inp => {
+      if (inp.value !== '') {
+        records.push({ student_id: inp.dataset.sid, score: parseFloat(inp.value) });
+      }
+    });
+
+    if (records.length === 0) { App.toast('ยังไม่ได้กรอกคะแนน', 'warning'); return; }
+
+    const res = await API.post('/api/scores', {
+      subject_id: this.subjectId,
+      classroom_id: this.classroomId,
+      semester_id: this.activeSemId,
+      score_type: document.getElementById('sc2-type').value,
+      max_score: maxScore,
+      records
+    });
+
+    if (res.success) {
+      App.toast(`บันทึกคะแนน ${res.data.saved} คน สำเร็จ!`);
+    } else {
+      App.toast(res.error || 'บันทึกไม่สำเร็จ', 'danger');
+    }
+  },
+
+  async viewSummary() {
+    const area = document.getElementById('sc2-content');
+    area.innerHTML = '<div class="loading"></div>';
+
+    const res = await API.get(`/api/scores/summary?subject_id=${this.subjectId}&classroom_id=${this.classroomId}&semester_id=${this.activeSemId}`);
+    const rows = res.success ? res.data : [];
+
+    if (rows.length === 0) {
+      area.innerHTML = '<p class="text-muted">ยังไม่มีคะแนนสำหรับวิชา/ห้องนี้</p>';
+      return;
+    }
+
+    area.innerHTML = `
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold"><i class="bi bi-bar-chart me-2"></i>สรุปคะแนนรวม</div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-striped align-middle mb-0">
+            <thead class="table-primary">
+              <tr><th>รหัส</th><th>ชื่อ</th><th>คะแนนรวม</th><th>เต็มรวม</th><th>%</th><th>จำนวนรายการ</th></tr>
+            </thead>
+            <tbody>
+              ${rows.map(r => {
+                const pct = r.total_max > 0 ? ((r.total_score / r.total_max) * 100).toFixed(1) : '-';
+                return `<tr>
+                  <td>${DOMPurify.sanitize(r.student_code)}</td>
+                  <td>${DOMPurify.sanitize(r.first_name)} ${DOMPurify.sanitize(r.last_name)}</td>
+                  <td class="fw-semibold">${r.total_score}</td>
+                  <td>${r.total_max}</td>
+                  <td>${pct}%</td>
+                  <td>${r.score_count}</td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div class="card-footer bg-white">
+          <button class="btn btn-outline-secondary btn-sm" onclick="App.modules['scores'].loadStudents()"><i class="bi bi-arrow-left me-1"></i>กลับลงคะแนน</button>
+        </div>
+      </div>`;
+  }
+};
+
+// ==================== Register Grade-Result Module ====================
+
+App.modules['grade-result'] = {
+  gradeScale: [
+    { grade: '4', label: '4 (A)', min: 80 },
+    { grade: '3.5', label: '3.5 (B+)', min: 75 },
+    { grade: '3', label: '3 (B)', min: 70 },
+    { grade: '2.5', label: '2.5 (C+)', min: 65 },
+    { grade: '2', label: '2 (C)', min: 60 },
+    { grade: '1.5', label: '1.5 (D+)', min: 55 },
+    { grade: '1', label: '1 (D)', min: 50 },
+    { grade: '0', label: '0 (F)', min: 0 }
+  ],
+
+  calcGrade(pct) {
+    for (const g of this.gradeScale) {
+      if (pct >= g.min) return g.grade;
+    }
+    return '0';
+  },
+
+  async render(container) {
+    container.innerHTML = '<div class="loading"></div>';
+
+    const [semRes, subRes, clsRes, cfgRes] = await Promise.all([
+      API.get('/api/semesters'),
+      API.get('/api/subjects'),
+      API.get('/api/classrooms'),
+      API.get('/api/grade-result/configs')
+    ]);
+
+    const activeSem = (semRes.success ? semRes.data : []).find(s => s.is_active);
+    const subjects = subRes.success ? subRes.data : [];
+    const classrooms = clsRes.success ? clsRes.data : [];
+    const configs = cfgRes.success ? cfgRes.data : [];
+
+    if (!activeSem) {
+      container.innerHTML = '<div class="alert alert-warning">ไม่พบภาคเรียนที่เปิดใช้งาน</div>';
+      return;
+    }
+    this.activeSemId = activeSem.id;
+    this.configs = configs;
+
+    // Auto-create default config if none
+    if (configs.length === 0) {
+      const defRes = await API.post('/api/grade-result/configs', {
+        name: 'เกณฑ์ 8 ระดับ (มาตรฐาน)',
+        config_type: '8-level',
+        config_data: JSON.stringify(this.gradeScale),
+        is_default: true
+      });
+      if (defRes.success) this.configs = [{ id: defRes.data.id, name: 'เกณฑ์ 8 ระดับ (มาตรฐาน)' }];
+    }
+
+    container.innerHTML = `
+      <h4 class="fw-bold mb-4"><i class="bi bi-award me-2 text-primary"></i>ผลการเรียน / เกรด</h4>
+      <p class="text-muted small mb-3">ระบบจะคำนวณเกรดจากคะแนนรวมที่ลงไว้ในเมนู "คะแนน"</p>
+
+      <div class="row g-2 mb-4">
+        <div class="col-md-3">
+          <select class="form-select" id="gr-classroom">
+            <option value="">— ห้องเรียน —</option>
+            ${classrooms.map(c => `<option value="${c.id}">${DOMPurify.sanitize(c.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <select class="form-select" id="gr-subject">
+            <option value="">— วิชา —</option>
+            ${subjects.map(s => `<option value="${s.id}">${DOMPurify.sanitize(s.code)} ${DOMPurify.sanitize(s.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <select class="form-select" id="gr-config">
+            ${this.configs.map(c => `<option value="${c.id}">${DOMPurify.sanitize(c.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <button class="btn btn-primary w-100" id="gr-calc"><i class="bi bi-calculator me-1"></i>คำนวณเกรด</button>
+        </div>
+      </div>
+
+      <div id="gr-content"></div>`;
+
+    document.getElementById('gr-calc').addEventListener('click', () => this.calculate());
+  },
+
+  async calculate() {
+    const classroomId = document.getElementById('gr-classroom').value;
+    const subjectId = document.getElementById('gr-subject').value;
+    if (!classroomId || !subjectId) { App.toast('เลือกห้องเรียนและวิชา', 'warning'); return; }
+
+    this.classroomId = classroomId;
+    this.subjectId = subjectId;
+
+    const area = document.getElementById('gr-content');
+    area.innerHTML = '<div class="loading"></div>';
+
+    const sumRes = await API.get(`/api/scores/summary?subject_id=${subjectId}&classroom_id=${classroomId}&semester_id=${this.activeSemId}`);
+    const rows = sumRes.success ? sumRes.data : [];
+
+    if (rows.length === 0) {
+      area.innerHTML = '<div class="alert alert-info">ยังไม่มีคะแนนสำหรับวิชา/ห้องนี้ — กรุณาไปลงคะแนนที่เมนู "คะแนน" ก่อน</div>';
+      return;
+    }
+
+    // Calculate grades
+    this.gradeRecords = rows.map(r => {
+      const pct = r.total_max > 0 ? (r.total_score / r.total_max) * 100 : 0;
+      return { ...r, pct: pct.toFixed(1), grade: this.calcGrade(pct) };
+    });
+
+    area.innerHTML = `
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold"><i class="bi bi-table me-2"></i>ผลการคำนวณเกรด</div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-striped align-middle mb-0">
+            <thead class="table-success">
+              <tr><th>รหัส</th><th>ชื่อ</th><th>คะแนนรวม</th><th>%</th><th>เกรด</th></tr>
+            </thead>
+            <tbody>
+              ${this.gradeRecords.map(r => `
+              <tr>
+                <td>${DOMPurify.sanitize(r.student_code)}</td>
+                <td>${DOMPurify.sanitize(r.first_name)} ${DOMPurify.sanitize(r.last_name)}</td>
+                <td>${r.total_score} / ${r.total_max}</td>
+                <td>${r.pct}%</td>
+                <td><span class="badge ${parseFloat(r.grade) >= 2 ? 'bg-success' : parseFloat(r.grade) >= 1 ? 'bg-warning text-dark' : 'bg-danger'} fs-6">${r.grade}</span></td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div class="card-footer bg-white">
+          <button class="btn btn-success" id="gr-save"><i class="bi bi-check-lg me-1"></i>บันทึกเกรด</button>
+          <span class="text-muted small ms-3">เกณฑ์: 4=80+ 3.5=75+ 3=70+ 2.5=65+ 2=60+ 1.5=55+ 1=50+ 0=ต่ำกว่า50</span>
+        </div>
+      </div>`;
+
+    document.getElementById('gr-save').addEventListener('click', () => this.saveGrades());
+  },
+
+  async saveGrades() {
+    const configId = document.getElementById('gr-config').value;
+    if (!configId) { App.toast('เลือกเกณฑ์การตัดเกรด', 'warning'); return; }
+
+    const records = this.gradeRecords.map(r => ({
+      student_id: r.student_id,
+      raw_score: r.total_score,
+      grade: r.grade
+    }));
+
+    const res = await API.post('/api/grade-result', {
+      subject_id: this.subjectId,
+      classroom_id: this.classroomId,
+      semester_id: this.activeSemId,
+      grade_config_id: configId,
+      is_final: false,
+      records
+    });
+
+    if (res.success) {
+      App.toast(`บันทึกเกรด ${res.data.saved} คน สำเร็จ!`);
+    } else {
+      App.toast(res.error || 'บันทึกไม่สำเร็จ', 'danger');
+    }
+  }
+};

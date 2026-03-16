@@ -1010,289 +1010,471 @@ App.modules['classroom-live'] = {
 // ==================== Register Settings Module ====================
 
 App.modules['settings'] = {
+  _tab: 'profile',
+
   async render(container) {
     container.innerHTML = '<div class="loading"></div>';
-
-    const [setRes, semRes, subRes, classRes, driveRootRes] = await Promise.all([
-      API.get('/api/settings'),
-      API.get('/api/semesters'),
-      API.get('/api/subjects'),
-      API.get('/api/classrooms'),
-      API.get('/api/drive/root')
+    const [setRes, semRes, subRes, classRes, driveRootRes, scRes] = await Promise.all([
+      API.get('/api/settings'), API.get('/api/semesters'), API.get('/api/subjects'),
+      API.get('/api/classrooms'), API.get('/api/drive/root'), API.get('/api/subject-classrooms')
     ]);
+    this._settings = setRes.success ? setRes.data : {};
+    this._semesters = semRes.success ? semRes.data : [];
+    this._subjects = subRes.success ? subRes.data : [];
+    this._classrooms = classRes.success ? classRes.data : [];
+    this._driveRoot = driveRootRes.success ? driveRootRes.data.root_folder_id : '';
+    this._subjectClassrooms = scRes.success ? scRes.data : [];
+    this._activeSemId = this._semesters.find(s => s.is_active)?.id;
 
-    const s = setRes.success ? setRes.data : {};
-    const semesters = semRes.success ? semRes.data : [];
-    const subjects = subRes.success ? subRes.data : [];
-    const classrooms = classRes.success ? classRes.data : [];
-    const driveRoot = driveRootRes.success ? driveRootRes.data.root_folder_id : '';
-
+    const tabs = [
+      { id: 'profile',    label: 'ข้อมูลครู',       icon: 'bi-person-badge' },
+      { id: 'semesters',  label: 'ภาคเรียน',          icon: 'bi-calendar-range' },
+      { id: 'subjects',   label: 'วิชา',              icon: 'bi-book' },
+      { id: 'classrooms', label: 'ห้องเรียน',         icon: 'bi-building' },
+      { id: 'sc-assign',  label: 'จับคู่วิชา-ห้อง',  icon: 'bi-diagram-3' },
+      { id: 'drive',      label: 'Google Drive',      icon: 'bi-cloud' },
+    ];
+    const activeTab = this._tab || 'profile';
     container.innerHTML = `
-      <h4 class="fw-bold mb-4"><i class="bi bi-gear me-2 text-primary"></i>ตั้งค่าเริ่มต้น</h4>
+      <h4 class="fw-bold mb-3"><i class="bi bi-gear me-2 text-primary"></i>ตั้งค่า</h4>
+      <ul class="nav nav-pills flex-wrap gap-1 mb-4">
+        ${tabs.map(t => `<li class="nav-item"><button class="nav-link ${t.id === activeTab ? 'active' : ''}" data-settings-tab="${t.id}"><i class="bi ${t.icon} me-1"></i>${t.label}</button></li>`).join('')}
+      </ul>
+      <div id="settings-panel"></div>`;
+    container.querySelectorAll('[data-settings-tab]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this._tab = btn.dataset.settingsTab;
+        container.querySelectorAll('[data-settings-tab]').forEach(b => b.classList.toggle('active', b === btn));
+        this._renderTab(document.getElementById('settings-panel'));
+      });
+    });
+    this._renderTab(document.getElementById('settings-panel'));
+  },
 
-      <!-- Teacher Profile -->
-      <div class="card border-0 shadow-sm mb-4">
+  _renderTab(panel) {
+    const t = this._tab || 'profile';
+    if (t === 'profile')     this._renderProfile(panel);
+    else if (t === 'semesters')  this._renderSemesters(panel);
+    else if (t === 'subjects')   this._renderSubjects(panel);
+    else if (t === 'classrooms') this._renderClassrooms(panel);
+    else if (t === 'sc-assign')  this._renderSCAssign(panel);
+    else if (t === 'drive')      this._renderDrive(panel);
+  },
+
+  _renderProfile(panel) {
+    const s = this._settings;
+    panel.innerHTML = `
+      <div class="card border-0 shadow-sm">
         <div class="card-header bg-white fw-semibold"><i class="bi bi-person-badge me-2"></i>ข้อมูลครู</div>
         <div class="card-body">
           <div class="row g-3">
-            <div class="col-md-2">
-              <label class="form-label">คำนำหน้า</label>
+            <div class="col-md-2"><label class="form-label">คำนำหน้า</label>
               <select class="form-select" id="set-title">
                 <option value="นาย" ${s.teacher_title === 'นาย' ? 'selected' : ''}>นาย</option>
                 <option value="นาง" ${s.teacher_title === 'นาง' ? 'selected' : ''}>นาง</option>
                 <option value="นางสาว" ${s.teacher_title === 'นางสาว' ? 'selected' : ''}>นางสาว</option>
               </select>
             </div>
-            <div class="col-md-4"><label class="form-label">ชื่อ</label><input type="text" class="form-control" id="set-fname" value="${DOMPurify.sanitize(s.teacher_firstname || '')}"></div>
-            <div class="col-md-4"><label class="form-label">นามสกุล</label><input type="text" class="form-control" id="set-lname" value="${DOMPurify.sanitize(s.teacher_lastname || '')}"></div>
-            <div class="col-md-5"><label class="form-label">ตำแหน่ง</label><input type="text" class="form-control" id="set-position" value="${DOMPurify.sanitize(s.teacher_position || '')}"></div>
-            <div class="col-md-5"><label class="form-label">โรงเรียน</label><input type="text" class="form-control" id="set-school" value="${DOMPurify.sanitize(s.school_name || '')}"></div>
+            <div class="col-md-4"><label class="form-label">ชื่อ</label><input class="form-control" id="set-fname" value="${DOMPurify.sanitize(s.teacher_firstname || '')}"></div>
+            <div class="col-md-4"><label class="form-label">นามสกุล</label><input class="form-control" id="set-lname" value="${DOMPurify.sanitize(s.teacher_lastname || '')}"></div>
+            <div class="col-md-5"><label class="form-label">ตำแหน่ง</label><input class="form-control" id="set-position" value="${DOMPurify.sanitize(s.teacher_position || '')}"></div>
+            <div class="col-md-5"><label class="form-label">วิทยฐานะ</label><input class="form-control" id="set-academic" value="${DOMPurify.sanitize(s.academic_standing || '')}"></div>
+            <div class="col-md-4"><label class="form-label">รหัสครู / เลขที่ตำแหน่ง</label><input class="form-control" id="set-empid" value="${DOMPurify.sanitize(s.employee_id || '')}"></div>
+            <div class="col-md-6"><label class="form-label">โรงเรียน</label><input class="form-control" id="set-school" value="${DOMPurify.sanitize(s.school_name || '')}"></div>
+            <div class="col-md-3"><label class="form-label">เบอร์โทร</label><input class="form-control" id="set-phone" value="${DOMPurify.sanitize(s.phone || '')}"></div>
+            <div class="col-md-5"><label class="form-label">อีเมล</label><input type="email" class="form-control" id="set-email" value="${DOMPurify.sanitize(s.email || '')}"></div>
           </div>
           <button class="btn btn-primary mt-3" id="btn-save-profile"><i class="bi bi-check-lg me-1"></i>บันทึก</button>
         </div>
-      </div>
+      </div>`;
+    panel.querySelector('#btn-save-profile').addEventListener('click', async () => {
+      const res = await API.put('/api/settings', {
+        teacher_title:     panel.querySelector('#set-title').value,
+        teacher_firstname: panel.querySelector('#set-fname').value,
+        teacher_lastname:  panel.querySelector('#set-lname').value,
+        teacher_position:  panel.querySelector('#set-position').value,
+        academic_standing: panel.querySelector('#set-academic').value,
+        employee_id:       panel.querySelector('#set-empid').value,
+        school_name:       panel.querySelector('#set-school').value,
+        phone:             panel.querySelector('#set-phone').value,
+        email:             panel.querySelector('#set-email').value,
+      });
+      if (res.success || res.data) App.toast('บันทึกข้อมูลครูแล้ว');
+      else App.toast(res.error || 'บันทึกไม่สำเร็จ', 'danger');
+    });
+  },
 
-      <!-- Semesters -->
-      <div class="card border-0 shadow-sm mb-4">
+  _renderSemesters(panel) {
+    const semesters = this._semesters;
+    panel.innerHTML = `
+      <div class="card border-0 shadow-sm">
         <div class="card-header bg-white d-flex justify-content-between align-items-center">
           <span class="fw-semibold"><i class="bi bi-calendar-range me-2"></i>ภาคเรียน</span>
           <button class="btn btn-sm btn-primary" id="btn-add-semester"><i class="bi bi-plus-lg me-1"></i>เพิ่ม</button>
         </div>
         <div class="card-body p-0">
-          <div class="table-responsive">
-            <table class="table table-hover mb-0">
-              <thead class="table-light"><tr>
-                <th>ปีการศึกษา</th><th>ภาคเรียน</th><th>สถานะ</th><th></th>
-              </tr></thead>
-              <tbody>
-                ${semesters.map(sem => `
-                <tr>
-                  <td>${sem.academic_year}</td>
-                  <td>${sem.semester}</td>
-                  <td>${sem.is_active ? '<span class="badge bg-success">ใช้งานอยู่</span>' : ''}</td>
-                  <td class="text-end">
-                    ${!sem.is_active ? `<button class="btn btn-sm btn-outline-success me-1" onclick="App.modules.settings.activateSem('${sem.id}')"><i class="bi bi-check-lg"></i></button>` : ''}
-                    <button class="btn btn-sm btn-outline-danger" onclick="App.modules.settings.deleteSem('${sem.id}')"><i class="bi bi-trash"></i></button>
-                  </td>
-                </tr>`).join('')}
-                ${semesters.length === 0 ? '<tr><td colspan="4" class="text-muted text-center py-3">ยังไม่มีภาคเรียน</td></tr>' : ''}
-              </tbody>
-            </table>
+          <table class="table table-hover mb-0">
+            <thead class="table-light"><tr><th>ปีการศึกษา</th><th>ภาคเรียน</th><th>สถานะ</th><th class="text-end"></th></tr></thead>
+            <tbody>
+              ${semesters.map(sem => `<tr>
+                <td>${sem.academic_year}</td><td>${sem.semester}</td>
+                <td>${sem.is_active ? '<span class="badge bg-success">ใช้งานอยู่</span>' : ''}</td>
+                <td class="text-end d-flex justify-content-end gap-1">
+                  ${!sem.is_active ? `<button class="btn btn-sm btn-outline-success" data-sem-act="${sem.id}" title="เปิดใช้งาน"><i class="bi bi-check-lg"></i></button>` : ''}
+                  <button class="btn btn-sm btn-outline-danger" data-sem-del="${sem.id}"><i class="bi bi-trash"></i></button>
+                </td></tr>`).join('')}
+              ${!semesters.length ? '<tr><td colspan="4" class="text-center text-muted py-3">ยังไม่มีภาคเรียน</td></tr>' : ''}
+            </tbody>
+          </table>
+        </div>
+        <div id="sem-add-form" class="d-none p-3 border-top bg-light">
+          <div class="row g-2 align-items-end">
+            <div class="col-5"><label class="form-label small mb-1">ปีการศึกษา</label><input type="number" class="form-control form-control-sm" id="new-sem-year" value="${new Date().getFullYear() + 543}" min="2500"></div>
+            <div class="col-4"><label class="form-label small mb-1">ภาค</label><select class="form-select form-select-sm" id="new-sem-num"><option value="1">1</option><option value="2">2</option></select></div>
+            <div class="col-3 d-flex gap-1">
+              <button class="btn btn-sm btn-primary flex-fill" id="btn-sem-save"><i class="bi bi-check-lg"></i></button>
+              <button class="btn btn-sm btn-outline-secondary" id="btn-sem-cancel"><i class="bi bi-x-lg"></i></button>
+            </div>
           </div>
         </div>
-      </div>
+      </div>`;
+    panel.querySelector('#btn-add-semester').addEventListener('click', () => panel.querySelector('#sem-add-form').classList.toggle('d-none'));
+    panel.querySelector('#btn-sem-cancel').addEventListener('click', () => panel.querySelector('#sem-add-form').classList.add('d-none'));
+    panel.querySelector('#btn-sem-save').addEventListener('click', async () => {
+      const year = parseInt(panel.querySelector('#new-sem-year').value);
+      const sem  = parseInt(panel.querySelector('#new-sem-num').value);
+      if (!year || !sem) return;
+      const res = await API.post('/api/semesters', { academic_year: year, semester: sem });
+      if (res.success || res.data) { App.toast('เพิ่มภาคเรียนแล้ว'); await this._reload(); this._renderSemesters(panel); }
+      else App.toast(res.error || 'เพิ่มไม่สำเร็จ', 'danger');
+    });
+    panel.querySelectorAll('[data-sem-act]').forEach(btn => btn.addEventListener('click', async () => {
+      await API.post(`/api/semesters/${btn.dataset.semAct}/activate`);
+      App.loadSemesterLabel(); await this._reload(); this._renderSemesters(panel);
+    }));
+    panel.querySelectorAll('[data-sem-del]').forEach(btn => btn.addEventListener('click', async () => {
+      if (!confirm('ลบภาคเรียนนี้?')) return;
+      await API.del(`/api/semesters/${btn.dataset.semDel}`);
+      await this._reload(); this._renderSemesters(panel);
+    }));
+  },
 
-      <!-- Subjects -->
-      <div class="card border-0 shadow-sm mb-4">
+  _renderSubjects(panel) {
+    const subjects = this._subjects;
+    const typeLabel = { regular: 'พื้นฐาน', elective: 'เพิ่มเติม', activity: 'กิจกรรม', homeroom: 'ที่ปรึกษา', ethics: 'จริยธรรม' };
+    panel.innerHTML = `
+      <div class="card border-0 shadow-sm">
         <div class="card-header bg-white d-flex justify-content-between align-items-center">
           <span class="fw-semibold"><i class="bi bi-book me-2"></i>วิชา</span>
-          <button class="btn btn-sm btn-primary" id="btn-add-subject"><i class="bi bi-plus-lg me-1"></i>เพิ่ม</button>
+          <button class="btn btn-sm btn-primary" id="btn-add-subject"><i class="bi bi-plus-lg me-1"></i>เพิ่มวิชา</button>
         </div>
         <div class="card-body p-0">
-          <div class="table-responsive">
-            <table class="table table-hover mb-0">
-              <thead class="table-light"><tr>
-                <th>รหัส</th><th>ชื่อวิชา</th><th>ประเภท</th><th>หน่วยกิต</th><th></th>
-              </tr></thead>
-              <tbody>
-                ${subjects.map(sub => `
-                <tr>
-                  <td>${DOMPurify.sanitize(sub.code)}</td>
-                  <td>${DOMPurify.sanitize(sub.name)}</td>
-                  <td>${sub.subject_type === 'regular' ? 'พื้นฐาน' : sub.subject_type === 'elective' ? 'เพิ่มเติม' : sub.subject_type === 'activity' ? 'กิจกรรม' : sub.subject_type}</td>
-                  <td>${sub.credits}</td>
-                  <td class="text-end">
-                    <button class="btn btn-sm btn-outline-danger" onclick="App.modules.settings.deleteSubject('${sub.id}')"><i class="bi bi-trash"></i></button>
-                  </td>
-                </tr>`).join('')}
-                ${subjects.length === 0 ? '<tr><td colspan="5" class="text-muted text-center py-3">ยังไม่มีวิชา</td></tr>' : ''}
-              </tbody>
-            </table>
-          </div>
+          <table class="table table-hover mb-0">
+            <thead class="table-light"><tr><th>รหัส</th><th>ชื่อวิชา</th><th>ประเภท</th><th>หน่วยกิต</th><th>ชม./สัปดาห์</th><th class="text-end"></th></tr></thead>
+            <tbody>
+              ${subjects.map(sub => `<tr>
+                <td>${DOMPurify.sanitize(sub.code)}</td>
+                <td>${DOMPurify.sanitize(sub.name)}</td>
+                <td>${typeLabel[sub.subject_type] || sub.subject_type}</td>
+                <td>${sub.credits ?? ''}</td><td>${sub.hours_per_week ?? ''}</td>
+                <td class="text-end">
+                  <button class="btn btn-sm btn-outline-primary me-1 btn-edit-sub" data-id="${sub.id}"><i class="bi bi-pencil"></i></button>
+                  <button class="btn btn-sm btn-outline-danger btn-del-sub" data-id="${sub.id}"><i class="bi bi-trash"></i></button>
+                </td></tr>`).join('')}
+              ${!subjects.length ? '<tr><td colspan="6" class="text-center text-muted py-3">ยังไม่มีวิชา</td></tr>' : ''}
+            </tbody>
+          </table>
         </div>
-      </div>
-
-      <!-- Classrooms -->
-      <div class="card border-0 shadow-sm mb-4">
-        <div class="card-header bg-white d-flex justify-content-between align-items-center">
-          <span class="fw-semibold"><i class="bi bi-building me-2"></i>ห้องเรียน</span>
-          <button class="btn btn-sm btn-primary" id="btn-add-classroom"><i class="bi bi-plus-lg me-1"></i>เพิ่ม</button>
-        </div>
-        <div class="card-body p-0">
-          <div class="table-responsive">
-            <table class="table table-hover mb-0">
-              <thead class="table-light"><tr>
-                <th>ระดับชั้น</th><th>ห้อง</th><th>ชื่อ</th><th></th>
-              </tr></thead>
-              <tbody>
-                ${classrooms.map(c => `
-                <tr>
-                  <td>ม.${c.grade_level}</td>
-                  <td>${c.room_number}</td>
-                  <td>${DOMPurify.sanitize(c.name || '')}</td>
-                  <td class="text-end">
-                    <button class="btn btn-sm btn-outline-danger" onclick="App.modules.settings.deleteClassroom('${c.id}')"><i class="bi bi-trash"></i></button>
-                  </td>
-                </tr>`).join('')}
-                ${classrooms.length === 0 ? '<tr><td colspan="4" class="text-muted text-center py-3">ยังไม่มีห้องเรียน</td></tr>' : ''}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- Google Drive -->
-      <div class="card border-0 shadow-sm mb-4">
-        <div class="card-header bg-white fw-semibold"><i class="bi bi-cloud me-2"></i>Google Drive</div>
-        <div class="card-body">
-          <p class="text-muted small mb-3">เชื่อมต่อ Google Drive เพื่อเก็บไฟล์งานนักเรียนและสื่อการสอนอัตโนมัติ</p>
-          <div class="row g-3 align-items-end mb-3">
-            <div class="col-md-8">
-              <label class="form-label small mb-1">Root Folder ID</label>
-              <input type="text" class="form-control form-control-sm" id="set-drive-root" value="${DOMPurify.sanitize(driveRoot)}" placeholder="Google Drive Folder ID">
+        <div id="subject-form-wrap" class="d-none p-3 border-top bg-light">
+          <div class="fw-semibold small mb-2" id="subject-form-title">เพิ่มวิชาใหม่</div>
+          <input type="hidden" id="sub-edit-id">
+          <div class="row g-2 mb-2">
+            <div class="col-md-3"><label class="form-label small mb-1">รหัสวิชา *</label><input class="form-control form-control-sm" id="sub-code" placeholder="ศ21101"></div>
+            <div class="col-md-4"><label class="form-label small mb-1">ชื่อวิชา *</label><input class="form-control form-control-sm" id="sub-name" placeholder="ดนตรีสากล"></div>
+            <div class="col-md-3"><label class="form-label small mb-1">ประเภท</label>
+              <select class="form-select form-select-sm" id="sub-type">
+                <option value="regular">พื้นฐาน</option><option value="elective">เพิ่มเติม</option>
+                <option value="activity">กิจกรรม</option><option value="homeroom">ที่ปรึกษา</option>
+              </select>
             </div>
-            <div class="col-md-4 d-flex gap-2">
-              <button class="btn btn-sm btn-outline-primary flex-fill" id="btn-save-drive-root"><i class="bi bi-check-lg me-1"></i>บันทึก</button>
-              <a href="https://drive.google.com/drive/folders/${DOMPurify.sanitize(driveRoot)}" target="_blank" class="btn btn-sm btn-outline-secondary" title="เปิดโฟลเดอร์"><i class="bi bi-box-arrow-up-right"></i></a>
+            <div class="col-md-2"><label class="form-label small mb-1">ระดับชั้น</label>
+              <select class="form-select form-select-sm" id="sub-grade">
+                <option value="">-</option>${[1,2,3,4,5,6].map(g => `<option value="${g}">ม.${g}</option>`).join('')}
+              </select>
             </div>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-md-3"><label class="form-label small mb-1">หน่วยกิต</label><input type="number" class="form-control form-control-sm" id="sub-credits" step="0.5" value="1"></div>
+            <div class="col-md-3"><label class="form-label small mb-1">ชั่วโมง/สัปดาห์</label><input type="number" class="form-control form-control-sm" id="sub-hours" step="0.5" value="1"></div>
+            <div class="col-md-6"><label class="form-label small mb-1">คำอธิบายรายวิชา</label><input class="form-control form-control-sm" id="sub-desc"></div>
           </div>
           <div class="d-flex gap-2">
-            <button class="btn btn-success btn-sm" id="btn-drive-connect"><i class="bi bi-google me-1"></i>เชื่อมต่อ Google Drive</button>
-            <span class="text-muted small align-self-center" id="drive-status"></span>
+            <button class="btn btn-sm btn-primary" id="btn-sub-save"><i class="bi bi-check-lg me-1"></i>บันทึก</button>
+            <button class="btn btn-sm btn-outline-secondary" id="btn-sub-cancel">ยกเลิก</button>
+          </div>
+        </div>
+      </div>`;
+    const fw = panel.querySelector('#subject-form-wrap');
+    const toggleF = (show, sub = null) => {
+      fw.classList.toggle('d-none', !show);
+      if (show) {
+        panel.querySelector('#subject-form-title').textContent = sub ? 'แก้ไขวิชา' : 'เพิ่มวิชาใหม่';
+        panel.querySelector('#sub-edit-id').value = sub?.id || '';
+        panel.querySelector('#sub-code').value   = sub?.code || '';
+        panel.querySelector('#sub-name').value   = sub?.name || '';
+        panel.querySelector('#sub-type').value   = sub?.subject_type || 'regular';
+        panel.querySelector('#sub-grade').value  = sub?.grade_level || '';
+        panel.querySelector('#sub-credits').value = sub?.credits ?? 1;
+        panel.querySelector('#sub-hours').value  = sub?.hours_per_week ?? 1;
+        panel.querySelector('#sub-desc').value   = sub?.description || '';
+      }
+    };
+    panel.querySelector('#btn-add-subject').addEventListener('click', () => toggleF(true));
+    panel.querySelector('#btn-sub-cancel').addEventListener('click',  () => toggleF(false));
+    panel.querySelectorAll('.btn-edit-sub').forEach(btn => btn.addEventListener('click', () => {
+      const sub = this._subjects.find(s => s.id === btn.dataset.id); if (sub) toggleF(true, sub);
+    }));
+    panel.querySelectorAll('.btn-del-sub').forEach(btn => btn.addEventListener('click', async () => {
+      if (!confirm('ลบวิชานี้?')) return;
+      const res = await API.del(`/api/subjects/${btn.dataset.id}`);
+      if (res.success || res.data) { App.toast('ลบวิชาแล้ว'); await this._reload(); this._renderSubjects(panel); }
+      else App.toast(res.error || 'ลบไม่สำเร็จ', 'danger');
+    }));
+    panel.querySelector('#btn-sub-save').addEventListener('click', async () => {
+      const code = panel.querySelector('#sub-code').value.trim();
+      const name = panel.querySelector('#sub-name').value.trim();
+      if (!code || !name) { App.toast('กรุณากรอกรหัสและชื่อวิชา', 'warning'); return; }
+      const editId = panel.querySelector('#sub-edit-id').value;
+      const body = {
+        code, name,
+        subject_type:  panel.querySelector('#sub-type').value,
+        grade_level:   panel.querySelector('#sub-grade').value ? parseInt(panel.querySelector('#sub-grade').value) : null,
+        credits:       parseFloat(panel.querySelector('#sub-credits').value) || 1,
+        hours_per_week: parseFloat(panel.querySelector('#sub-hours').value) || 1,
+        description:   panel.querySelector('#sub-desc').value.trim() || null,
+      };
+      const res = editId ? await API.put(`/api/subjects/${editId}`, body) : await API.post('/api/subjects', body);
+      if (res.success || res.data) { App.toast(editId ? 'อัปเดตวิชาแล้ว' : 'เพิ่มวิชาแล้ว'); await this._reload(); this._renderSubjects(panel); }
+      else App.toast(res.error || 'บันทึกไม่สำเร็จ', 'danger');
+    });
+  },
+
+  _renderClassrooms(panel) {
+    const classrooms = this._classrooms;
+    panel.innerHTML = `
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+          <span class="fw-semibold"><i class="bi bi-building me-2"></i>ห้องเรียน</span>
+          <button class="btn btn-sm btn-primary" id="btn-add-classroom"><i class="bi bi-plus-lg me-1"></i>เพิ่มห้องเรียน</button>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-hover mb-0">
+            <thead class="table-light"><tr><th>ระดับชั้น</th><th>ห้อง</th><th>ชื่อ</th><th>ปีการศึกษา</th><th class="text-end"></th></tr></thead>
+            <tbody>
+              ${classrooms.map(c => `<tr>
+                <td>ม.${c.grade_level}</td><td>${c.room_number}</td>
+                <td>${DOMPurify.sanitize(c.name || '')}</td><td>${c.academic_year || ''}</td>
+                <td class="text-end">
+                  <button class="btn btn-sm btn-outline-primary me-1 btn-edit-cls" data-id="${c.id}"><i class="bi bi-pencil"></i></button>
+                  <button class="btn btn-sm btn-outline-danger btn-del-cls" data-id="${c.id}"><i class="bi bi-trash"></i></button>
+                </td></tr>`).join('')}
+              ${!classrooms.length ? '<tr><td colspan="5" class="text-center text-muted py-3">ยังไม่มีห้องเรียน</td></tr>' : ''}
+            </tbody>
+          </table>
+        </div>
+        <div id="cls-form-wrap" class="d-none p-3 border-top bg-light">
+          <div class="fw-semibold small mb-2" id="cls-form-title">เพิ่มห้องเรียนใหม่</div>
+          <input type="hidden" id="cls-edit-id">
+          <div class="row g-2 align-items-end">
+            <div class="col-md-3"><label class="form-label small mb-1">ระดับชั้น *</label>
+              <select class="form-select form-select-sm" id="cls-grade">${[1,2,3,4,5,6].map(g => `<option value="${g}">ม.${g}</option>`).join('')}</select>
+            </div>
+            <div class="col-md-2"><label class="form-label small mb-1">ห้องที่ *</label><input type="number" class="form-control form-control-sm" id="cls-room" value="1" min="1"></div>
+            <div class="col-md-3"><label class="form-label small mb-1">ชื่อห้อง</label><input class="form-control form-control-sm" id="cls-name" placeholder="เช่น ม.1/1"></div>
+            <div class="col-md-2"><label class="form-label small mb-1">ปีการศึกษา</label><input type="number" class="form-control form-control-sm" id="cls-year" value="${new Date().getFullYear() + 543}"></div>
+            <div class="col-md-2 d-flex gap-1">
+              <button class="btn btn-sm btn-primary flex-fill" id="btn-cls-save"><i class="bi bi-check-lg"></i></button>
+              <button class="btn btn-sm btn-outline-secondary" id="btn-cls-cancel"><i class="bi bi-x-lg"></i></button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    const fw = panel.querySelector('#cls-form-wrap');
+    const toggleF = (show, cls = null) => {
+      fw.classList.toggle('d-none', !show);
+      if (show) {
+        panel.querySelector('#cls-form-title').textContent = cls ? 'แก้ไขห้องเรียน' : 'เพิ่มห้องเรียนใหม่';
+        panel.querySelector('#cls-edit-id').value  = cls?.id || '';
+        panel.querySelector('#cls-grade').value    = cls?.grade_level || 1;
+        panel.querySelector('#cls-room').value     = cls?.room_number || 1;
+        panel.querySelector('#cls-name').value     = cls?.name || '';
+        panel.querySelector('#cls-year').value     = cls?.academic_year || (new Date().getFullYear() + 543);
+      }
+    };
+    panel.querySelector('#btn-add-classroom').addEventListener('click', () => toggleF(true));
+    panel.querySelector('#btn-cls-cancel').addEventListener('click',  () => toggleF(false));
+    panel.querySelectorAll('.btn-edit-cls').forEach(btn => btn.addEventListener('click', () => {
+      const cls = this._classrooms.find(c => c.id === btn.dataset.id); if (cls) toggleF(true, cls);
+    }));
+    panel.querySelectorAll('.btn-del-cls').forEach(btn => btn.addEventListener('click', async () => {
+      if (!confirm('ลบห้องเรียนนี้?')) return;
+      const res = await API.del(`/api/classrooms/${btn.dataset.id}`);
+      if (res.success || res.data) { App.toast('ลบห้องเรียนแล้ว'); await this._reload(); this._renderClassrooms(panel); }
+      else App.toast(res.error || 'ลบไม่สำเร็จ', 'danger');
+    }));
+    panel.querySelector('#btn-cls-save').addEventListener('click', async () => {
+      const grade = parseInt(panel.querySelector('#cls-grade').value);
+      const room  = parseInt(panel.querySelector('#cls-room').value);
+      if (!grade || !room) { App.toast('กรุณากรอกระดับชั้นและห้อง', 'warning'); return; }
+      const editId = panel.querySelector('#cls-edit-id').value;
+      const body = {
+        grade_level:   grade,
+        room_number:   room,
+        name:          panel.querySelector('#cls-name').value.trim() || `ม.${grade}/${room}`,
+        academic_year: parseInt(panel.querySelector('#cls-year').value) || null,
+      };
+      const res = editId ? await API.put(`/api/classrooms/${editId}`, body) : await API.post('/api/classrooms', body);
+      if (res.success || res.data) { App.toast(editId ? 'อัปเดตห้องเรียนแล้ว' : 'เพิ่มห้องเรียนแล้ว'); await this._reload(); this._renderClassrooms(panel); }
+      else App.toast(res.error || 'บันทึกไม่สำเร็จ', 'danger');
+    });
+  },
+
+  _renderSCAssign(panel) {
+    const { _subjects: subjects, _classrooms: classrooms, _semesters: semesters, _subjectClassrooms: scLinks, _activeSemId: semId } = this;
+    const semOptions = semesters.map(s => `<option value="${s.id}" ${s.id === semId ? 'selected' : ''}>${s.academic_year} ภาค ${s.semester}</option>`).join('');
+    let currentSemId = semId || '';
+
+    panel.innerHTML = `
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold"><i class="bi bi-diagram-3 me-2"></i>จับคู่วิชา - ห้องเรียน</div>
+        <div class="card-body">
+          <p class="text-muted small mb-3">กำหนดว่าวิชาใดสอนในห้องเรียนใดสำหรับแต่ละภาคเรียน ใช้เป็นฐานข้อมูลให้ระบบอื่นทำงานได้ถูกต้อง</p>
+          <div class="d-flex align-items-end gap-3 mb-3 flex-wrap">
+            <div><label class="form-label small mb-1">กรองตามภาคเรียน</label>
+              <select class="form-select form-select-sm" id="sc-sem-filter" style="width:200px">${semOptions}</select>
+            </div>
+          </div>
+          <div id="sc-table-wrap" class="mb-3"></div>
+          <div class="border rounded p-3 bg-light">
+            <div class="fw-semibold small mb-2"><i class="bi bi-plus-circle me-1"></i>เพิ่มการจับคู่ใหม่</div>
+            <div class="row g-2 align-items-end">
+              <div class="col-md-4"><label class="form-label small mb-1">วิชา</label>
+                <select class="form-select form-select-sm" id="sc-new-sub">
+                  <option value="">— เลือกวิชา —</option>
+                  ${subjects.map(s => `<option value="${s.id}">${DOMPurify.sanitize(s.code)} ${DOMPurify.sanitize(s.name)}</option>`).join('')}
+                </select>
+              </div>
+              <div class="col-md-4"><label class="form-label small mb-1">ห้องเรียน</label>
+                <select class="form-select form-select-sm" id="sc-new-cls">
+                  <option value="">— เลือกห้องเรียน —</option>
+                  ${classrooms.map(c => `<option value="${c.id}">${DOMPurify.sanitize(c.name)}</option>`).join('')}
+                </select>
+              </div>
+              <div class="col-md-4">
+                <button class="btn btn-sm btn-primary" id="btn-sc-add"><i class="bi bi-plus-lg me-1"></i>เพิ่ม</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>`;
 
-    // Check Drive connection status
+    const renderTable = (links) => {
+      const wrap = panel.querySelector('#sc-table-wrap');
+      if (!links.length) { wrap.innerHTML = '<p class="text-muted small">ยังไม่มีการจับคู่สำหรับภาคเรียนนี้</p>'; return; }
+      wrap.innerHTML = `
+        <table class="table table-sm table-hover">
+          <thead class="table-light"><tr><th>วิชา</th><th>ห้องเรียน</th><th>นักเรียน</th><th class="text-end"></th></tr></thead>
+          <tbody>${links.map(sc => `<tr>
+            <td>${DOMPurify.sanitize(sc.subject_code)} ${DOMPurify.sanitize(sc.subject_name)}</td>
+            <td>${DOMPurify.sanitize(sc.classroom_name)}</td>
+            <td>${sc.student_count ?? 0}</td>
+            <td class="text-end"><button class="btn btn-sm btn-outline-danger btn-sc-del" data-id="${sc.id}"><i class="bi bi-trash"></i></button></td>
+          </tr>`).join('')}</tbody>
+        </table>`;
+      wrap.querySelectorAll('.btn-sc-del').forEach(btn => btn.addEventListener('click', async () => {
+        if (!confirm('ลบการจับคู่นี้?')) return;
+        const res = await API.del(`/api/subject-classrooms?id=${btn.dataset.id}`);
+        if (res.success || res.data) { App.toast('ลบการจับคู่แล้ว'); await this._reload(); renderTable(this._subjectClassrooms.filter(s => s.semester_id === currentSemId)); }
+        else App.toast(res.error || 'ลบไม่สำเร็จ', 'danger');
+      }));
+    };
+
+    renderTable(scLinks.filter(s => s.semester_id === currentSemId));
+    panel.querySelector('#sc-sem-filter').addEventListener('change', (e) => {
+      currentSemId = e.target.value;
+      renderTable(this._subjectClassrooms.filter(s => s.semester_id === currentSemId));
+    });
+    panel.querySelector('#btn-sc-add').addEventListener('click', async () => {
+      const subId = panel.querySelector('#sc-new-sub').value;
+      const clsId = panel.querySelector('#sc-new-cls').value;
+      if (!subId || !clsId || !currentSemId) { App.toast('กรุณาเลือกวิชา ห้องเรียน และภาคเรียน', 'warning'); return; }
+      if (this._subjectClassrooms.some(sc => sc.subject_id === subId && sc.classroom_id === clsId && sc.semester_id === currentSemId)) {
+        App.toast('มีการจับคู่นี้แล้ว', 'warning'); return;
+      }
+      const res = await API.post('/api/subject-classrooms', { subject_id: subId, classroom_id: clsId, semester_id: currentSemId });
+      if (res.success || res.data) { App.toast('เพิ่มการจับคู่แล้ว'); await this._reload(); renderTable(this._subjectClassrooms.filter(s => s.semester_id === currentSemId)); }
+      else App.toast(res.error || 'เพิ่มไม่สำเร็จ', 'danger');
+    });
+  },
+
+  _renderDrive(panel) {
+    const driveRoot = this._driveRoot;
+    panel.innerHTML = `
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold"><i class="bi bi-cloud me-2"></i>Google Drive</div>
+        <div class="card-body">
+          <p class="text-muted small mb-3">เชื่อมต่อ Google Drive เพื่อเก็บไฟล์งานนักเรียนและสื่อการสอนอัตโนมัติ</p>
+          <div class="row g-3 align-items-end mb-3">
+            <div class="col-md-8"><label class="form-label small mb-1">Root Folder ID</label>
+              <input class="form-control form-control-sm" id="set-drive-root" value="${DOMPurify.sanitize(driveRoot)}" placeholder="Google Drive Folder ID">
+            </div>
+            <div class="col-md-4 d-flex gap-2">
+              <button class="btn btn-sm btn-outline-primary flex-fill" id="btn-save-drive-root"><i class="bi bi-check-lg me-1"></i>บันทึก</button>
+              ${driveRoot ? `<a href="https://drive.google.com/drive/folders/${DOMPurify.sanitize(driveRoot)}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-secondary"><i class="bi bi-box-arrow-up-right"></i></a>` : ''}
+            </div>
+          </div>
+          <div class="d-flex gap-2 align-items-center">
+            <button class="btn btn-success btn-sm" id="btn-drive-connect"><i class="bi bi-google me-1"></i>เชื่อมต่อ Google Drive</button>
+            <span class="text-muted small" id="drive-status">กำลังตรวจสอบ...</span>
+          </div>
+        </div>
+      </div>`;
     API.get('/api/drive').then(res => {
-      const el = document.getElementById('drive-status');
+      const el = panel.querySelector('#drive-status');
       if (el) el.textContent = res.success ? '✅ เชื่อมต่อแล้ว' : '⚠️ ยังไม่ได้เชื่อมต่อ';
     });
-
-    // Event bindings
-    document.getElementById('btn-drive-connect').addEventListener('click', async () => {
+    panel.querySelector('#btn-drive-connect').addEventListener('click', async () => {
       const res = await API.get('/api/drive/auth');
       if (res.success && res.data.auth_url) {
-        const popup = window.open(res.data.auth_url, 'drive_auth', 'width=500,height=600');
+        window.open(res.data.auth_url, 'drive_auth', 'width=500,height=600');
         window.addEventListener('message', async (e) => {
           if (e.data?.type === 'drive_auth' && e.data.code) {
             const tokenRes = await API.post('/api/drive/auth', { code: e.data.code });
-            if (tokenRes.success) { App.toast('เชื่อมต่อ Google Drive สำเร็จ!'); App.navigate('settings'); }
+            if (tokenRes.success) App.toast('เชื่อมต่อ Google Drive สำเร็จ!');
             else App.toast(tokenRes.error || 'เชื่อมต่อไม่สำเร็จ', 'danger');
           }
         }, { once: true });
       }
     });
-
-    document.getElementById('btn-save-drive-root').addEventListener('click', async () => {
-      const folderId = document.getElementById('set-drive-root').value.trim();
-      if (!folderId) { App.toast('กรุณากรอก Folder ID', 'warning'); return; }
-      const res = await API.post('/api/drive/root', { folder_id: folderId });
+    panel.querySelector('#btn-save-drive-root').addEventListener('click', async () => {
+      const fid = panel.querySelector('#set-drive-root').value.trim();
+      if (!fid) { App.toast('กรุณากรอก Folder ID', 'warning'); return; }
+      const res = await API.post('/api/drive/root', { folder_id: fid });
       if (res.success) App.toast('บันทึก Root Folder สำเร็จ');
       else App.toast(res.error || 'บันทึกไม่สำเร็จ', 'danger');
     });
-    document.getElementById('btn-save-profile').addEventListener('click', async () => {
-      await API.put('/api/settings', {
-        teacher_title: document.getElementById('set-title').value,
-        teacher_firstname: document.getElementById('set-fname').value,
-        teacher_lastname: document.getElementById('set-lname').value,
-        teacher_position: document.getElementById('set-position').value,
-        school_name: document.getElementById('set-school').value
-      });
-      App.toast('บันทึกข้อมูลครูแล้ว');
-    });
-
-    document.getElementById('btn-add-semester').addEventListener('click', () => {
-      const card = document.getElementById('btn-add-semester').closest('.card');
-      const existing = card.querySelector('.inline-add-form');
-      if (existing) { existing.remove(); return; }
-      const form = document.createElement('div');
-      form.className = 'inline-add-form p-3 border-top bg-light';
-      form.innerHTML = `
-        <div class="row g-2 align-items-end">
-          <div class="col-5"><label class="form-label small mb-1">ปีการศึกษา</label><input type="number" class="form-control form-control-sm" id="add-sem-year" value="2568" min="2500"></div>
-          <div class="col-4"><label class="form-label small mb-1">ภาคเรียน</label><select class="form-select form-select-sm" id="add-sem-num"><option value="1">1</option><option value="2">2</option></select></div>
-          <div class="col-3 d-flex gap-1"><button class="btn btn-sm btn-primary flex-fill" id="add-sem-save"><i class="bi bi-check-lg"></i></button><button class="btn btn-sm btn-outline-secondary" onclick="this.closest('.inline-add-form').remove()"><i class="bi bi-x-lg"></i></button></div>
-        </div>`;
-      card.appendChild(form);
-      document.getElementById('add-sem-save').addEventListener('click', async () => {
-        const year = parseInt(document.getElementById('add-sem-year').value);
-        const sem = parseInt(document.getElementById('add-sem-num').value);
-        if (year && sem) { await API.post('/api/semesters', { academic_year: year, semester: sem }); App.navigate('settings'); }
-      });
-    });
-
-    document.getElementById('btn-add-subject').addEventListener('click', () => {
-      const card = document.getElementById('btn-add-subject').closest('.card');
-      const existing = card.querySelector('.inline-add-form');
-      if (existing) { existing.remove(); return; }
-      const form = document.createElement('div');
-      form.className = 'inline-add-form p-3 border-top bg-light';
-      form.innerHTML = `
-        <div class="row g-2 align-items-end">
-          <div class="col-3"><label class="form-label small mb-1">รหัสวิชา</label><input type="text" class="form-control form-control-sm" id="add-sub-code" placeholder="ศ21101"></div>
-          <div class="col-4"><label class="form-label small mb-1">ชื่อวิชา</label><input type="text" class="form-control form-control-sm" id="add-sub-name" placeholder="ดนตรี"></div>
-          <div class="col-3"><label class="form-label small mb-1">ประเภท</label><select class="form-select form-select-sm" id="add-sub-type"><option value="regular">พื้นฐาน</option><option value="elective">เพิ่มเติม</option><option value="activity">กิจกรรม</option></select></div>
-          <div class="col-2 d-flex gap-1"><button class="btn btn-sm btn-primary flex-fill" id="add-sub-save"><i class="bi bi-check-lg"></i></button><button class="btn btn-sm btn-outline-secondary" onclick="this.closest('.inline-add-form').remove()"><i class="bi bi-x-lg"></i></button></div>
-        </div>`;
-      card.appendChild(form);
-      document.getElementById('add-sub-save').addEventListener('click', async () => {
-        const code = document.getElementById('add-sub-code').value.trim();
-        const name = document.getElementById('add-sub-name').value.trim();
-        const type = document.getElementById('add-sub-type').value;
-        if (code && name) { await API.post('/api/subjects', { code, name, subject_type: type }); App.navigate('settings'); }
-        else { App.toast('กรุณากรอกรหัสและชื่อวิชา', 'warning'); }
-      });
-    });
-
-    document.getElementById('btn-add-classroom').addEventListener('click', () => {
-      const card = document.getElementById('btn-add-classroom').closest('.card');
-      const existing = card.querySelector('.inline-add-form');
-      if (existing) { existing.remove(); return; }
-      const form = document.createElement('div');
-      form.className = 'inline-add-form p-3 border-top bg-light';
-      form.innerHTML = `
-        <div class="row g-2 align-items-end">
-          <div class="col-4"><label class="form-label small mb-1">ระดับชั้น</label><select class="form-select form-select-sm" id="add-cls-grade"><option value="1">ม.1</option><option value="2">ม.2</option><option value="3">ม.3</option><option value="4">ม.4</option><option value="5">ม.5</option><option value="6">ม.6</option></select></div>
-          <div class="col-3"><label class="form-label small mb-1">ห้องที่</label><input type="number" class="form-control form-control-sm" id="add-cls-room" value="1" min="1"></div>
-          <div class="col-3"><label class="form-label small mb-1">ชื่อ (ไม่บังคับ)</label><input type="text" class="form-control form-control-sm" id="add-cls-name" placeholder=""></div>
-          <div class="col-2 d-flex gap-1"><button class="btn btn-sm btn-primary flex-fill" id="add-cls-save"><i class="bi bi-check-lg"></i></button><button class="btn btn-sm btn-outline-secondary" onclick="this.closest('.inline-add-form').remove()"><i class="bi bi-x-lg"></i></button></div>
-        </div>`;
-      card.appendChild(form);
-      document.getElementById('add-cls-save').addEventListener('click', async () => {
-        const grade = parseInt(document.getElementById('add-cls-grade').value);
-        const room = parseInt(document.getElementById('add-cls-room').value);
-        const name = document.getElementById('add-cls-name').value.trim();
-        if (grade && room) { await API.post('/api/classrooms', { grade_level: grade, room_number: room, name: name || undefined }); App.navigate('settings'); }
-      });
-    });
   },
 
-  async activateSem(id) {
-    await API.post(`/api/semesters/${id}/activate`);
-    App.loadSemesterLabel();
-    App.navigate('settings');
-  },
-
-  async deleteSem(id) {
-    if (confirm('ลบภาคเรียนนี้?')) {
-      await API.del(`/api/semesters/${id}`);
-      App.navigate('settings');
-    }
-  },
-
-  async deleteSubject(id) {
-    if (confirm('ลบวิชานี้?')) {
-      await API.del(`/api/subjects/${id}`);
-      App.navigate('settings');
-    }
-  },
-
-  async deleteClassroom(id) {
-    if (confirm('ลบห้องเรียนนี้?')) {
-      await API.del(`/api/classrooms/${id}`);
-      App.navigate('settings');
-    }
+  async _reload() {
+    const [semRes, subRes, classRes, scRes] = await Promise.all([
+      API.get('/api/semesters'), API.get('/api/subjects'),
+      API.get('/api/classrooms'), API.get('/api/subject-classrooms')
+    ]);
+    this._semesters          = semRes.success ? semRes.data : [];
+    this._subjects           = subRes.success ? subRes.data : [];
+    this._classrooms         = classRes.success ? classRes.data : [];
+    this._subjectClassrooms  = scRes.success ? scRes.data : [];
+    this._activeSemId        = this._semesters.find(s => s.is_active)?.id;
   }
 };
 
@@ -2709,379 +2891,526 @@ App.modules['portfolio'] = {
 // ==================== Register Course-Structure Module ====================
 
 App.modules['course-structure'] = {
+  _csId: null,
+  _unitCount: 0,
+
   async render(container) {
     container.innerHTML = '<div class="loading"></div>';
-
     const [semRes, subRes, clsRes] = await Promise.all([
-      API.get('/api/semesters'),
-      API.get('/api/subjects'),
-      API.get('/api/classrooms')
+      API.get('/api/semesters'), API.get('/api/subjects'), API.get('/api/classrooms')
     ]);
-
     const semesters = semRes.success ? semRes.data : [];
     const activeSem = semesters.find(s => s.is_active);
-    const subjects = subRes.success ? subRes.data : [];
-    const classrooms = clsRes.success ? clsRes.data : [];
+    this._subjects   = subRes.success ? subRes.data : [];
+    this._classrooms = clsRes.success ? clsRes.data : [];
 
     if (!activeSem) {
-      container.innerHTML = '<div class="alert alert-warning">ไม่พบภาคเรียนที่เปิดใช้งาน</div>';
+      container.innerHTML = '<div class="alert alert-warning">ไม่พบภาคเรียนที่เปิดใช้งาน กรุณาไปตั้งค่าภาคเรียนก่อน</div>';
       return;
     }
     this.activeSemId = activeSem.id;
 
     container.innerHTML = `
-      <h4 class="fw-bold mb-4"><i class="bi bi-diagram-3 me-2 text-primary"></i>โครงสร้างรายวิชา</h4>
-      <div class="row g-2 mb-4">
-        <div class="col-md-4">
-          <select class="form-select" id="cs-subject">
-            <option value="">— เลือกวิชา —</option>
-            ${subjects.map(s => `<option value="${s.id}">${DOMPurify.sanitize(s.code)} ${DOMPurify.sanitize(s.name)}</option>`).join('')}
-          </select>
-        </div>
-        <div class="col-md-4">
-          <select class="form-select" id="cs-classroom">
-            <option value="">— เลือกห้องเรียน —</option>
-            ${classrooms.map(c => `<option value="${c.id}">${DOMPurify.sanitize(c.name)}</option>`).join('')}
-          </select>
-        </div>
-        <div class="col-md-3">
-          <button class="btn btn-primary w-100" id="cs-load"><i class="bi bi-search me-1"></i>โหลดโครงสร้าง</button>
-        </div>
-        <div class="col-md-3">
-          <button class="btn btn-outline-info w-100" id="cs-ai"><i class="bi bi-stars me-1"></i>AI ร่างโครงสร้าง</button>
+      <h4 class="fw-bold mb-3"><i class="bi bi-diagram-3 me-2 text-primary"></i>โครงการสอน (โครงสร้างรายวิชา)</h4>
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+          <div class="row g-2 align-items-end">
+            <div class="col-md-4">
+              <label class="form-label small mb-1">วิชา</label>
+              <select class="form-select" id="cs-subject">
+                <option value="">— เลือกวิชา —</option>
+                ${this._subjects.map(s => `<option value="${s.id}">${DOMPurify.sanitize(s.code)} ${DOMPurify.sanitize(s.name)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small mb-1">ห้องเรียน</label>
+              <select class="form-select" id="cs-classroom">
+                <option value="">— เลือกห้องเรียน —</option>
+                ${this._classrooms.map(c => `<option value="${c.id}">${DOMPurify.sanitize(c.name)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="col-md-4 d-flex gap-2">
+              <button class="btn btn-primary flex-fill" id="cs-load"><i class="bi bi-search me-1"></i>โหลด</button>
+              <button class="btn btn-outline-info" id="cs-ai" title="AI ร่างโครงสร้าง"><i class="bi bi-stars me-1"></i>AI</button>
+            </div>
+          </div>
         </div>
       </div>
       <div id="cs-content"></div>`;
 
-    document.getElementById('cs-load').addEventListener('click', () => this.loadStructure());
-    document.getElementById('cs-ai').addEventListener('click', () => {
-      const subEl = document.getElementById('cs-subject');
+    container.querySelector('#cs-load').addEventListener('click', () => this.loadStructure(container));
+    container.querySelector('#cs-ai').addEventListener('click', () => {
+      const subEl = container.querySelector('#cs-subject');
       const subName = subEl.options[subEl.selectedIndex]?.text || '';
       AIPanel.open('course_structure', { subject: subName }, 'chat');
     });
   },
 
-  async loadStructure() {
-    const subjectId = document.getElementById('cs-subject').value;
+  async loadStructure(container) {
+    const subjectId  = document.getElementById('cs-subject').value;
     const classroomId = document.getElementById('cs-classroom').value;
     if (!subjectId || !classroomId) { App.toast('เลือกวิชาและห้องเรียนก่อน', 'warning'); return; }
+
+    this._subjectId   = subjectId;
+    this._classroomId = classroomId;
 
     const area = document.getElementById('cs-content');
     area.innerHTML = '<div class="loading"></div>';
 
     const res = await API.get(`/api/course-structure?subject_id=${subjectId}&classroom_id=${classroomId}`);
-    const structures = res.success ? res.data : [];
-    const cs = structures[0] || null;
+    const cs = (res.success ? res.data : [])[0] || null;
+    this._csId = cs?.id || null;
+
+    const sub = this._subjects.find(s => s.id === subjectId);
+    const cls = this._classrooms.find(c => c.id === classroomId);
 
     area.innerHTML = `
-      <!-- Course info form -->
       <div class="card border-0 shadow-sm mb-3">
-        <div class="card-header bg-white fw-semibold"><i class="bi bi-info-circle me-2"></i>ข้อมูลรายวิชา</div>
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+          <span class="fw-semibold"><i class="bi bi-file-text me-2"></i>โครงการสอน — ${DOMPurify.sanitize(sub?.name || '')} / ${DOMPurify.sanitize(cls?.name || '')}</span>
+          ${cs ? '<span class="badge bg-white text-primary">มีข้อมูลแล้ว</span>' : '<span class="badge bg-warning text-dark">ยังไม่มีข้อมูล</span>'}
+        </div>
         <div class="card-body">
-          <div class="row g-2 mb-2">
+          <div class="row g-3 mb-3">
             <div class="col-md-3">
-              <label class="form-label small mb-1">จำนวนชั่วโมง</label>
+              <label class="form-label small mb-1">จำนวนชั่วโมงรวม</label>
               <input type="number" class="form-control" id="cs-hours" value="${cs?.total_hours || ''}" placeholder="40">
             </div>
             <div class="col-md-9">
               <label class="form-label small mb-1">สัดส่วนคะแนน</label>
-              <input type="text" class="form-control" id="cs-score-dist" value="${DOMPurify.sanitize(cs?.score_distribution || '')}" placeholder="เช่น คะแนนระหว่างเรียน 70 : สอบปลายภาค 30">
+              <input class="form-control" id="cs-score-dist" value="${DOMPurify.sanitize(cs?.score_distribution || '')}" placeholder="เช่น คะแนนระหว่างเรียน 70 : ปลายภาค 30">
             </div>
           </div>
-          <div class="mb-2">
-            <label class="form-label small mb-1">จุดประสงค์การเรียนรู้</label>
-            <textarea class="form-control" id="cs-objectives" rows="2" placeholder="ตัวชี้วัด / ผลการเรียนรู้ที่คาดหวัง">${DOMPurify.sanitize(cs?.learning_objectives || '')}</textarea>
+          <div class="mb-3">
+            <label class="form-label small mb-1">จุดมุ่งหมาย / ผลการเรียนรู้ที่คาดหวัง</label>
+            <textarea class="form-control" id="cs-objectives" rows="3" placeholder="นักเรียนมีความรู้ ความสามารถ...">${DOMPurify.sanitize(cs?.learning_objectives || '')}</textarea>
           </div>
-          <button class="btn btn-primary btn-sm" id="cs-save"><i class="bi bi-check-lg me-1"></i>บันทึกโครงสร้าง</button>
+          <button class="btn btn-primary" id="cs-save"><i class="bi bi-check-lg me-1"></i>บันทึกโครงการสอน</button>
         </div>
       </div>
 
-      <!-- Units -->
       <div class="card border-0 shadow-sm">
         <div class="card-header bg-white d-flex justify-content-between align-items-center">
           <span class="fw-semibold"><i class="bi bi-list-ol me-2"></i>หน่วยการเรียนรู้</span>
-          ${cs ? `<button class="btn btn-sm btn-outline-primary" id="cs-add-unit"><i class="bi bi-plus-lg me-1"></i>เพิ่มหน่วย</button>` : ''}
+          <div id="cs-unit-header-btn">
+            ${cs ? '<button class="btn btn-sm btn-outline-primary" id="cs-add-unit-btn"><i class="bi bi-plus-lg me-1"></i>เพิ่มหน่วย</button>' : '<span class="text-muted small">บันทึกโครงการสอนก่อน</span>'}
+          </div>
         </div>
-        <div class="card-body" id="cs-units-area">
-          ${cs ? '<div class="loading"></div>' : '<p class="text-muted mb-0">บันทึกโครงสร้างก่อนเพื่อเพิ่มหน่วยการเรียนรู้</p>'}
+        <div class="card-body p-0" id="cs-units-area">
+          <div class="p-3 text-muted small">กำลังโหลด...</div>
+        </div>
+        <div id="unit-form-wrap" class="d-none p-3 border-top bg-light">
+          <div class="fw-semibold small mb-2" id="unit-form-title">เพิ่มหน่วยการเรียนรู้</div>
+          <input type="hidden" id="unit-edit-id">
+          <div class="row g-2 mb-2">
+            <div class="col-md-2"><label class="form-label small mb-1">หน่วยที่ *</label><input type="number" class="form-control form-control-sm" id="unit-num" value="1" min="1"></div>
+            <div class="col-md-7"><label class="form-label small mb-1">ชื่อหน่วย *</label><input class="form-control form-control-sm" id="unit-title" placeholder="เช่น จังหวะและการนับจังหวะ"></div>
+            <div class="col-md-3"><label class="form-label small mb-1">ชั่วโมง</label><input type="number" class="form-control form-control-sm" id="unit-hours" step="0.5" min="0" placeholder="8"></div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small mb-1">รายละเอียด / เนื้อหาสาระ</label>
+            <textarea class="form-control form-control-sm" id="unit-desc" rows="2" placeholder="สาระสำคัญ เนื้อหา..."></textarea>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small mb-1">ตัวชี้วัด / มาตรฐาน</label>
+            <textarea class="form-control form-control-sm" id="unit-indicators" rows="2" placeholder="ตัวชี้วัดที่..."></textarea>
+          </div>
+          <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-primary" id="btn-unit-save"><i class="bi bi-check-lg me-1"></i>บันทึก</button>
+            <button class="btn btn-sm btn-outline-secondary" id="btn-unit-cancel">ยกเลิก</button>
+          </div>
         </div>
       </div>`;
 
-    document.getElementById('cs-save').addEventListener('click', () => this.saveStructure(subjectId, classroomId));
+    document.getElementById('cs-save').addEventListener('click', () => this.saveStructure(subjectId, classroomId, area));
 
     if (cs) {
-      this.currentCSId = cs.id;
-      document.getElementById('cs-add-unit').addEventListener('click', () => this.addUnit());
-      this.loadUnits(cs.id);
-    }
-  },
-
-  async saveStructure(subjectId, classroomId) {
-    const res = await API.post('/api/course-structure', {
-      subject_id: subjectId,
-      classroom_id: classroomId,
-      semester_id: this.activeSemId,
-      total_hours: document.getElementById('cs-hours').value ? parseFloat(document.getElementById('cs-hours').value) : null,
-      score_distribution: document.getElementById('cs-score-dist').value.trim(),
-      learning_objectives: document.getElementById('cs-objectives').value.trim()
-    });
-    if (res.success) {
-      App.toast(res.data.updated ? 'อัพเดตโครงสร้างแล้ว' : 'สร้างโครงสร้างแล้ว!');
-      this.loadStructure();
+      document.getElementById('cs-add-unit-btn').addEventListener('click', () => this._showUnitForm(null));
+      this._bindUnitForm(area);
+      this.loadUnits(cs.id, area);
     } else {
-      App.toast(res.error || 'บันทึกไม่สำเร็จ', 'danger');
+      document.getElementById('cs-units-area').innerHTML = '<p class="text-muted small p-3">บันทึกโครงการสอนก่อนเพื่อเพิ่มหน่วยการเรียนรู้</p>';
     }
   },
 
-  async loadUnits(csId) {
+  async saveStructure(subjectId, classroomId, area) {
+    const body = {
+      subject_id:           subjectId,
+      classroom_id:         classroomId,
+      semester_id:          this.activeSemId,
+      total_hours:          document.getElementById('cs-hours').value ? parseFloat(document.getElementById('cs-hours').value) : null,
+      score_distribution:   document.getElementById('cs-score-dist').value.trim(),
+      learning_objectives:  document.getElementById('cs-objectives').value.trim(),
+    };
+    const res = await API.post('/api/course-structure', body);
+    if (res.success || res.data) {
+      App.toast('บันทึกโครงการสอนแล้ว');
+      // reload to get cs.id for units
+      const reRes = await API.get(`/api/course-structure?subject_id=${subjectId}&classroom_id=${classroomId}`);
+      const cs = (reRes.success ? reRes.data : [])[0];
+      if (cs) {
+        this._csId = cs.id;
+        document.getElementById('cs-unit-header-btn').innerHTML = '<button class="btn btn-sm btn-outline-primary" id="cs-add-unit-btn"><i class="bi bi-plus-lg me-1"></i>เพิ่มหน่วย</button>';
+        document.getElementById('cs-add-unit-btn').addEventListener('click', () => this._showUnitForm(null));
+        this._bindUnitForm(area);
+        this.loadUnits(cs.id, area);
+      }
+    } else App.toast(res.error || 'บันทึกไม่สำเร็จ', 'danger');
+  },
+
+  _showUnitForm(unit) {
+    const wrap = document.getElementById('unit-form-wrap');
+    if (!wrap) return;
+    wrap.classList.remove('d-none');
+    document.getElementById('unit-form-title').textContent = unit ? 'แก้ไขหน่วย' : 'เพิ่มหน่วยการเรียนรู้';
+    document.getElementById('unit-edit-id').value     = unit?.id || '';
+    document.getElementById('unit-num').value         = unit?.unit_number ?? (this._unitCount + 1);
+    document.getElementById('unit-title').value       = unit?.title || '';
+    document.getElementById('unit-hours').value       = unit?.hours || '';
+    document.getElementById('unit-desc').value        = unit?.description || '';
+    document.getElementById('unit-indicators').value  = unit?.indicators || '';
+    document.getElementById('unit-title').focus();
+  },
+
+  _bindUnitForm(area) {
+    const wrap = document.getElementById('unit-form-wrap');
+    document.getElementById('btn-unit-cancel').addEventListener('click', () => wrap.classList.add('d-none'));
+    document.getElementById('btn-unit-save').addEventListener('click', async () => {
+      const title = document.getElementById('unit-title').value.trim();
+      if (!title) { App.toast('กรุณากรอกชื่อหน่วย', 'warning'); return; }
+      const editId = document.getElementById('unit-edit-id').value;
+      const body = {
+        course_structure_id: this._csId,
+        title,
+        unit_number: parseInt(document.getElementById('unit-num').value) || 1,
+        hours:       document.getElementById('unit-hours').value ? parseFloat(document.getElementById('unit-hours').value) : null,
+        description: document.getElementById('unit-desc').value.trim() || null,
+        indicators:  document.getElementById('unit-indicators').value.trim() || null,
+      };
+      const res = editId ? await API.put(`/api/course-structure/units/${editId}`, body) : await API.post('/api/course-structure/units', body);
+      if (res.success || res.data) {
+        App.toast(editId ? 'อัปเดตหน่วยแล้ว' : 'เพิ่มหน่วยแล้ว');
+        wrap.classList.add('d-none');
+        this.loadUnits(this._csId, area);
+      } else App.toast(res.error || 'บันทึกไม่สำเร็จ', 'danger');
+    });
+  },
+
+  async loadUnits(csId, area) {
     const res = await API.get(`/api/course-structure/units/${csId}`);
     const units = res.success ? res.data : [];
-    const area = document.getElementById('cs-units-area');
-    if (units.length === 0) {
-      area.innerHTML = '<p class="text-muted mb-0">ยังไม่มีหน่วยการเรียนรู้ — กดปุ่ม "เพิ่มหน่วย"</p>';
+    this._unitCount = units.length;
+    const uArea = document.getElementById('cs-units-area');
+    if (!uArea) return;
+    if (!units.length) {
+      uArea.innerHTML = '<p class="text-muted small p-3">ยังไม่มีหน่วยการเรียนรู้ — กดปุ่ม "เพิ่มหน่วย"</p>';
       return;
     }
-    area.innerHTML = units.map(u => `
-      <div class="border rounded-3 p-3 mb-2 bg-light d-flex justify-content-between align-items-start">
-        <div>
-          <strong>หน่วยที่ ${u.unit_number}:</strong> ${DOMPurify.sanitize(u.title)}
-          ${u.hours ? `<span class="badge bg-info ms-2">${u.hours} ชม.</span>` : ''}
-          ${u.description ? `<div class="small text-muted mt-1">${DOMPurify.sanitize(u.description)}</div>` : ''}
-        </div>
-        <button class="btn btn-sm btn-outline-danger" onclick="App.modules['course-structure'].deleteUnit('${u.id}')"><i class="bi bi-trash"></i></button>
-      </div>`).join('');
+    uArea.innerHTML = `
+      <div class="list-group list-group-flush">
+        ${units.map(u => `
+        <div class="list-group-item list-group-item-action py-3" data-unit-id="${u.id}">
+          <div class="d-flex justify-content-between align-items-start gap-2">
+            <div class="flex-grow-1">
+              <div class="d-flex align-items-center gap-2 mb-1">
+                <span class="badge bg-primary">หน่วยที่ ${u.unit_number}</span>
+                <strong>${DOMPurify.sanitize(u.title)}</strong>
+                ${u.hours ? `<span class="badge bg-info text-dark">${u.hours} ชม.</span>` : ''}
+              </div>
+              ${u.description ? `<div class="small text-muted mb-1">${DOMPurify.sanitize(u.description)}</div>` : ''}
+              ${u.indicators ? `<div class="small text-secondary"><i class="bi bi-check2-square me-1"></i>${DOMPurify.sanitize(u.indicators)}</div>` : ''}
+            </div>
+            <div class="d-flex gap-1 flex-shrink-0">
+              <button class="btn btn-sm btn-outline-secondary btn-edit-unit" data-uid="${u.id}" title="แก้ไข"><i class="bi bi-pencil"></i></button>
+              <button class="btn btn-sm btn-outline-danger btn-del-unit" data-uid="${u.id}" title="ลบ"><i class="bi bi-trash"></i></button>
+            </div>
+          </div>
+        </div>`).join('')}
+      </div>`;
+    uArea.querySelectorAll('.btn-edit-unit').forEach(btn => btn.addEventListener('click', () => {
+      const u = units.find(u => u.id === btn.dataset.uid);
+      if (u) { this._showUnitForm(u); document.getElementById('unit-form-wrap').scrollIntoView({ behavior: 'smooth' }); }
+    }));
+    uArea.querySelectorAll('.btn-del-unit').forEach(btn => btn.addEventListener('click', async () => {
+      if (!confirm('ลบหน่วยนี้? (แผนการสอนในหน่วยนี้จะถูกลบด้วย)')) return;
+      const r = await API.del(`/api/course-structure/units/${btn.dataset.uid}`);
+      if (r.success || r.data) { App.toast('ลบหน่วยแล้ว'); this.loadUnits(csId, area); }
+      else App.toast(r.error || 'ลบไม่สำเร็จ', 'danger');
+    }));
   },
-
-  async addUnit() {
-    const title = prompt('ชื่อหน่วยการเรียนรู้:');
-    if (!title) return;
-    const num = prompt('หน่วยที่:', '1');
-    const hours = prompt('จำนวนชั่วโมง:', '');
-    const res = await API.post('/api/course-structure/units', {
-      course_structure_id: this.currentCSId,
-      title,
-      unit_number: parseInt(num) || 1,
-      hours: hours ? parseFloat(hours) : null
-    });
-    if (res.success) {
-      App.toast('เพิ่มหน่วยแล้ว');
-      this.loadUnits(this.currentCSId);
-    } else {
-      App.toast(res.error || 'เพิ่มไม่สำเร็จ', 'danger');
-    }
-  },
-
-  async deleteUnit(id) {
-    if (!confirm('ลบหน่วยนี้?')) return;
-    const res = await API.del(`/api/course-structure/units/${id}`);
-    if (res.success) { App.toast('ลบหน่วยแล้ว'); this.loadUnits(this.currentCSId); }
-    else App.toast(res.error || 'ลบไม่สำเร็จ', 'danger');
-  }
 };
 
 // ==================== Register Lesson Plan Module ====================
 
 App.modules['lesson-plan'] = {
+  _allPlans: [],
+  _units: [],
+
   async render(container) {
     container.innerHTML = '<div class="loading"></div>';
-
     const [semRes, subRes, clsRes] = await Promise.all([
-      API.get('/api/semesters'),
-      API.get('/api/subjects'),
-      API.get('/api/classrooms')
+      API.get('/api/semesters'), API.get('/api/subjects'), API.get('/api/classrooms')
     ]);
-
     const activeSem = (semRes.success ? semRes.data : []).find(s => s.is_active);
-    const subjects = subRes.success ? subRes.data : [];
-    const classrooms = clsRes.success ? clsRes.data : [];
+    this._subjects   = subRes.success ? subRes.data : [];
+    this._classrooms = clsRes.success ? clsRes.data : [];
 
     if (!activeSem) {
-      container.innerHTML = '<div class="alert alert-warning">ไม่พบภาคเรียนที่เปิดใช้งาน</div>';
+      container.innerHTML = '<div class="alert alert-warning">ไม่พบภาคเรียนที่เปิดใช้งาน กรุณาไปตั้งค่าภาคเรียนก่อน</div>';
       return;
     }
     this.activeSemId = activeSem.id;
-    this.subjects = subjects;
-    this.classrooms = classrooms;
 
     container.innerHTML = `
-      <h4 class="fw-bold mb-4"><i class="bi bi-journal-text me-2 text-primary"></i>แผนการจัดการเรียนรู้</h4>
-      <p class="text-muted small mb-3">เลือกวิชาเพื่อดูหน่วยการเรียนรู้ แล้วกดเขียนแผน</p>
-      <div class="row g-2 mb-4">
-        <div class="col-md-3">
-          <select class="form-select" id="lp-subject">
-            <option value="">— เลือกวิชา —</option>
-            ${subjects.map(s => `<option value="${s.id}">${DOMPurify.sanitize(s.code)} ${DOMPurify.sanitize(s.name)}</option>`).join('')}
-          </select>
-        </div>
-        <div class="col-md-3">
-          <select class="form-select" id="lp-classroom">
-            <option value="">— เลือกห้องเรียน —</option>
-            ${classrooms.map(c => `<option value="${c.id}">${DOMPurify.sanitize(c.name)}</option>`).join('')}
-          </select>
-        </div>
-        <div class="col-md-3">
-          <button class="btn btn-primary w-100" id="lp-load"><i class="bi bi-search me-1"></i>โหลดแผน</button>
-        </div>
-        <div class="col-md-3">
-          <button class="btn btn-outline-info w-100" id="lp-ai"><i class="bi bi-stars me-1"></i>AI ร่างแผนสอน</button>
+      <h4 class="fw-bold mb-3"><i class="bi bi-journal-text me-2 text-primary"></i>แผนการจัดการเรียนรู้</h4>
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+          <div class="row g-2 align-items-end">
+            <div class="col-md-4">
+              <label class="form-label small mb-1">วิชา</label>
+              <select class="form-select" id="lp-subject">
+                <option value="">— เลือกวิชา —</option>
+                ${this._subjects.map(s => `<option value="${s.id}">${DOMPurify.sanitize(s.code)} ${DOMPurify.sanitize(s.name)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small mb-1">ห้องเรียน</label>
+              <select class="form-select" id="lp-classroom">
+                <option value="">— เลือกห้องเรียน —</option>
+                ${this._classrooms.map(c => `<option value="${c.id}">${DOMPurify.sanitize(c.name)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="col-md-4 d-flex gap-2">
+              <button class="btn btn-primary flex-fill" id="lp-load"><i class="bi bi-search me-1"></i>โหลดแผน</button>
+              <button class="btn btn-outline-info" id="lp-ai" title="AI ร่างแผน"><i class="bi bi-stars me-1"></i>AI</button>
+            </div>
+          </div>
         </div>
       </div>
-      <div id="lp-content"></div>`;
+      <div id="lp-content"></div>
 
-    document.getElementById('lp-load').addEventListener('click', () => this.loadPlans());
-    document.getElementById('lp-ai').addEventListener('click', () => {
+      <!-- View Plan Modal -->
+      <div class="modal fade" id="plan-view-modal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title" id="plan-modal-title">แผนการสอน</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="plan-modal-body"></div>
+            <div class="modal-footer">
+              <button class="btn btn-outline-secondary" id="btn-print-plan"><i class="bi bi-printer me-1"></i>พิมพ์</button>
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ปิด</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+
+    container.querySelector('#lp-load').addEventListener('click', () => this.loadPlans());
+    container.querySelector('#lp-ai').addEventListener('click', () => {
       const subEl = document.getElementById('lp-subject');
       const subName = subEl.options[subEl.selectedIndex]?.text || '';
       AIPanel.open('lesson_plan', { subject: subName }, 'chat');
     });
+    container.querySelector('#btn-print-plan').addEventListener('click', () => window.print());
   },
 
   async loadPlans() {
-    const subjectId = document.getElementById('lp-subject').value;
+    const subjectId   = document.getElementById('lp-subject').value;
     const classroomId = document.getElementById('lp-classroom').value;
     if (!subjectId || !classroomId) { App.toast('เลือกวิชาและห้องเรียนก่อน', 'warning'); return; }
+
+    this._subjectId   = subjectId;
+    this._classroomId = classroomId;
 
     const area = document.getElementById('lp-content');
     area.innerHTML = '<div class="loading"></div>';
 
-    // Get course structure + units first
     const csRes = await API.get(`/api/course-structure?subject_id=${subjectId}&classroom_id=${classroomId}`);
     const cs = (csRes.success ? csRes.data : [])[0];
 
     if (!cs) {
-      area.innerHTML = '<div class="alert alert-info">ยังไม่มีโครงสร้างรายวิชา — กรุณาไปตั้งค่าที่เมนู "โครงสร้างรายวิชา" ก่อน</div>';
+      area.innerHTML = `<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>ยังไม่มีโครงการสอนสำหรับวิชาและห้องเรียนนี้ กรุณาไปสร้างที่ <strong>โครงการสอน</strong> ก่อน</div>`;
       return;
     }
 
-    const unitsRes = await API.get(`/api/course-structure/units/${cs.id}`);
-    const units = unitsRes.success ? unitsRes.data : [];
-    this.units = units;
+    const [unitsRes, plansRes] = await Promise.all([
+      API.get(`/api/course-structure/units/${cs.id}`),
+      API.get('/api/lesson-plan')
+    ]);
+    this._units    = unitsRes.success ? unitsRes.data : [];
+    this._allPlans = plansRes.success ? plansRes.data : [];
+    this._csId     = cs.id;
 
-    if (units.length === 0) {
-      area.innerHTML = '<div class="alert alert-info">ยังไม่มีหน่วยการเรียนรู้ — กรุณาไปเพิ่มที่ "โครงสร้างรายวิชา" ก่อน</div>';
+    if (!this._units.length) {
+      area.innerHTML = `<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>ยังไม่มีหน่วยการเรียนรู้ กรุณาไปเพิ่มที่ <strong>โครงการสอน</strong> ก่อน</div>`;
       return;
     }
+    this._renderPlanList(area);
+  },
 
-    // Get all plans for this teacher
-    const plansRes = await API.get('/api/lesson-plan');
-    const allPlans = plansRes.success ? plansRes.data : [];
+  _renderPlanList(area) {
+    const units    = this._units;
+    const allPlans = this._allPlans;
 
-    area.innerHTML = units.map(u => {
-      const unitPlans = allPlans.filter(p => p.learning_unit_id === u.id);
-      return `
-      <div class="card border-0 shadow-sm mb-3">
-        <div class="card-header bg-white d-flex justify-content-between align-items-center">
-          <span class="fw-semibold">หน่วยที่ ${u.unit_number}: ${DOMPurify.sanitize(u.title)}</span>
-          <button class="btn btn-sm btn-outline-primary" onclick="App.modules['lesson-plan'].showCreateForm('${u.id}', ${u.unit_number})"><i class="bi bi-plus-lg me-1"></i>เขียนแผน</button>
+    area.innerHTML = `
+      <div class="accordion" id="lp-accordion">
+        ${units.map(u => {
+          const unitPlans = allPlans.filter(p => p.learning_unit_id === u.id).sort((a, b) => (a.plan_number || 0) - (b.plan_number || 0));
+          return `
+          <div class="accordion-item border-0 shadow-sm mb-2">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#lp-unit-${u.id}">
+                <div class="d-flex align-items-center gap-2 w-100">
+                  <span class="badge bg-primary">หน่วยที่ ${u.unit_number}</span>
+                  <span class="fw-semibold">${DOMPurify.sanitize(u.title)}</span>
+                  ${u.hours ? `<span class="badge bg-light text-dark ms-1">${u.hours} ชม.</span>` : ''}
+                  <span class="badge ms-auto ${unitPlans.length ? 'bg-success' : 'bg-light text-dark'}">${unitPlans.length} แผน</span>
+                </div>
+              </button>
+            </h2>
+            <div id="lp-unit-${u.id}" class="accordion-collapse collapse">
+              <div class="accordion-body pt-2">
+                ${unitPlans.map(p => `
+                <div class="card border-0 bg-light mb-2">
+                  <div class="card-body py-2 px-3">
+                    <div class="d-flex justify-content-between align-items-start">
+                      <div class="flex-grow-1">
+                        <span class="fw-semibold">แผนที่ ${p.plan_number || '-'}: ${DOMPurify.sanitize(p.title)}</span>
+                        <div class="small text-muted mt-1">
+                          ${p.date ? `<i class="bi bi-calendar me-1"></i>${p.date}` : ''}
+                          ${p.period ? `<span class="ms-2"><i class="bi bi-clock me-1"></i>คาบ ${p.period}</span>` : ''}
+                          ${p.duration_minutes ? `<span class="ms-2">${p.duration_minutes} นาที</span>` : ''}
+                        </div>
+                        ${p.objectives ? `<div class="small text-primary mt-1"><strong>จุดประสงค์:</strong> ${DOMPurify.sanitize(p.objectives).substring(0, 120)}${p.objectives.length > 120 ? '...' : ''}</div>` : ''}
+                      </div>
+                      <div class="d-flex gap-1 ms-2 flex-shrink-0">
+                        <button class="btn btn-sm btn-outline-info btn-view-plan" data-pid="${p.id}" title="ดูรายละเอียด"><i class="bi bi-eye"></i></button>
+                        <button class="btn btn-sm btn-outline-primary btn-edit-plan" data-pid="${p.id}" data-uid="${u.id}" data-unum="${u.unit_number}" title="แก้ไข"><i class="bi bi-pencil"></i></button>
+                        <button class="btn btn-sm btn-outline-danger btn-del-plan" data-pid="${p.id}" title="ลบ"><i class="bi bi-trash"></i></button>
+                      </div>
+                    </div>
+                  </div>
+                </div>`).join('')}
+                <div id="plan-form-area-${u.id}"></div>
+                <button class="btn btn-sm btn-outline-primary mt-1 btn-show-plan-form" data-uid="${u.id}" data-unum="${u.unit_number}">
+                  <i class="bi bi-plus-lg me-1"></i>เขียนแผนใหม่
+                </button>
+              </div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>`;
+
+    area.querySelectorAll('.btn-view-plan').forEach(btn => btn.addEventListener('click', () => {
+      const plan = this._allPlans.find(p => p.id === btn.dataset.pid);
+      if (plan) this._viewPlan(plan);
+    }));
+    area.querySelectorAll('.btn-edit-plan').forEach(btn => btn.addEventListener('click', () => {
+      const plan = this._allPlans.find(p => p.id === btn.dataset.pid);
+      if (plan) this._showPlanForm(btn.dataset.uid, parseInt(btn.dataset.unum), plan);
+    }));
+    area.querySelectorAll('.btn-del-plan').forEach(btn => btn.addEventListener('click', () => this._deletePlan(btn.dataset.pid)));
+    area.querySelectorAll('.btn-show-plan-form').forEach(btn => btn.addEventListener('click', () => {
+      this._showPlanForm(btn.dataset.uid, parseInt(btn.dataset.unum), null);
+    }));
+  },
+
+  _showPlanForm(unitId, unitNum, existingPlan) {
+    // Close any other open plan forms to avoid duplicate IDs
+    document.querySelectorAll('[id^="plan-form-area-"]').forEach(el => {
+      if (el.id !== `plan-form-area-${unitId}`) el.innerHTML = '';
+    });
+    const formArea = document.getElementById(`plan-form-area-${unitId}`);
+    if (!formArea) return;
+    const isEdit    = !!existingPlan;
+    const planCount = this._allPlans.filter(p => p.learning_unit_id === unitId).length;
+
+    formArea.innerHTML = `
+      <div class="card border-primary border-2 shadow-sm my-2">
+        <div class="card-header bg-white fw-semibold small">
+          <i class="bi bi-pencil-square me-2"></i>${isEdit ? 'แก้ไขแผน' : `เขียนแผนใหม่ — หน่วยที่ ${unitNum}`}
         </div>
         <div class="card-body">
-          ${unitPlans.length === 0 ? '<p class="text-muted small mb-0">ยังไม่มีแผนสำหรับหน่วยนี้</p>' :
-          unitPlans.map(p => `
-            <div class="border rounded-3 p-2 mb-2 bg-light d-flex justify-content-between align-items-start">
-              <div>
-                <strong>แผนที่ ${p.plan_number || '-'}:</strong> ${DOMPurify.sanitize(p.title)}
-                ${p.date ? `<span class="text-muted small ms-2">${p.date}</span>` : ''}
-                ${p.period ? `<span class="badge bg-secondary ms-1">คาบ ${p.period}</span>` : ''}
-              </div>
-              <button class="btn btn-sm btn-outline-danger" onclick="App.modules['lesson-plan'].deletePlan('${p.id}')"><i class="bi bi-trash"></i></button>
-            </div>`).join('')}
+          <input type="hidden" id="lp-edit-id" value="${existingPlan?.id || ''}">
+          <div class="row g-2 mb-2">
+            <div class="col-md-2"><label class="form-label small mb-1">แผนที่</label><input type="number" class="form-control form-control-sm" id="lp-num" value="${existingPlan?.plan_number ?? planCount + 1}" min="1"></div>
+            <div class="col-md-4"><label class="form-label small mb-1">ชื่อแผน *</label><input class="form-control form-control-sm" id="lp-title" value="${DOMPurify.sanitize(existingPlan?.title || '')}" placeholder="เช่น บทนำ: จังหวะพื้นฐาน"></div>
+            <div class="col-md-2"><label class="form-label small mb-1">วันที่</label><input type="date" class="form-control form-control-sm" id="lp-date" value="${existingPlan?.date || ''}"></div>
+            <div class="col-md-2"><label class="form-label small mb-1">คาบ</label><input type="number" class="form-control form-control-sm" id="lp-period" value="${existingPlan?.period || ''}" min="1" max="9"></div>
+            <div class="col-md-2"><label class="form-label small mb-1">นาที</label><input type="number" class="form-control form-control-sm" id="lp-duration" value="${existingPlan?.duration_minutes || 50}" min="1"></div>
+          </div>
+          <div class="mb-2"><label class="form-label small mb-1">จุดประสงค์การเรียนรู้</label><textarea class="form-control form-control-sm" id="lp-objectives" rows="2" placeholder="นักเรียนสามารถ...">${DOMPurify.sanitize(existingPlan?.objectives || '')}</textarea></div>
+          <div class="mb-2"><label class="form-label small mb-1">สาระสำคัญ / เนื้อหา</label><textarea class="form-control form-control-sm" id="lp-content-text" rows="2">${DOMPurify.sanitize(existingPlan?.content || '')}</textarea></div>
+          <div class="mb-2"><label class="form-label small mb-1">ขั้นตอนการจัดกิจกรรม</label><textarea class="form-control form-control-sm" id="lp-steps" rows="4" placeholder="ขั้นนำ (5 นาที):\nขั้นสอน (35 นาที):\nขั้นสรุป (10 นาที):">${DOMPurify.sanitize(existingPlan?.steps || '')}</textarea></div>
+          <div class="row g-2 mb-2">
+            <div class="col-md-6"><label class="form-label small mb-1">สื่อ/อุปกรณ์/แหล่งเรียนรู้</label><textarea class="form-control form-control-sm" id="lp-materials" rows="2">${DOMPurify.sanitize(existingPlan?.materials || '')}</textarea></div>
+            <div class="col-md-6"><label class="form-label small mb-1">การวัดและประเมินผล</label><textarea class="form-control form-control-sm" id="lp-assessment" rows="2">${DOMPurify.sanitize(existingPlan?.assessment_notes || '')}</textarea></div>
+          </div>
+          <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-primary" id="btn-lp-save"><i class="bi bi-check-lg me-1"></i>บันทึกแผน</button>
+            <button class="btn btn-sm btn-outline-secondary" id="btn-lp-cancel">ยกเลิก</button>
+          </div>
         </div>
       </div>`;
-    }).join('');
+
+    formArea.querySelector('#btn-lp-cancel').addEventListener('click', () => { formArea.innerHTML = ''; });
+    formArea.querySelector('#btn-lp-save').addEventListener('click', () => this._savePlan(unitId, formArea));
+    formArea.querySelector('#lp-title')?.focus();
   },
 
-  showCreateForm(unitId, unitNum) {
-    const area = document.getElementById('lp-content');
-    area.insertAdjacentHTML('afterbegin', `
-    <div class="card border-0 shadow-sm mb-3 border-primary" id="lp-form-card" style="border-left:4px solid var(--bs-primary)!important">
-      <div class="card-header bg-white fw-semibold"><i class="bi bi-pencil me-2"></i>เขียนแผนใหม่ — หน่วยที่ ${unitNum}</div>
-      <div class="card-body">
-        <div class="row g-2 mb-2">
-          <div class="col-md-3">
-            <label class="form-label small mb-1">แผนที่</label>
-            <input type="number" class="form-control" id="lp-num" value="1">
-          </div>
-          <div class="col-md-5">
-            <label class="form-label small mb-1">ชื่อแผน</label>
-            <input type="text" class="form-control" id="lp-title" placeholder="เช่น การฝึกจังหวะ 4/4">
-          </div>
-          <div class="col-md-2">
-            <label class="form-label small mb-1">วันที่</label>
-            <input type="date" class="form-control" id="lp-date">
-          </div>
-          <div class="col-md-2">
-            <label class="form-label small mb-1">คาบ</label>
-            <input type="number" class="form-control" id="lp-period" min="1" max="8">
-          </div>
-        </div>
-        <div class="mb-2">
-          <label class="form-label small mb-1">จุดประสงค์</label>
-          <textarea class="form-control" id="lp-objectives" rows="2" placeholder="นักเรียนสามารถ..."></textarea>
-        </div>
-        <div class="mb-2">
-          <label class="form-label small mb-1">เนื้อหา</label>
-          <textarea class="form-control" id="lp-content-text" rows="2" placeholder="เนื้อหาที่สอน..."></textarea>
-        </div>
-        <div class="mb-2">
-          <label class="form-label small mb-1">ขั้นตอนการเรียนรู้</label>
-          <textarea class="form-control" id="lp-steps" rows="3" placeholder="ขั้นนำ: ...&#10;ขั้นสอน: ...&#10;ขั้นสรุป: ..."></textarea>
-        </div>
-        <div class="row g-2 mb-2">
-          <div class="col-md-6">
-            <label class="form-label small mb-1">สื่อ/อุปกรณ์</label>
-            <input type="text" class="form-control" id="lp-materials" placeholder="เช่น กลอง, คีย์บอร์ด, ใบงาน">
-          </div>
-          <div class="col-md-6">
-            <label class="form-label small mb-1">การวัดผล</label>
-            <input type="text" class="form-control" id="lp-assessment" placeholder="เช่น สังเกตการปฏิบัติ, ใบงาน">
-          </div>
-        </div>
-        <button class="btn btn-primary btn-sm" onclick="App.modules['lesson-plan'].savePlan('${unitId}')"><i class="bi bi-check-lg me-1"></i>บันทึกแผน</button>
-        <button class="btn btn-outline-secondary btn-sm ms-1" onclick="document.getElementById('lp-form-card').remove()">ยกเลิก</button>
-      </div>
-    </div>`);
-    document.getElementById('lp-title').focus();
-  },
-
-  async savePlan(unitId) {
-    const title = document.getElementById('lp-title').value.trim();
+  async _savePlan(unitId, formArea) {
+    const g = (id) => formArea.querySelector(`#${id}`);
+    const title = g('lp-title')?.value.trim();
     if (!title) { App.toast('กรุณากรอกชื่อแผน', 'warning'); return; }
-
-    // Need a lesson_model_id — create a default one if none exists
-    let modelId = this._defaultModelId;
-    if (!modelId) {
-      modelId = 'model-default';
-    }
-
-    const res = await API.post('/api/lesson-plan', {
-      learning_unit_id: unitId,
-      semester_id: this.activeSemId,
-      lesson_model_id: modelId,
-      plan_number: parseInt(document.getElementById('lp-num').value) || 1,
+    const editId = g('lp-edit-id')?.value;
+    const body = {
+      learning_unit_id:  unitId,
+      semester_id:       this.activeSemId,
+      plan_number:       parseInt(g('lp-num')?.value) || 1,
       title,
-      date: document.getElementById('lp-date').value || null,
-      period: document.getElementById('lp-period').value ? parseInt(document.getElementById('lp-period').value) : null,
-      objectives: document.getElementById('lp-objectives').value.trim(),
-      content: document.getElementById('lp-content-text').value.trim(),
-      steps: document.getElementById('lp-steps').value.trim(),
-      materials: document.getElementById('lp-materials').value.trim(),
-      assessment_notes: document.getElementById('lp-assessment').value.trim()
-    });
-
-    if (res.success) {
-      App.toast('บันทึกแผนสำเร็จ!');
-      this.loadPlans();
-    } else {
-      App.toast(res.error || 'บันทึกไม่สำเร็จ', 'danger');
-    }
+      date:              g('lp-date')?.value || null,
+      period:            g('lp-period')?.value ? parseInt(g('lp-period').value) : null,
+      duration_minutes:  g('lp-duration')?.value ? parseInt(g('lp-duration').value) : 50,
+      objectives:        g('lp-objectives')?.value.trim() || null,
+      content:           g('lp-content-text')?.value.trim() || null,
+      steps:             g('lp-steps')?.value.trim() || null,
+      materials:         g('lp-materials')?.value.trim() || null,
+      assessment_notes:  g('lp-assessment')?.value.trim() || null,
+    };
+    const res = editId ? await API.put(`/api/lesson-plan/${editId}`, body) : await API.post('/api/lesson-plan', body);
+    if (res.success || res.data) {
+      App.toast(editId ? 'อัปเดตแผนแล้ว' : 'บันทึกแผนสำเร็จ!');
+      await this.loadPlans();
+    } else App.toast(res.error || 'บันทึกไม่สำเร็จ', 'danger');
   },
 
-  async deletePlan(id) {
+  async _deletePlan(id) {
     if (!confirm('ลบแผนนี้?')) return;
     const res = await API.del(`/api/lesson-plan/${id}`);
-    if (res.success) { App.toast('ลบแผนแล้ว'); this.loadPlans(); }
+    if (res.success || res.data) { App.toast('ลบแผนแล้ว'); await this.loadPlans(); }
     else App.toast(res.error || 'ลบไม่สำเร็จ', 'danger');
-  }
+  },
+
+  _viewPlan(plan) {
+    const unit = this._units.find(u => u.id === plan.learning_unit_id);
+    document.getElementById('plan-modal-title').textContent = `แผนที่ ${plan.plan_number || '-'}: ${plan.title}`;
+    document.getElementById('plan-modal-body').innerHTML = `
+      <div class="row mb-3 text-center">
+        <div class="col-4 border-end"><div class="small text-muted">หน่วยที่</div><strong>${unit ? `${unit.unit_number} ${DOMPurify.sanitize(unit.title)}` : '-'}</strong></div>
+        <div class="col-2 border-end"><div class="small text-muted">วันที่</div><strong>${plan.date || '-'}</strong></div>
+        <div class="col-2 border-end"><div class="small text-muted">คาบ</div><strong>${plan.period || '-'}</strong></div>
+        <div class="col-2"><div class="small text-muted">เวลา</div><strong>${plan.duration_minutes || 50} นาที</strong></div>
+      </div>
+      ${plan.objectives ? `<div class="mb-3"><h6 class="fw-bold border-bottom pb-1">จุดประสงค์การเรียนรู้</h6><div class="ps-2">${DOMPurify.sanitize(plan.objectives).replace(/\n/g, '<br>')}</div></div>` : ''}
+      ${plan.content ? `<div class="mb-3"><h6 class="fw-bold border-bottom pb-1">สาระสำคัญ / เนื้อหา</h6><div class="ps-2">${DOMPurify.sanitize(plan.content).replace(/\n/g, '<br>')}</div></div>` : ''}
+      ${plan.steps ? `<div class="mb-3"><h6 class="fw-bold border-bottom pb-1">ขั้นตอนการจัดกิจกรรม</h6><div class="ps-2" style="white-space:pre-line">${DOMPurify.sanitize(plan.steps)}</div></div>` : ''}
+      ${plan.materials ? `<div class="mb-3"><h6 class="fw-bold border-bottom pb-1">สื่อ / อุปกรณ์ / แหล่งเรียนรู้</h6><div class="ps-2">${DOMPurify.sanitize(plan.materials).replace(/\n/g, '<br>')}</div></div>` : ''}
+      ${plan.assessment_notes ? `<div class="mb-3"><h6 class="fw-bold border-bottom pb-1">การวัดและประเมินผล</h6><div class="ps-2">${DOMPurify.sanitize(plan.assessment_notes).replace(/\n/g, '<br>')}</div></div>` : ''}`;
+    const bsModal = new bootstrap.Modal(document.getElementById('plan-view-modal'));
+    bsModal.show();
+  },
+};
 };
 
 // ==================== Register Classroom-Materials Module ====================

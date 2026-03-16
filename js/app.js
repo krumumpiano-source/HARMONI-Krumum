@@ -4406,51 +4406,133 @@ App.modules['test'] = {
     if (!test) { App.toast('ไม่พบข้อมูลแบบทดสอบ', 'danger'); return; }
     if (!test.subject_id) { App.toast('แบบทดสอบนี้ไม่มีวิชาอ้างอิง', 'danger'); return; }
 
+    const area = this._area;
     const clsRes = await API.get('/api/classrooms');
     const classrooms = clsRes.success ? clsRes.data : [];
     if (!classrooms.length) { App.toast('ยังไม่มีห้องเรียน', 'danger'); return; }
 
-    const classroomGuide = classrooms.map(c => `${c.id} = ${c.name}`).join('\n');
-    const classroomId = prompt(`ระบุรหัสห้องเรียนที่จะมอบหมาย\n${classroomGuide}`);
-    if (!classroomId) return;
-
-    const stuRes = await API.get(`/api/students?classroom_id=${encodeURIComponent(classroomId)}`);
-    const students = stuRes.success ? stuRes.data : [];
-    if (!students.length) { App.toast('ไม่พบนักเรียนในห้องที่เลือก', 'danger'); return; }
-
-    const studentGuide = students.map(s => `${s.student_code} ${s.first_name} ${s.last_name}`).join('\n');
-    const codesInput = prompt(
-      `ระบุรหัสนักเรียนที่อนุญาต (คั่นด้วย ,)\nตัวอย่าง: 64001,64007\n\nรายชื่อในห้อง:\n${studentGuide}`
-    );
-    if (!codesInput) return;
-
-    const wantedCodes = codesInput.split(',').map(x => x.trim()).filter(Boolean);
-    const allowedIds = students
-      .filter(s => wantedCodes.includes(String(s.student_code || '').trim()))
-      .map(s => s.id);
-
-    if (!allowedIds.length) { App.toast('ไม่พบรหัสนักเรียนที่ระบุ', 'danger'); return; }
-
     const defaultDue = new Date();
     defaultDue.setDate(defaultDue.getDate() + 7);
-    const dueDate = prompt('กำหนดส่ง (YYYY-MM-DD)', defaultDue.toISOString().slice(0,10));
-    if (!dueDate) return;
 
-    const res = await API.post('/api/student-classroom/posts', {
-      title: `${test.title} (มอบหมายรายกรณี)`,
-      content: 'แบบทดสอบนี้มอบหมายให้ทำนอกเวลาเฉพาะนักเรียนที่กำหนด',
-      post_type: 'quiz',
-      test_id: test.id,
-      classroom_id: classroomId,
-      subject_id: test.subject_id,
-      semester_id: test.semester_id || this._activeSemId,
-      due_date: dueDate,
-      is_published: true,
-      allowed_student_ids: allowedIds
+    area.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="fw-bold mb-0"><i class="bi bi-house-check me-2 text-warning"></i>มอบหมายทำที่บ้านรายกรณี</h5>
+        <button class="btn btn-sm btn-outline-secondary" id="hw-back"><i class="bi bi-arrow-left me-1"></i>กลับ</button>
+      </div>
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+          <div class="mb-2"><strong>แบบทดสอบ:</strong> ${DOMPurify.sanitize(test.title || '')}</div>
+          <div class="row g-2 align-items-end">
+            <div class="col-md-5">
+              <label class="form-label">ห้องเรียน</label>
+              <select class="form-select" id="hw-classroom">
+                ${classrooms.map(c => `<option value="${App.esc(c.id)}">${DOMPurify.sanitize(c.name || '')}</option>`).join('')}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">กำหนดส่ง</label>
+              <input type="date" class="form-control" id="hw-due" value="${defaultDue.toISOString().slice(0,10)}">
+            </div>
+            <div class="col-md-3 d-grid">
+              <button class="btn btn-primary" id="hw-save"><i class="bi bi-check-lg me-1"></i>มอบหมาย</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="card border-0 shadow-sm">
+        <div class="card-body">
+          <div class="d-flex flex-wrap gap-2 mb-2">
+            <input class="form-control" id="hw-search" placeholder="ค้นหารหัส/ชื่อ" style="max-width:320px">
+            <button class="btn btn-sm btn-outline-primary" id="hw-select-all">เลือกทั้งหมด</button>
+            <button class="btn btn-sm btn-outline-secondary" id="hw-clear-all">ล้างทั้งหมด</button>
+            <span class="badge bg-light text-dark" id="hw-count">เลือก 0 คน</span>
+          </div>
+          <div id="hw-list" style="max-height:380px; overflow:auto"></div>
+        </div>
+      </div>`;
+
+    const classroomEl = document.getElementById('hw-classroom');
+    const listEl = document.getElementById('hw-list');
+    const countEl = document.getElementById('hw-count');
+    const searchEl = document.getElementById('hw-search');
+    let classroomStudents = [];
+
+    const updateCount = () => {
+      const selected = listEl.querySelectorAll('input[type="checkbox"]:checked').length;
+      countEl.textContent = `เลือก ${selected} คน`;
+    };
+
+    const renderStudents = (keyword = '') => {
+      const q = keyword.trim().toLowerCase();
+      const rows = classroomStudents.filter(s => {
+        if (!q) return true;
+        const text = `${s.student_code || ''} ${s.first_name || ''} ${s.last_name || ''}`.toLowerCase();
+        return text.includes(q);
+      });
+      if (!rows.length) {
+        listEl.innerHTML = '<div class="text-muted text-center py-3">ไม่พบนักเรียน</div>';
+        updateCount();
+        return;
+      }
+      listEl.innerHTML = rows.map(s => `
+        <label class="list-group-item d-flex align-items-center gap-2 border rounded mb-1">
+          <input class="form-check-input hw-stu" type="checkbox" value="${App.esc(s.id)}">
+          <span><strong>${DOMPurify.sanitize(s.student_code || '-')}</strong> — ${DOMPurify.sanitize(s.first_name || '')} ${DOMPurify.sanitize(s.last_name || '')}</span>
+        </label>`).join('');
+      listEl.querySelectorAll('.hw-stu').forEach(chk => chk.addEventListener('change', updateCount));
+      updateCount();
+    };
+
+    const loadStudents = async () => {
+      const classroomId = classroomEl.value;
+      listEl.innerHTML = '<div class="loading"></div>';
+      const stuRes = await API.get(`/api/students?classroom_id=${encodeURIComponent(classroomId)}`);
+      classroomStudents = stuRes.success ? stuRes.data : [];
+      renderStudents(searchEl.value || '');
+    };
+
+    classroomEl.addEventListener('change', loadStudents);
+    searchEl.addEventListener('input', () => renderStudents(searchEl.value || ''));
+    document.getElementById('hw-select-all').addEventListener('click', () => {
+      listEl.querySelectorAll('input[type="checkbox"]').forEach(chk => { chk.checked = true; });
+      updateCount();
+    });
+    document.getElementById('hw-clear-all').addEventListener('click', () => {
+      listEl.querySelectorAll('input[type="checkbox"]').forEach(chk => { chk.checked = false; });
+      updateCount();
     });
 
-    if (res.success) App.toast(`มอบหมายสำเร็จ ${allowedIds.length} คน`);
-    else App.toast(res.error || 'มอบหมายไม่สำเร็จ', 'danger');
+    document.getElementById('hw-back').addEventListener('click', () => this.render(area));
+    document.getElementById('hw-save').addEventListener('click', async () => {
+      const dueDate = document.getElementById('hw-due').value;
+      if (!dueDate) { App.toast('กรุณาระบุกำหนดส่ง', 'danger'); return; }
+
+      const allowedIds = [...listEl.querySelectorAll('input[type="checkbox"]:checked')].map(chk => chk.value);
+      if (!allowedIds.length) { App.toast('กรุณาเลือกนักเรียนอย่างน้อย 1 คน', 'danger'); return; }
+
+      const payload = {
+        title: `${test.title} (มอบหมายรายกรณี)`,
+        content: 'แบบทดสอบนี้มอบหมายให้ทำนอกเวลาเฉพาะนักเรียนที่กำหนด',
+        post_type: 'quiz',
+        test_id: test.id,
+        classroom_id: classroomEl.value,
+        subject_id: test.subject_id,
+        semester_id: test.semester_id || this._activeSemId,
+        due_date: dueDate,
+        is_published: true,
+        allowed_student_ids: allowedIds
+      };
+
+      const res = await API.post('/api/student-classroom/posts', payload);
+      if (res.success) {
+        App.toast(`มอบหมายสำเร็จ ${allowedIds.length} คน`);
+        this.render(area);
+      } else {
+        App.toast(res.error || 'มอบหมายไม่สำเร็จ', 'danger');
+      }
+    });
+
+    await loadStudents();
   },
 
   // ==================== Question Editor ====================

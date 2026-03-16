@@ -171,6 +171,7 @@ const App = {
       'logbook': 'สมุดบันทึก',
       'portfolio': 'เก็บผลงาน',
       'awards': 'เกียรติบัตร/รางวัล',
+      'gamification': 'Gamification',
       'attendance': 'เช็คชื่อ',
       'homeroom': 'ครูที่ปรึกษา',
       'home-visit': 'เยี่ยมบ้าน',
@@ -6146,5 +6147,266 @@ App.modules['backup'] = {
         btn.disabled = false; btn.innerHTML = '<i class="bi bi-download me-1"></i>สำรองข้อมูลตอนนี้';
       }
     });
+  }
+};
+
+// ==================== Gamification Module (Teacher) ====================
+App.modules['gamification'] = {
+  _classId: null,
+  _timerInterval: null,
+  _timerLeft: 0,
+
+  async render(area) {
+    // Get classrooms
+    const cr = await API.get('/api/classrooms');
+    const classrooms = cr.success ? cr.data : [];
+    this._classId = this._classId || (classrooms[0]?.id || null);
+
+    const leagueIcon = (l) => ({ bronze: '🥉', silver: '🥈', gold: '🥇', diamond: '💎' }[l] || '🥉');
+
+    area.innerHTML = `
+      <h4 class="fw-bold mb-1"><i class="bi bi-controller me-2 text-primary"></i>Gamification</h4>
+      <p class="text-muted small mb-3">ให้คะแนนพฤติกรรม • บันทึก XP • จับเวลาห้องเรียน • ดูลีดเดอร์บอร์ด</p>
+
+      <div class="row g-3">
+        <!-- Class selector -->
+        <div class="col-12">
+          <div class="card border-0 shadow-sm">
+            <div class="card-body d-flex align-items-center gap-3 flex-wrap">
+              <label class="fw-semibold mb-0">ห้องเรียน:</label>
+              <select id="gf-class-sel" class="form-select form-select-sm" style="width:auto">
+                ${classrooms.map(c => `<option value="${escAttr(c.id)}" ${c.id == this._classId ? 'selected' : ''}>${escHtml(c.name)}</option>`).join('')}
+              </select>
+              <button class="btn btn-sm btn-primary" id="gf-load-btn"><i class="bi bi-arrow-clockwise me-1"></i>โหลด</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Timer card -->
+        <div class="col-md-4">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white fw-semibold"><i class="bi bi-stopwatch me-2 text-warning"></i>จับเวลา</div>
+            <div class="card-body text-center">
+              <div id="gf-timer-display" class="display-4 fw-bold text-warning mb-3">05:00</div>
+              <div class="d-flex gap-2 justify-content-center flex-wrap">
+                <button class="btn btn-sm btn-outline-secondary gf-preset" data-sec="60">1 นาที</button>
+                <button class="btn btn-sm btn-outline-secondary gf-preset" data-sec="180">3 นาที</button>
+                <button class="btn btn-sm btn-outline-secondary gf-preset" data-sec="300">5 นาที</button>
+                <button class="btn btn-sm btn-outline-secondary gf-preset" data-sec="600">10 นาที</button>
+              </div>
+              <div class="d-flex gap-2 justify-content-center mt-2">
+                <button class="btn btn-sm btn-success" id="gf-timer-start"><i class="bi bi-play-fill"></i> เริ่ม</button>
+                <button class="btn btn-sm btn-danger" id="gf-timer-pause"><i class="bi bi-pause-fill"></i> หยุด</button>
+                <button class="btn btn-sm btn-outline-secondary" id="gf-timer-reset"><i class="bi bi-skip-start-fill"></i> รีเซ็ต</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick behavior points -->
+        <div class="col-md-4">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white fw-semibold"><i class="bi bi-emoji-smile me-2 text-success"></i>ให้คะแนนพฤติกรรม</div>
+            <div class="card-body">
+              <div class="mb-2">
+                <label class="form-label small">นักเรียน</label>
+                <select id="gf-bp-student" class="form-select form-select-sm">
+                  <option value="">-- โหลดห้องเรียนก่อน --</option>
+                </select>
+              </div>
+              <div class="d-flex gap-2 mb-2 flex-wrap">
+                ${[
+                  ['+1','ตั้งใจเรียน','success'],
+                  ['+2','ช่วยเหลือเพื่อน','success'],
+                  ['+3','ยอดเยี่ยม','primary'],
+                  ['-1','ไม่ตั้งใจ','danger'],
+                  ['-2','ก่อกวน','danger'],
+                ].map(([v,l,c]) => `<button class="btn btn-sm btn-${c} gf-quick-bp" data-pts="${v}" data-reason="${escAttr(l)}">${v} ${l}</button>`).join('')}
+              </div>
+              <div class="input-group input-group-sm mb-2">
+                <input type="number" id="gf-bp-custom-pts" class="form-control" placeholder="คะแนน ±" style="width:80px">
+                <input type="text" id="gf-bp-custom-reason" class="form-control" placeholder="เหตุผล">
+                <button class="btn btn-outline-primary" id="gf-bp-custom-btn">ให้</button>
+              </div>
+              <div id="gf-bp-msg" class="d-none alert alert-sm py-1 text-center small mt-1"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Leaderboard card -->
+        <div class="col-md-4">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white fw-semibold"><i class="bi bi-trophy me-2 text-warning"></i>ลีดเดอร์บอร์ด</div>
+            <div id="gf-leaderboard" class="card-body p-2 overflow-auto" style="max-height:280px">
+              <p class="text-muted text-center small">โหลดห้องเรียนก่อน</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Overview table -->
+        <div class="col-12">
+          <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-semibold d-flex justify-content-between">
+              <span><i class="bi bi-table me-2 text-info"></i>ข้อมูล Gamification ทั้งห้อง</span>
+              <button class="btn btn-sm btn-outline-secondary" id="gf-refresh-btn"><i class="bi bi-arrow-clockwise"></i></button>
+            </div>
+            <div class="card-body p-0">
+              <div id="gf-overview-table" class="table-responsive">
+                <p class="text-muted text-center py-3 small">โหลดห้องเรียนก่อน</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>`;
+
+    // Timer
+    this._timerLeft = 300;
+    this._renderTimer();
+    area.querySelectorAll('.gf-preset').forEach(b => {
+      b.addEventListener('click', () => { this._timerLeft = parseInt(b.dataset.sec); this._renderTimer(); });
+    });
+    area.querySelector('#gf-timer-start').addEventListener('click', () => this._startTimer());
+    area.querySelector('#gf-timer-pause').addEventListener('click', () => this._pauseTimer());
+    area.querySelector('#gf-timer-reset').addEventListener('click', () => { this._pauseTimer(); this._timerLeft = 300; this._renderTimer(); });
+
+    // Load button
+    area.querySelector('#gf-load-btn').addEventListener('click', () => {
+      const sel = area.querySelector('#gf-class-sel');
+      this._classId = sel.value;
+      this._loadData(area, classrooms);
+    });
+    area.querySelector('#gf-refresh-btn').addEventListener('click', () => this._loadData(area, classrooms));
+
+    // Quick behavior buttons
+    area.querySelectorAll('.gf-quick-bp').forEach(b => {
+      b.addEventListener('click', () => {
+        const studentId = area.querySelector('#gf-bp-student').value;
+        if (!studentId) { App.toast('เลือกนักเรียนก่อน', 'warning'); return; }
+        this._giveBehavior(area, studentId, parseInt(b.dataset.pts), b.dataset.reason);
+      });
+    });
+    area.querySelector('#gf-bp-custom-btn').addEventListener('click', () => {
+      const studentId = area.querySelector('#gf-bp-student').value;
+      const pts = parseInt(area.querySelector('#gf-bp-custom-pts').value);
+      const reason = area.querySelector('#gf-bp-custom-reason').value.trim();
+      if (!studentId) { App.toast('เลือกนักเรียนก่อน', 'warning'); return; }
+      if (!pts || !reason) { App.toast('กรอกคะแนนและเหตุผล', 'warning'); return; }
+      this._giveBehavior(area, studentId, pts, reason);
+    });
+
+    if (this._classId) this._loadData(area, classrooms);
+  },
+
+  async _loadData(area, classrooms) {
+    if (!this._classId) return;
+    // Overview
+    const ovEl = area.querySelector('#gf-overview-table');
+    ovEl.innerHTML = '<div class="text-center py-3"><span class="spinner-border spinner-border-sm"></span></div>';
+    const res = await API.get(`/api/gamification/overview?classroom_id=${encodeURIComponent(this._classId)}`);
+    const students = res.success ? res.data : [];
+
+    // Populate student select
+    const sel = area.querySelector('#gf-bp-student');
+    sel.innerHTML = students.length
+      ? students.map(s => `<option value="${escAttr(String(s.id))}">${escHtml(s.name)}</option>`).join('')
+      : '<option value="">ไม่มีนักเรียน</option>';
+
+    // Overview table
+    const leagueIcon = (l) => ({ bronze: '🥉', silver: '🥈', gold: '🥇', diamond: '💎' }[l] || '🥉');
+    const lvlBadge = (lvl) => {
+      const c = lvl >= 8 ? 'danger' : lvl >= 5 ? 'warning' : 'info';
+      return `<span class="badge bg-${c}">Lv.${lvl}</span>`;
+    };
+    if (!students.length) {
+      ovEl.innerHTML = '<p class="text-muted text-center py-3">ไม่มีนักเรียน</p>';
+    } else {
+      ovEl.innerHTML = `<table class="table table-sm table-hover mb-0">
+        <thead class="table-light"><tr>
+          <th>ชื่อ</th><th class="text-center">XP</th><th class="text-center">Lv</th>
+          <th class="text-center">คะแนนพฤติกรรม</th><th class="text-center">สตรีค</th>
+          <th class="text-center">ลีก</th><th class="text-center">เหรียญ</th>
+        </tr></thead>
+        <tbody>
+          ${students.map(s => `<tr>
+            <td class="fw-semibold">${escHtml(s.name)}</td>
+            <td class="text-center text-primary fw-bold">${s.total_xp}</td>
+            <td class="text-center">${lvlBadge(s.level)}</td>
+            <td class="text-center ${s.behavior_points >= 0 ? 'text-success' : 'text-danger'} fw-bold">${s.behavior_points >= 0 ? '+' : ''}${s.behavior_points}</td>
+            <td class="text-center">🔥${s.current_streak}วัน</td>
+            <td class="text-center">${leagueIcon(s.league)} ${s.league}</td>
+            <td class="text-center">🏅${s.badge_count}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+    }
+
+    // Leaderboard
+    const lbEl = area.querySelector('#gf-leaderboard');
+    const lbRes = await API.get(`/api/gamification/leaderboard?classroom_id=${encodeURIComponent(this._classId)}`);
+    const board = lbRes.success ? lbRes.data : [];
+    if (!board.length) {
+      lbEl.innerHTML = '<p class="text-muted text-center small">ยังไม่มีข้อมูล</p>';
+    } else {
+      const medalIcons = ['🥇', '🥈', '🥉'];
+      lbEl.innerHTML = board.slice(0, 10).map((s, i) => `
+        <div class="d-flex align-items-center gap-2 py-1 border-bottom">
+          <span class="fs-5 fw-bold" style="width:28px">${medalIcons[i] || (i + 1)}</span>
+          <span class="flex-fill small fw-semibold">${escHtml(s.name)}</span>
+          <span class="badge bg-primary">${s.total_xp + s.behavior_total} pt</span>
+        </div>`).join('');
+    }
+  },
+
+  async _giveBehavior(area, studentId, points, reason) {
+    if (!this._classId) { App.toast('เลือกห้องเรียนก่อน', 'warning'); return; }
+    const res = await API.post('/api/gamification/behavior', {
+      student_id: studentId,
+      classroom_id: this._classId,
+      points,
+      reason,
+      category: 'general'
+    });
+    const msgEl = area.querySelector('#gf-bp-msg');
+    if (res.success) {
+      msgEl.className = 'alert alert-success py-1 text-center small mt-1';
+      msgEl.textContent = `${points > 0 ? '+' : ''}${points} "${reason}" บันทึกแล้ว`;
+      msgEl.classList.remove('d-none');
+      setTimeout(() => msgEl.classList.add('d-none'), 3000);
+      this._loadData(area, []);
+    } else {
+      App.toast(res.error || 'บันทึกไม่สำเร็จ', 'danger');
+    }
+  },
+
+  _renderTimer() {
+    const el = document.getElementById('gf-timer-display');
+    if (!el) return;
+    const m = Math.floor(this._timerLeft / 60);
+    const s = String(this._timerLeft % 60).padStart(2, '0');
+    el.textContent = `${m}:${s}`;
+    el.className = `display-4 fw-bold mb-3 ${this._timerLeft <= 10 ? 'text-danger' : this._timerLeft <= 30 ? 'text-warning' : 'text-success'}`;
+  },
+
+  _startTimer() {
+    if (this._timerInterval) return;
+    this._timerInterval = setInterval(() => {
+      if (this._timerLeft <= 0) {
+        clearInterval(this._timerInterval);
+        this._timerInterval = null;
+        App.toast('⏰ หมดเวลาแล้ว!', 'warning');
+        return;
+      }
+      this._timerLeft--;
+      this._renderTimer();
+    }, 1000);
+  },
+
+  _pauseTimer() {
+    clearInterval(this._timerInterval);
+    this._timerInterval = null;
+  },
+
+  cleanup() {
+    this._pauseTimer();
   }
 };

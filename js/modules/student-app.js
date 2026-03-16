@@ -63,6 +63,7 @@ const StudentApp = {
       case 'grades': this.renderGrades(content); break;
       case 'live': this.renderLive(content); break;
       case 'xp': this.renderXP(content); break;
+      case 'portfolio': this.renderPortfolio(content); break;
       case 'notifications': this.renderNotifications(content); break;
       case 'profile': this.renderProfile(content); break;
       default: content.innerHTML = '<div class="empty-state"><i class="bi bi-tools d-block"></i><p>กำลังพัฒนา</p></div>';
@@ -752,6 +753,139 @@ const StudentApp = {
     await API.put(`/api/student/notifications/${encodeURIComponent(notifId)}`);
     el.classList.remove('border-start', 'border-primary', 'border-3');
     this.loadNotificationBadge();
+  },
+
+  // ==================== PORTFOLIO ====================
+  async renderPortfolio(container) {
+    container.innerHTML = '<div class="loading"></div>';
+    const [portRes, subRes] = await Promise.all([
+      API.get('/api/student/portfolio'),
+      API.get('/api/student/subjects')
+    ]);
+    const items = portRes.success ? portRes.data : [];
+    const subjects = subRes.success ? subRes.data : [];
+
+    const catIcon = { general: '📁', art: '🎨', science: '🔬', math: '📐', language: '📝', social: '🌍', other: '📌' };
+    const catLabel = { general: 'ทั่วไป', art: 'ศิลปะ', science: 'วิทยาศาสตร์', math: 'คณิตศาสตร์', language: 'ภาษา', social: 'สังคม', other: 'อื่นๆ' };
+
+    container.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="fw-bold mb-0"><i class="bi bi-briefcase-fill text-primary me-2"></i>ผลงานของฉัน</h5>
+        <button class="btn btn-primary btn-sm" id="pf-add-btn"><i class="bi bi-plus-lg me-1"></i>เพิ่มผลงาน</button>
+      </div>
+
+      <!-- Add form (hidden by default) -->
+      <div id="pf-add-form" class="card border-0 shadow-sm mb-3 d-none">
+        <div class="card-header bg-white fw-semibold">เพิ่มผลงานใหม่</div>
+        <div class="card-body">
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">ชื่อผลงาน *</label>
+            <input type="text" id="pf-title" class="form-control form-control-sm" placeholder="ชื่อผลงาน">
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-semibold">หมวดหมู่</label>
+              <select id="pf-category" class="form-select form-select-sm">
+                ${Object.entries(catLabel).map(([v,l]) => `<option value="${v}">${catIcon[v]} ${l}</option>`).join('')}
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold">วิชา</label>
+              <select id="pf-subject" class="form-select form-select-sm">
+                <option value="">-- ไม่ระบุ --</option>
+                ${subjects.map(s => `<option value="${escAttr(String(s.id))}">${escHtml(s.name)}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">คำอธิบาย</label>
+            <textarea id="pf-desc" class="form-control form-control-sm" rows="2" placeholder="รายละเอียดผลงาน"></textarea>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">การสะท้อนการเรียนรู้</label>
+            <textarea id="pf-reflection" class="form-control form-control-sm" rows="2" placeholder="ฉันได้เรียนรู้อะไรจากผลงานนี้..."></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">ลิงก์ไฟล์/รูปภาพ (คั่นด้วยคอมม่า)</label>
+            <input type="text" id="pf-files" class="form-control form-control-sm" placeholder="https://..., https://...">
+          </div>
+          <div class="d-flex gap-2">
+            <button class="btn btn-primary btn-sm" id="pf-save-btn"><i class="bi bi-check2 me-1"></i>บันทึก</button>
+            <button class="btn btn-outline-secondary btn-sm" id="pf-cancel-btn">ยกเลิก</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Timeline / grid of items -->
+      <div id="pf-items">
+        ${!items.length ? '<div class="text-center text-muted py-5"><i class="bi bi-briefcase display-4 d-block mb-2"></i>ยังไม่มีผลงาน กด "เพิ่มผลงาน" เพื่อเริ่ม</div>' :
+          items.map(item => {
+            const files = (() => { try { return JSON.parse(item.file_urls || '[]'); } catch(e) { return []; } })();
+            const firstImg = files.find(u => /\.(jpg|jpeg|png|gif|webp)$/i.test(u));
+            return `<div class="card border-0 shadow-sm mb-3 pf-item-card" id="pf-item-${escAttr(item.id)}">
+              ${firstImg ? `<img src="${escAttr(firstImg)}" class="card-img-top" style="height:160px;object-fit:cover;border-radius:12px 12px 0 0" alt="ภาพผลงาน">` : ''}
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-1">
+                  <div>
+                    <span class="badge bg-light text-dark border me-1">${catIcon[item.category] || '📁'} ${catLabel[item.category] || item.category}</span>
+                    ${item.subject_name ? `<span class="badge bg-primary-subtle text-primary">${escHtml(item.subject_name)}</span>` : ''}
+                  </div>
+                  <button class="btn btn-sm btn-outline-danger pf-delete-btn" data-id="${escAttr(item.id)}"><i class="bi bi-trash"></i></button>
+                </div>
+                <h6 class="fw-bold mb-1">${DOMPurify.sanitize(item.title)}</h6>
+                ${item.description ? `<p class="small text-muted mb-1">${DOMPurify.sanitize(item.description)}</p>` : ''}
+                ${item.reflection ? `<div class="p-2 bg-light rounded small mb-1"><i class="bi bi-lightbulb text-warning me-1"></i>${DOMPurify.sanitize(item.reflection)}</div>` : ''}
+                ${files.length > 0 ? `<div class="d-flex gap-1 flex-wrap mt-1">
+                  ${files.map((f, fi) => `<a href="${escAttr(f)}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-secondary"><i class="bi bi-link-45deg me-1"></i>ไฟล์ ${fi + 1}</a>`).join('')}
+                </div>` : ''}
+                <div class="text-muted small mt-2"><i class="bi bi-clock me-1"></i>${new Date(item.created_at).toLocaleDateString('th-TH')}</div>
+              </div>
+            </div>`;
+          }).join('')}
+      </div>`;
+
+    // Toggle add form
+    container.querySelector('#pf-add-btn').addEventListener('click', () => {
+      container.querySelector('#pf-add-form').classList.toggle('d-none');
+    });
+    container.querySelector('#pf-cancel-btn').addEventListener('click', () => {
+      container.querySelector('#pf-add-form').classList.add('d-none');
+    });
+
+    // Save new item
+    container.querySelector('#pf-save-btn').addEventListener('click', async () => {
+      const title = container.querySelector('#pf-title').value.trim();
+      if (!title) { this.toast('กรุณาใส่ชื่อผลงาน', 'warning'); return; }
+      const filesRaw = container.querySelector('#pf-files').value.trim();
+      const fileUrls = filesRaw ? filesRaw.split(',').map(f => f.trim()).filter(Boolean) : [];
+      const body = {
+        title,
+        category: container.querySelector('#pf-category').value,
+        subject_id: container.querySelector('#pf-subject').value || null,
+        description: container.querySelector('#pf-desc').value.trim() || null,
+        reflection: container.querySelector('#pf-reflection').value.trim() || null,
+        file_urls: fileUrls,
+      };
+      const res = await API.post('/api/student/portfolio', body);
+      if (res.success) {
+        this.toast('บันทึกผลงานแล้ว! 🎉', 'success');
+        this.renderPortfolio(container);
+      } else {
+        this.toast(res.error || 'บันทึกไม่สำเร็จ', 'danger');
+      }
+    });
+
+    // Delete buttons
+    container.querySelectorAll('.pf-delete-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('ต้องการลบผลงานนี้?')) return;
+        const res = await API.del(`/api/student/portfolio/${encodeURIComponent(btn.dataset.id)}`);
+        if (res.success) {
+          document.getElementById(`pf-item-${btn.dataset.id}`)?.remove();
+          this.toast('ลบแล้ว', 'success');
+        }
+      });
+    });
   },
 
   // ==================== PROFILE ====================

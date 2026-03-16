@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS activities (
   id TEXT PRIMARY KEY,
   teacher_id TEXT NOT NULL,
   name TEXT NOT NULL,
-  activity_type TEXT CHECK(activity_type IN ('club','ensemble','other')),
+  activity_type TEXT CHECK(activity_type IN ('club','band','ensemble','sport','scout','other')),
   description TEXT,
   max_members INTEGER,
   created_at TEXT
@@ -972,6 +972,132 @@ CREATE TABLE IF NOT EXISTS student_notifications (
   expires_at TEXT
 );
 
+-- ==================== GROUP 9: GAMIFICATION ====================
+CREATE TABLE IF NOT EXISTS student_xp (
+  id TEXT PRIMARY KEY,
+  student_id TEXT NOT NULL,
+  source_type TEXT,
+  source TEXT,
+  source_id TEXT,
+  xp_amount REAL NOT NULL DEFAULT 0,
+  created_at TEXT
+);
+CREATE TABLE IF NOT EXISTS behavior_points (
+  id TEXT PRIMARY KEY,
+  teacher_id TEXT NOT NULL,
+  student_id TEXT NOT NULL,
+  classroom_id TEXT NOT NULL,
+  points REAL NOT NULL,
+  reason TEXT NOT NULL,
+  category TEXT DEFAULT 'general',
+  created_at TEXT
+);
+CREATE TABLE IF NOT EXISTS student_streaks (
+  id TEXT PRIMARY KEY,
+  student_id TEXT NOT NULL UNIQUE,
+  current_streak INTEGER DEFAULT 0,
+  longest_streak INTEGER DEFAULT 0,
+  freeze_count INTEGER DEFAULT 2,
+  last_update TEXT
+);
+CREATE TABLE IF NOT EXISTS weekly_leagues (
+  id TEXT PRIMARY KEY,
+  student_id TEXT NOT NULL,
+  league TEXT DEFAULT 'bronze' CHECK(league IN ('bronze','silver','gold','diamond')),
+  weekly_xp REAL DEFAULT 0,
+  week_start TEXT,
+  created_at TEXT
+);
+CREATE TABLE IF NOT EXISTS student_badges (
+  id TEXT PRIMARY KEY,
+  student_id TEXT NOT NULL,
+  badge_key TEXT NOT NULL,
+  unlocked_at TEXT,
+  UNIQUE(student_id, badge_key)
+);
+-- ==================== GROUP 10: LIVE SESSIONS ====================
+CREATE TABLE IF NOT EXISTS attendance_sessions (
+  id TEXT PRIMARY KEY,
+  teacher_id TEXT NOT NULL,
+  classroom_id TEXT NOT NULL,
+  date TEXT NOT NULL,
+  period INTEGER,
+  subject_id TEXT,
+  semester_id TEXT,
+  is_open INTEGER DEFAULT 1,
+  opened_at TEXT,
+  closed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS live_sessions (
+  id TEXT PRIMARY KEY,
+  teacher_id TEXT NOT NULL,
+  test_id TEXT NOT NULL,
+  session_code TEXT UNIQUE NOT NULL,
+  status TEXT DEFAULT 'waiting' CHECK(status IN ('waiting','question','results','finished')),
+  current_question INTEGER DEFAULT 0,
+  scoring_mode TEXT DEFAULT 'standard',
+  created_at TEXT,
+  updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS live_participants (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  student_id TEXT NOT NULL,
+  nickname TEXT,
+  joined_at TEXT,
+  total_score REAL DEFAULT 0,
+  total_xp REAL DEFAULT 0,
+  UNIQUE(session_id, student_id)
+);
+CREATE TABLE IF NOT EXISTS live_responses (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  student_id TEXT NOT NULL,
+  question_id TEXT NOT NULL,
+  answer TEXT,
+  is_correct INTEGER DEFAULT 0,
+  time_ms INTEGER,
+  xp_earned REAL DEFAULT 0,
+  streak_count INTEGER DEFAULT 0,
+  created_at TEXT
+);
+-- ==================== GROUP 11: STUDENT INTERACTION ====================
+CREATE TABLE IF NOT EXISTS board_posts (
+  id TEXT PRIMARY KEY,
+  post_id TEXT NOT NULL,
+  student_id TEXT NOT NULL,
+  content TEXT NOT NULL,
+  likes INTEGER DEFAULT 0,
+  created_at TEXT
+);
+CREATE TABLE IF NOT EXISTS board_likes (
+  id TEXT PRIMARY KEY,
+  board_post_id TEXT NOT NULL,
+  student_id TEXT NOT NULL,
+  created_at TEXT,
+  UNIQUE(board_post_id, student_id)
+);
+CREATE TABLE IF NOT EXISTS poll_responses (
+  id TEXT PRIMARY KEY,
+  post_id TEXT NOT NULL,
+  student_id TEXT NOT NULL,
+  option_index INTEGER NOT NULL,
+  option_text TEXT,
+  created_at TEXT,
+  UNIQUE(post_id, student_id)
+);
+CREATE TABLE IF NOT EXISTS student_portfolio_items (
+  id TEXT PRIMARY KEY,
+  student_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  category TEXT DEFAULT 'general',
+  subject_id TEXT,
+  file_urls TEXT,
+  reflection TEXT,
+  created_at TEXT,
+  updated_at TEXT
+);
 -- ==================== INDEXES ====================
 CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);

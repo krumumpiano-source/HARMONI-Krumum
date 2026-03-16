@@ -8,13 +8,9 @@ export async function onRequest(context) {
   const pathParts = (params.path || []);
   const path = '/' + pathParts.join('/');
 
-  // Auth: teacher JWT
-  const auth = request.headers.get('Authorization') || '';
-  const token = auth.replace('Bearer ', '');
-  if (!token) return error('Unauthorized', 401);
-  const teacher = await dbFirst(db, 'SELECT id FROM teachers WHERE session_token = ?', [token]);
-  if (!teacher) return error('Unauthorized', 401);
-  const teacherId = teacher.id;
+  // Auth: use middleware-injected env.user
+  const teacherId = env.user?.id;
+  if (!teacherId) return error('Unauthorized', 401);
 
   // ===== GET /api/gamification/overview?classroom_id=X =====
   // Returns per-student XP, behavior summary, streak, league in a classroom
@@ -24,11 +20,11 @@ export async function onRequest(context) {
     if (!classroomId) return error('classroom_id required');
     // Get students in classroom
     const students = await dbAll(db,
-      `SELECT s.id, s.name, s.student_code FROM students s
-       JOIN classroom_students cs ON cs.student_id = s.id
-       WHERE cs.classroom_id = ?
-       ORDER BY s.name`,
-      [classroomId]
+      `SELECT s.id, (s.first_name || ' ' || s.last_name) AS name, s.student_code FROM students s
+       JOIN student_classrooms sc ON sc.student_id = s.id AND sc.is_active = 1
+       WHERE sc.classroom_id = ? AND s.teacher_id = ?
+       ORDER BY s.first_name`,
+      [classroomId, teacherId]
     );
     // Enrich with XP, behavior points, streak, league
     const enriched = await Promise.all(students.map(async (s) => {
@@ -93,10 +89,10 @@ export async function onRequest(context) {
     const classroomId = url.searchParams.get('classroom_id');
     if (!classroomId) return error('classroom_id required');
     const students = await dbAll(db,
-      `SELECT s.id, s.name
-       FROM students s JOIN classroom_students cs ON cs.student_id = s.id
-       WHERE cs.classroom_id = ?`,
-      [classroomId]
+      `SELECT s.id, (s.first_name || ' ' || s.last_name) AS name
+       FROM students s JOIN student_classrooms sc ON sc.student_id = s.id AND sc.is_active = 1
+       WHERE sc.classroom_id = ? AND s.teacher_id = ?`,
+      [classroomId, teacherId]
     );
     const board = await Promise.all(students.map(async (s) => {
       const xp = await dbFirst(db, 'SELECT COALESCE(SUM(xp_amount),0) as total FROM student_xp WHERE student_id = ?', [s.id]);

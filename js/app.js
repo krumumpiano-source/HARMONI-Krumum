@@ -1429,6 +1429,8 @@ App.modules['admin'] = {
 App.modules['attendance'] = {
   selectedClassroom: null,
   selectedDate: new Date().toISOString().split('T')[0],
+  _sessionId: null,
+  _pollInterval: null,
 
   async render(container) {
     container.innerHTML = '<div class="loading"></div>';
@@ -1449,8 +1451,9 @@ App.modules['attendance'] = {
     if (!this.selectedClassroom) this.selectedClassroom = classrooms[0].id;
 
     container.innerHTML = `
-      <h4 class="fw-bold mb-4"><i class="bi bi-calendar-check me-2 text-primary"></i>เช็คชื่อ</h4>
+      <h4 class="fw-bold mb-3"><i class="bi bi-calendar-check me-2 text-primary"></i>เช็คชื่อ</h4>
 
+      <!-- Controls -->
       <div class="card border-0 shadow-sm mb-3">
         <div class="card-body">
           <div class="row g-2 align-items-end">
@@ -1464,146 +1467,200 @@ App.modules['attendance'] = {
               <label class="form-label small mb-1"><i class="bi bi-calendar3 me-1"></i>วันที่</label>
               <input type="date" class="form-control" id="att-date" value="${this.selectedDate}">
             </div>
-            <div class="col-md-3 col-6">
+            <div class="col-md-2 col-5">
               <label class="form-label small mb-1"><i class="bi bi-clock me-1"></i>คาบที่</label>
               <select class="form-select" id="att-period">
                 <option value="">ทั้งวัน</option>
-                <option value="1">คาบ 1</option><option value="2">คาบ 2</option>
-                <option value="3">คาบ 3</option><option value="4">คาบ 4</option>
-                <option value="5">คาบ 5</option><option value="6">คาบ 6</option>
-                <option value="7">คาบ 7</option><option value="8">คาบ 8</option>
+                ${[1,2,3,4,5,6,7,8].map(p => `<option value="${p}">คาบ ${p}</option>`).join('')}
               </select>
             </div>
-            <div class="col-md-2 col-6">
-              <button class="btn btn-primary w-100" id="att-load"><i class="bi bi-search me-1"></i>โหลด</button>
+            <div class="col-md-3 col-7 d-flex gap-2">
+              <button class="btn btn-primary flex-fill" id="att-load"><i class="bi bi-search me-1"></i>โหลด</button>
+              <button class="btn btn-outline-secondary btn-sm" id="att-manage-zones" title="จัดการโซน GPS"><i class="bi bi-pin-map"></i></button>
             </div>
-          </div>
-          <div class="mt-2">
-            <button class="btn btn-outline-success btn-sm" id="att-gps-checkin"><i class="bi bi-geo-alt me-1"></i>GPS Check-in</button>
-            <button class="btn btn-outline-secondary btn-sm" id="att-manage-zones"><i class="bi bi-pin-map me-1"></i>จัดการโซน GPS</button>
-            <span class="small text-muted ms-2" id="att-gps-status"></span>
           </div>
         </div>
       </div>
 
+      <!-- Session Panel -->
+      <div id="att-session-panel" class="mb-3"></div>
+
+      <!-- Student List -->
       <div id="att-student-list"></div>`;
 
-    // Event: load
-    document.getElementById('att-load').addEventListener('click', () => this.loadStudents());
-    document.getElementById('att-classroom').addEventListener('change', (e) => {
-      this.selectedClassroom = e.target.value;
+    // Events
+    container.querySelector('#att-load').addEventListener('click', () => {
+      this.selectedClassroom = container.querySelector('#att-classroom').value;
+      this.selectedDate = container.querySelector('#att-date').value;
+      this.loadStudents();
     });
-    document.getElementById('att-date').addEventListener('change', (e) => {
-      this.selectedDate = e.target.value;
-    });
-
-    // GPS Check-in
-    document.getElementById('att-gps-checkin').addEventListener('click', () => {
-      const statusEl = document.getElementById('att-gps-status');
-      if (!navigator.geolocation) { statusEl.textContent = 'GPS ไม่รองรับบนอุปกรณ์นี้'; return; }
-      statusEl.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>กำลังค้นหาตำแหน่ง...';
-      navigator.geolocation.getCurrentPosition(async (pos) => {
-        const res = await API.post('/api/attendance/gps', {
-          lat: pos.coords.latitude, lng: pos.coords.longitude,
-          classroom_id: document.getElementById('att-classroom').value
-        });
-        if (res.success && res.data.matched) {
-          statusEl.innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>อยู่ในโซนเช็คชื่อ</span>';
-        } else if (res.success && !res.data.matched) {
-          statusEl.innerHTML = res.data.zones_checked > 0
-            ? '<span class="text-danger"><i class="bi bi-x-circle me-1"></i>อยู่นอกโซนเช็คชื่อ</span>'
-            : '<span class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>ยังไม่ได้ตั้งค่าโซน GPS</span>';
-        } else {
-          statusEl.textContent = res.error || 'ตรวจสอบไม่สำเร็จ';
-        }
-      }, () => { statusEl.textContent = 'ไม่สามารถเข้าถึงตำแหน่งได้'; });
-    });
+    container.querySelector('#att-classroom').addEventListener('change', e => { this.selectedClassroom = e.target.value; });
+    container.querySelector('#att-date').addEventListener('change', e => { this.selectedDate = e.target.value; });
 
     // Manage GPS Zones
-    document.getElementById('att-manage-zones').addEventListener('click', async () => {
-      const classroomId = document.getElementById('att-classroom').value;
+    container.querySelector('#att-manage-zones').addEventListener('click', async () => {
+      const classroomId = container.querySelector('#att-classroom').value;
       const zRes = await API.get(`/api/attendance/zones?classroom_id=${classroomId}`);
       const zones = zRes.success ? zRes.data : [];
       const area = document.getElementById('att-student-list');
       area.innerHTML = `
-        <div class="card border-0 shadow-sm mb-3">
-          <div class="card-header bg-white fw-semibold"><i class="bi bi-pin-map me-2"></i>โซน GPS สำหรับเช็คชื่อ</div>
+        <div class="card border-0 shadow-sm">
+          <div class="card-header bg-white fw-semibold d-flex justify-content-between">
+            <span><i class="bi bi-pin-map me-2 text-success"></i>โซน GPS เช็คชื่อ</span>
+            <button class="btn btn-sm btn-outline-secondary" id="gz-back"><i class="bi bi-arrow-left me-1"></i>กลับ</button>
+          </div>
           <div class="card-body">
-            <div id="att-gps-map" style="height:300px;border-radius:8px" class="mb-3"></div>
+            <p class="small text-muted mb-3">กำหนดพื้นที่ที่ยอมให้นักเรียนเช็คชื่อได้ นักเรียนต้องอยู่ในรัศมีที่กำหนดจากพิกัดนี้</p>
             <div class="row g-2 mb-2">
-              <div class="col-md-3"><input class="form-control" id="gz-name" placeholder="ชื่อโซน"></div>
-              <div class="col-md-3"><input class="form-control" id="gz-lat" placeholder="ละติจูด" type="number" step="any"></div>
-              <div class="col-md-3"><input class="form-control" id="gz-lng" placeholder="ลองจิจูด" type="number" step="any"></div>
+              <div class="col-md-3"><input class="form-control" id="gz-name" placeholder="ชื่อโซน (เช่น ห้อง 302)" value="ห้องเรียน"></div>
+              <div class="col-md-3"><input class="form-control" id="gz-lat" placeholder="ละติจูด" type="number" step="any" value="19.170306"></div>
+              <div class="col-md-3"><input class="form-control" id="gz-lng" placeholder="ลองจิจูด" type="number" step="any" value="99.910299"></div>
               <div class="col-md-2"><input class="form-control" id="gz-radius" placeholder="รัศมี (ม.)" type="number" value="100"></div>
               <div class="col-md-1"><button class="btn btn-success w-100" id="gz-add"><i class="bi bi-plus-lg"></i></button></div>
             </div>
-            <button class="btn btn-sm btn-outline-primary mb-3" id="gz-detect"><i class="bi bi-crosshair me-1"></i>ใช้ตำแหน่งปัจจุบัน</button>
-            <div id="gz-list">${zones.map(z => `
-              <div class="d-flex justify-content-between align-items-center border-bottom py-2">
-                <span><i class="bi bi-geo-alt text-success me-1"></i>${DOMPurify.sanitize(z.zone_name)} — ${z.lat}, ${z.lng} (${z.radius_meters}m)</span>
-                <button class="btn btn-sm btn-outline-danger" data-del-zone="${z.id}"><i class="bi bi-trash"></i></button>
-              </div>`).join('')}
-              ${zones.length === 0 ? '<p class="text-muted small">ยังไม่มีโซน — เพิ่มโซนใหม่ด้านบน</p>' : ''}
+            <div class="d-flex gap-2 mb-3">
+              <button class="btn btn-sm btn-outline-primary" id="gz-detect"><i class="bi bi-crosshair me-1"></i>ใช้ตำแหน่งปัจจุบัน</button>
+              <button class="btn btn-sm btn-outline-secondary" id="gz-preset"><i class="bi bi-school me-1"></i>ใช้พิกัดโรงเรียน</button>
             </div>
-            <button class="btn btn-secondary btn-sm mt-2" id="gz-back"><i class="bi bi-arrow-left me-1"></i>กลับไปเช็คชื่อ</button>
+            <div id="gz-list">
+              ${!zones.length ? '<p class="text-muted small">ยังไม่มีโซน — เพิ่มโซนด้านบน</p>' :
+                zones.map(z => `
+                <div class="d-flex justify-content-between align-items-center border-bottom py-2">
+                  <span><i class="bi bi-geo-alt-fill text-success me-2"></i><strong>${escHtml(z.name || z.zone_name || 'Zone')}</strong> — ${z.lat.toFixed(5)}, ${z.lng.toFixed(5)} (${z.radius_meters}ม.)</span>
+                  <button class="btn btn-sm btn-outline-danger" data-del-zone="${escAttr(z.id)}"><i class="bi bi-trash"></i></button>
+                </div>`).join('')}
+            </div>
           </div>
         </div>`;
 
-      // Init Leaflet map
-      if (typeof L !== 'undefined') {
-        const defaultLat = zones[0]?.lat || 13.7563;
-        const defaultLng = zones[0]?.lng || 100.5018;
-        const map = L.map('att-gps-map').setView([defaultLat, defaultLng], 16);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: 'OSM' }).addTo(map);
-        zones.forEach(z => {
-          L.circle([z.lat, z.lng], { radius: z.radius_meters || 100, color: '#198754' }).addTo(map)
-            .bindPopup(DOMPurify.sanitize(z.zone_name));
-        });
-        map.on('click', (e) => {
-          document.getElementById('gz-lat').value = e.latlng.lat.toFixed(6);
-          document.getElementById('gz-lng').value = e.latlng.lng.toFixed(6);
-        });
-      }
-
-      document.getElementById('gz-detect')?.addEventListener('click', () => {
-        navigator.geolocation?.getCurrentPosition((pos) => {
-          document.getElementById('gz-lat').value = pos.coords.latitude.toFixed(6);
-          document.getElementById('gz-lng').value = pos.coords.longitude.toFixed(6);
+      area.querySelector('#gz-back').addEventListener('click', () => this.loadStudents());
+      area.querySelector('#gz-detect').addEventListener('click', () => {
+        navigator.geolocation?.getCurrentPosition(pos => {
+          area.querySelector('#gz-lat').value = pos.coords.latitude.toFixed(6);
+          area.querySelector('#gz-lng').value = pos.coords.longitude.toFixed(6);
         });
       });
-
-      document.getElementById('gz-add')?.addEventListener('click', async () => {
-        const res = await API.post('/api/attendance/zones', {
-          classroom_id: classroomId,
-          zone_name: document.getElementById('gz-name').value || 'Zone',
-          lat: parseFloat(document.getElementById('gz-lat').value),
-          lng: parseFloat(document.getElementById('gz-lng').value),
-          radius_meters: parseInt(document.getElementById('gz-radius').value) || 100
-        });
-        if (res.success) { App.toast('เพิ่มโซนแล้ว'); document.getElementById('att-manage-zones').click(); }
+      area.querySelector('#gz-preset').addEventListener('click', () => {
+        area.querySelector('#gz-lat').value = '19.170306035080937';
+        area.querySelector('#gz-lng').value = '99.9102988290462';
+      });
+      area.querySelector('#gz-add').addEventListener('click', async () => {
+        const lat = parseFloat(area.querySelector('#gz-lat').value);
+        const lng = parseFloat(area.querySelector('#gz-lng').value);
+        const name = area.querySelector('#gz-name').value || 'Zone';
+        const radius = parseInt(area.querySelector('#gz-radius').value) || 100;
+        if (!lat || !lng) { App.toast('กรุณากรอกพิกัด', 'warning'); return; }
+        const res = await API.post('/api/attendance/zones', { classroom_id: classroomId, zone_name: name, lat, lng, radius_meters: radius });
+        if (res.success) { App.toast('เพิ่มโซนแล้ว'); container.querySelector('#att-manage-zones').click(); }
         else App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
       });
-
       area.querySelectorAll('[data-del-zone]').forEach(btn => {
         btn.addEventListener('click', async () => {
           await API.del(`/api/attendance/zones/${btn.dataset.delZone}`);
-          App.toast('ลบโซนแล้ว');
-          document.getElementById('att-manage-zones').click();
+          App.toast('ลบโซนแล้ว'); container.querySelector('#att-manage-zones').click();
         });
       });
-
-      document.getElementById('gz-back')?.addEventListener('click', () => this.loadStudents());
     });
 
-    // Auto-load
-    this.loadStudents();
+    await this.loadStudents();
+    this._refreshSessionPanel();
+  },
+
+  async _refreshSessionPanel() {
+    if (!this.selectedClassroom) return;
+    const panel = document.getElementById('att-session-panel');
+    if (!panel) return;
+    const today = document.getElementById('att-date')?.value || this.selectedDate;
+    const sessRes = await API.get(`/api/attendance/sessions?classroom_id=${this.selectedClassroom}&date=${today}`);
+    const sessions = sessRes.success ? sessRes.data : [];
+    const openSess = sessions.find(s => s.is_open);
+
+    if (openSess) {
+      this._sessionId = openSess.id;
+      // Count GPS check-ins
+      const atRes = await API.get(`/api/attendance?classroom_id=${this.selectedClassroom}&date=${today}${openSess.period ? '&period=' + openSess.period : ''}`);
+      const students = atRes.success ? atRes.data : [];
+      const checkedIn = students.filter(s => s.check_in_method === 'student_app').length;
+      const total = students.length;
+
+      panel.innerHTML = `
+        <div class="alert alert-success border-0 shadow-sm p-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
+          <div>
+            <div class="fw-bold fs-6"><span class="badge bg-success me-2 pulse-dot">●</span> กำลังรับเช็คชื่ออยู่</div>
+            <div class="small mt-1">นักเรียนเช็คชื่อผ่าน GPS: <strong class="text-success">${checkedIn}/${total} คน</strong>${openSess.period ? ` · คาบ ${openSess.period}` : ''}</div>
+            <div class="small text-muted">เปิดเมื่อ: ${new Date(openSess.opened_at).toLocaleTimeString('th-TH')}</div>
+          </div>
+          <button class="btn btn-danger btn-sm" id="att-close-session"><i class="bi bi-stop-circle me-1"></i>ปิดรับเช็คชื่อ</button>
+        </div>`;
+      panel.querySelector('#att-close-session').addEventListener('click', async () => {
+        await API.put(`/api/attendance/sessions/${openSess.id}/close`);
+        this._sessionId = null;
+        clearInterval(this._pollInterval); this._pollInterval = null;
+        App.toast('ปิดรับเช็คชื่อแล้ว');
+        this._refreshSessionPanel();
+        this.loadStudents();
+      });
+      // Poll every 8s while open
+      if (!this._pollInterval) {
+        this._pollInterval = setInterval(() => {
+          if (document.getElementById('att-session-panel')) this._refreshSessionPanel();
+          else { clearInterval(this._pollInterval); this._pollInterval = null; }
+        }, 8000);
+      }
+    } else {
+      this._sessionId = null;
+      clearInterval(this._pollInterval); this._pollInterval = null;
+      const today2 = document.getElementById('att-date')?.value || this.selectedDate;
+      const period = document.getElementById('att-period')?.value || '';
+      panel.innerHTML = `
+        <div class="d-flex gap-2 align-items-center">
+          <button class="btn btn-outline-success" id="att-open-session">
+            <i class="bi bi-broadcast me-2"></i>เปิดรับเช็คชื่อนักเรียน (GPS)
+          </button>
+          <span class="small text-muted">นักเรียนจะเช็คชื่อเองผ่านแอปโดยใช้ GPS</span>
+        </div>`;
+      panel.querySelector('#att-open-session').addEventListener('click', async () => {
+        const classroomId = document.getElementById('att-classroom')?.value || this.selectedClassroom;
+        const date = document.getElementById('att-date')?.value || this.selectedDate;
+        const per = document.getElementById('att-period')?.value || '';
+        // Check if zone exists
+        const zRes = await API.get(`/api/attendance/zones?classroom_id=${classroomId}`);
+        const zones = zRes.success ? zRes.data : [];
+        if (!zones.length) {
+          App.toast('ยังไม่มีโซน GPS — กรุณาเพิ่มโซนก่อน (กดไอคอน 📍)', 'warning');
+          return;
+        }
+        // Get semester
+        const semRes = await API.get('/api/semesters');
+        const activeSem = semRes.success ? semRes.data.find(s => s.is_active) : null;
+        const res = await API.post('/api/attendance/session', {
+          classroom_id: classroomId,
+          date,
+          period: per ? parseInt(per) : null,
+          semester_id: activeSem?.id || null,
+        });
+        if (res.success) {
+          this._sessionId = res.data.id;
+          App.toast('เปิดรับเช็คชื่อแล้ว! นักเรียนจะเห็นในแอป');
+          this._refreshSessionPanel();
+        } else {
+          App.toast(res.error || 'เปิดไม่สำเร็จ', 'danger');
+        }
+      });
+    }
+  },
+
+  cleanup() {
+    clearInterval(this._pollInterval);
+    this._pollInterval = null;
   },
 
   async loadStudents() {
-    const classroomId = document.getElementById('att-classroom').value;
-    const date = document.getElementById('att-date').value;
-    const period = document.getElementById('att-period').value;
+    const classroomId = document.getElementById('att-classroom')?.value || this.selectedClassroom;
+    const date = document.getElementById('att-date')?.value || this.selectedDate;
+    const period = document.getElementById('att-period')?.value || '';
     const listEl = document.getElementById('att-student-list');
+    if (!listEl) return;
     listEl.innerHTML = '<div class="loading"></div>';
 
     let url = `/api/attendance?classroom_id=${classroomId}&date=${date}`;
@@ -1613,10 +1670,7 @@ App.modules['attendance'] = {
     const students = res.success ? res.data : [];
 
     if (students.length === 0) {
-      listEl.innerHTML = `
-        <div class="alert alert-info">
-          <i class="bi bi-info-circle me-2"></i>ยังไม่มีนักเรียนในห้องนี้ — <a href="#" class="alert-link" onclick="App.navigate('settings')">ไปเพิ่มนักเรียนในตั้งค่า</a>
-        </div>`;
+      listEl.innerHTML = `<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>ยังไม่มีนักเรียนในห้องนี้ — <a href="#" class="alert-link" onclick="App.navigate('settings')">ไปเพิ่มนักเรียนในตั้งค่า</a></div>`;
       return;
     }
 
@@ -1627,12 +1681,15 @@ App.modules['attendance'] = {
       { value: 'leave', label: 'ลา', color: 'info', icon: 'dash-circle' }
     ];
 
+    const gpsChecked = students.filter(s => s.check_in_method === 'student_app').length;
+
     listEl.innerHTML = `
       <div class="card border-0 shadow-sm">
-        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
           <span class="fw-semibold"><i class="bi bi-people me-2"></i>นักเรียน ${students.length} คน</span>
-          <div class="btn-group btn-group-sm">
-            <button class="btn btn-outline-success" onclick="App.modules.attendance.markAll('present')" title="มาทุกคน"><i class="bi bi-check-all me-1"></i>มาทั้งหมด</button>
+          <div class="d-flex align-items-center gap-2">
+            ${gpsChecked > 0 ? `<span class="badge bg-success"><i class="bi bi-geo-alt me-1"></i>GPS ${gpsChecked} คน</span>` : ''}
+            <button class="btn btn-outline-success btn-sm" onclick="App.modules.attendance.markAll('present')"><i class="bi bi-check-all me-1"></i>มาทั้งหมด</button>
           </div>
         </div>
         <div class="card-body p-0">
@@ -1640,50 +1697,49 @@ App.modules['attendance'] = {
             <table class="table table-hover mb-0 align-middle">
               <thead class="table-light">
                 <tr>
-                  <th style="width:50px">#</th>
+                  <th style="width:40px">#</th>
                   <th>ชื่อ</th>
-                  <th style="width:280px" class="text-center">สถานะ</th>
+                  <th style="width:260px" class="text-center">สถานะ</th>
                 </tr>
               </thead>
               <tbody>
-                ${students.map((s, i) => `
-                <tr data-student-id="${s.id}">
-                  <td class="text-muted">${i + 1}</td>
-                  <td>
-                    <strong>${DOMPurify.sanitize(s.first_name)} ${DOMPurify.sanitize(s.last_name)}</strong>
-                    ${s.nickname ? `<span class="text-muted small ms-1">(${DOMPurify.sanitize(s.nickname)})</span>` : ''}
-                  </td>
-                  <td>
-                    <div class="btn-group w-100" role="group">
-                      ${statusOptions.map(opt => `
-                        <button type="button" class="btn btn-sm btn-${s.status === opt.value ? opt.color : 'outline-' + opt.color} att-status-btn"
-                          data-student="${s.id}" data-status="${opt.value}" title="${opt.label}">
-                          <i class="bi bi-${opt.icon} me-1 d-none d-sm-inline"></i>${opt.label}
-                        </button>`).join('')}
-                    </div>
-                  </td>
-                </tr>`).join('')}
+                ${students.map((s, i) => {
+                  const gpsBadge = s.check_in_method === 'student_app'
+                    ? `<span class="badge bg-success ms-1" title="เช็คชื่อ GPS ${s.check_in_time ? new Date(s.check_in_time).toLocaleTimeString('th-TH') : ''}"><i class="bi bi-geo-alt-fill"></i> GPS</span>`
+                    : (s.check_in_method === 'manual' ? `<span class="badge bg-secondary ms-1"><i class="bi bi-person-check"></i></span>` : '');
+                  return `<tr data-student-id="${escAttr(s.id)}">
+                    <td class="text-muted">${i + 1}</td>
+                    <td>
+                      <strong>${DOMPurify.sanitize(s.first_name)} ${DOMPurify.sanitize(s.last_name)}</strong>
+                      ${s.nickname ? `<span class="text-muted small ms-1">(${DOMPurify.sanitize(s.nickname)})</span>` : ''}
+                      ${gpsBadge}
+                    </td>
+                    <td>
+                      <div class="btn-group w-100" role="group">
+                        ${statusOptions.map(opt => `
+                          <button type="button"
+                            class="btn btn-sm btn-${s.status === opt.value ? opt.color : 'outline-' + opt.color} att-status-btn"
+                            data-student="${escAttr(s.id)}" data-status="${opt.value}">
+                            <i class="bi bi-${opt.icon} me-1 d-none d-sm-inline"></i>${opt.label}
+                          </button>`).join('')}
+                      </div>
+                    </td>
+                  </tr>`;
+                }).join('')}
               </tbody>
             </table>
           </div>
         </div>
         <div class="card-footer bg-white text-end">
           <span class="me-3 small text-muted" id="att-summary"></span>
-          <button class="btn btn-outline-secondary btn-sm me-2" id="att-export">
-            <i class="bi bi-download me-1"></i>ส่งออก
-          </button>
-          <button class="btn btn-primary" id="att-save">
-            <i class="bi bi-check-lg me-1"></i>บันทึกเช็คชื่อ
-          </button>
+          <button class="btn btn-outline-secondary btn-sm me-2" id="att-export"><i class="bi bi-download me-1"></i>ส่งออก</button>
+          <button class="btn btn-primary" id="att-save"><i class="bi bi-check-lg me-1"></i>บันทึกเช็คชื่อ</button>
         </div>
       </div>`;
 
-    // Status button clicks
-    document.querySelectorAll('.att-status-btn').forEach(btn => {
+    // Status button handler
+    listEl.querySelectorAll('.att-status-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        const studentId = btn.dataset.student;
-        const status = btn.dataset.status;
-        // Toggle: deselect all in this group, select this one
         const row = btn.closest('tr');
         row.querySelectorAll('.att-status-btn').forEach(b => {
           const s = statusOptions.find(o => o.value === b.dataset.status);
@@ -1693,37 +1749,27 @@ App.modules['attendance'] = {
       });
     });
 
-    // Save
-    document.getElementById('att-save').addEventListener('click', () => this.save());
-
-    // Export
-    document.getElementById('att-export').addEventListener('click', () => {
+    listEl.querySelector('#att-save').addEventListener('click', () => this.save());
+    listEl.querySelector('#att-export').addEventListener('click', () => {
       const rows = [];
-      document.querySelectorAll('tr[data-student-id]').forEach(row => {
+      listEl.querySelectorAll('tr[data-student-id]').forEach(row => {
         const name = row.querySelector('td:nth-child(2) strong')?.textContent || '';
         const activeBtn = row.querySelector('.att-status-btn.btn-success, .att-status-btn.btn-warning, .att-status-btn.btn-danger, .att-status-btn.btn-info');
-        const status = activeBtn ? activeBtn.textContent.trim() : '-';
+        const status = activeBtn?.textContent.trim() || '-';
         rows.push({ name, status });
       });
-      const date = document.getElementById('att-date').value;
-      Exporter.showExportDialog(`เช็คชื่อ ${date}`, rows, {
-        headers: ['name', 'status'],
-        headerLabels: ['ชื่อ-สกุล', 'สถานะ']
-      });
+      Exporter.showExportDialog(`เช็คชื่อ ${date}`, rows, { headers: ['name', 'status'], headerLabels: ['ชื่อ-สกุล', 'สถานะ'] });
     });
 
     this.updateSummary();
   },
 
   markAll(status) {
-    const statusOptions = {
-      present: 'success', late: 'warning', absent: 'danger', leave: 'info'
-    };
+    const colorMap = { present: 'success', late: 'warning', absent: 'danger', leave: 'info' };
     document.querySelectorAll('tr[data-student-id]').forEach(row => {
       row.querySelectorAll('.att-status-btn').forEach(btn => {
         const s = btn.dataset.status;
-        const isTarget = s === status;
-        btn.className = `btn btn-sm btn-${isTarget ? statusOptions[s] : 'outline-' + statusOptions[s]} att-status-btn`;
+        btn.className = `btn btn-sm btn-${s === status ? colorMap[s] : 'outline-' + colorMap[s]} att-status-btn`;
       });
     });
     this.updateSummary();
@@ -1737,58 +1783,38 @@ App.modules['attendance'] = {
       if (!active) { unmarked++; return; }
       const st = active.dataset.status;
       if (st === 'present') present++;
-      if (st === 'late') late++;
-      if (st === 'absent') absent++;
-      if (st === 'leave') leave++;
+      else if (st === 'late') late++;
+      else if (st === 'absent') absent++;
+      else if (st === 'leave') leave++;
     });
     const el = document.getElementById('att-summary');
-    if (el) {
-      el.innerHTML = `<span class="text-success">มา ${present}</span> · <span class="text-warning">สาย ${late}</span> · <span class="text-danger">ขาด ${absent}</span> · <span class="text-info">ลา ${leave}</span>${unmarked > 0 ? ` · <span class="text-muted">ยังไม่เช็ค ${unmarked}</span>` : ''}`;
-    }
+    if (el) el.innerHTML = `<span class="text-success">มา ${present}</span> · <span class="text-warning">สาย ${late}</span> · <span class="text-danger">ขาด ${absent}</span> · <span class="text-info">ลา ${leave}</span>${unmarked > 0 ? ` · <span class="text-muted">ยังไม่เช็ค ${unmarked}</span>` : ''}`;
   },
 
   async save() {
-    const classroomId = document.getElementById('att-classroom').value;
-    const date = document.getElementById('att-date').value;
-    const period = document.getElementById('att-period').value;
-    const statusColors = { present: 'success', late: 'warning', absent: 'danger', leave: 'info' };
-
+    const classroomId = document.getElementById('att-classroom')?.value || this.selectedClassroom;
+    const date = document.getElementById('att-date')?.value || this.selectedDate;
+    const period = document.getElementById('att-period')?.value || '';
     const records = [];
     document.querySelectorAll('tr[data-student-id]').forEach(row => {
       const studentId = row.dataset.studentId;
-      // Find active button (not outline)
       const active = row.querySelector('.att-status-btn.btn-success, .att-status-btn.btn-warning, .att-status-btn.btn-danger, .att-status-btn.btn-info');
-      if (active) {
-        records.push({ student_id: studentId, status: active.dataset.status });
-      }
+      if (active) records.push({ student_id: studentId, status: active.dataset.status });
     });
+    if (!records.length) { App.toast('กรุณาเลือกสถานะอย่างน้อย 1 คน', 'warning'); return; }
 
-    if (records.length === 0) {
-      App.toast('กรุณาเลือกสถานะอย่างน้อย 1 คน', 'warning');
-      return;
-    }
-
-    // Get active semester
     const semRes = await API.get('/api/semesters');
     const activeSem = semRes.success ? semRes.data.find(s => s.is_active) : null;
-
     const res = await API.post('/api/attendance', {
-      classroom_id: classroomId,
-      date,
+      classroom_id: classroomId, date,
       period: period ? parseInt(period) : null,
       semester_id: activeSem?.id || null,
       records
     });
-
-    if (res.success) {
-      App.toast(`บันทึกเช็คชื่อ ${records.length} คนสำเร็จ!`);
-    } else {
-      App.toast(res.error || 'บันทึกไม่สำเร็จ', 'danger');
-    }
+    if (res.success) App.toast(`บันทึกเช็คชื่อ ${records.length} คนสำเร็จ!`);
+    else App.toast(res.error || 'บันทึกไม่สำเร็จ', 'danger');
   }
 };
-
-// ==================== Register Post-Lesson Module ====================
 
 App.modules['post-lesson'] = {
   async render(container) {
@@ -2547,7 +2573,6 @@ App.modules['student-classroom'] = {
 };
 
 // ==================== Register Portfolio Module ====================
-
 App.modules['portfolio'] = {
   categories: ['ภาพกิจกรรม', 'ผลงานนักเรียน', 'ผลงานครู', 'เอกสาร', 'วิดีโอ', 'อื่นๆ'],
 

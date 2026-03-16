@@ -2,10 +2,15 @@
 // GET  /api/attendance?classroom_id=&date=&subject_id=  — get records for a date
 // POST /api/attendance                                   — save batch records
 // GET  /api/attendance/summary?classroom_id=&semester_id= — summary per student
+// POST /api/attendance/session                           — open check-in session
+// GET  /api/attendance/sessions?classroom_id=&date=     — list sessions
+// PUT  /api/attendance/sessions/:id/close               — close session
+// POST /api/attendance/gps                              — validate GPS zone
+// CRUD /api/attendance/zones                            — manage GPS zones
 
 import {
   generateUUID, now, success, error, parseBody,
-  dbAll, dbRun
+  dbAll, dbFirst, dbRun
 } from '../../_helpers.js';
 
 export async function onRequest(context) {
@@ -36,7 +41,8 @@ export async function onRequest(context) {
     );
 
     // Get existing records for this date
-    let recordSql = `SELECT student_id, status, notes FROM attendance_records
+    let recordSql = `SELECT student_id, status, notes, check_in_method, check_in_time, check_in_lat, check_in_lng
+                     FROM attendance_records
                      WHERE teacher_id = ? AND classroom_id = ? AND date = ?`;
     const params = [env.user.id, classroomId, date];
 
@@ -51,13 +57,17 @@ export async function onRequest(context) {
     const result = students.map(s => ({
       ...s,
       status: recordMap[s.id]?.status || null,
-      notes: recordMap[s.id]?.notes || ''
+      notes: recordMap[s.id]?.notes || '',
+      check_in_method: recordMap[s.id]?.check_in_method || null,
+      check_in_time: recordMap[s.id]?.check_in_time || null,
+      check_in_lat: recordMap[s.id]?.check_in_lat || null,
+      check_in_lng: recordMap[s.id]?.check_in_lng || null,
     }));
 
     return success(result);
   }
 
-  // POST /api/attendance — save batch
+  // POST /api/attendance — save batch (UPSERT: preserve student_app check-ins)
   if (path === '/api/attendance' && method === 'POST') {
     const body = await parseBody(request);
     if (!body || !body.classroom_id || !body.date || !Array.isArray(body.records)) {
@@ -68,23 +78,38 @@ export async function onRequest(context) {
     const subjectId = body.subject_id || null;
     const period = body.period || null;
 
-    // Delete existing records for this date+classroom+subject+period
-    let delSql = 'DELETE FROM attendance_records WHERE teacher_id = ? AND classroom_id = ? AND date = ?';
-    const delParams = [env.user.id, body.classroom_id, body.date];
-    if (subjectId) { delSql += ' AND subject_id = ?'; delParams.push(subjectId); }
-    if (period) { delSql += ' AND period = ?'; delParams.push(period); }
-
-    await dbRun(env.DB, delSql, delParams);
-
-    // Insert new records
     let saved = 0;
     for (const r of body.records) {
       if (!r.student_id || !r.status) continue;
-      await dbRun(env.DB,
-        `INSERT INTO attendance_records (id, teacher_id, student_id, classroom_id, semester_id, subject_id, date, period, status, notes, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [generateUUID(), env.user.id, r.student_id, body.classroom_id, semesterId, subjectId, body.date, period, r.status, r.notes || null, now()]
+
+      // Check if existing record (especially student_app check-ins)
+      const existing = await dbFirst(env.DB,
+        `SELECT id, check_in_method, check_in_lat, check_in_lng, check_in_time
+         FROM attendance_records
+         WHERE teacher_id = ? AND student_id = ? AND classroom_id = ? AND date = ?
+         ${period ? 'AND period = ?' : 'AND period IS NULL'}`,
+        period
+          ? [env.user.id, r.student_id, body.classroom_id, body.date, period]
+          : [env.user.id, r.student_id, body.classroom_id, body.date]
       );
+
+      if (existing) {
+        // UPDATE: preserve GPS check-in data
+        await dbRun(env.DB,
+          `UPDATE attendance_records SET status = ?, notes = ?, semester_id = ?, subject_id = ?
+           WHERE id = ?`,
+          [r.status, r.notes || null, semesterId, subjectId, existing.id]
+        );
+      } else {
+        // INSERT new record (teacher manual)
+        await dbRun(env.DB,
+          `INSERT INTO attendance_records
+           (id, teacher_id, student_id, classroom_id, semester_id, subject_id, date, period, status, notes, check_in_method, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?)`,
+          [generateUUID(), env.user.id, r.student_id, body.classroom_id,
+           semesterId, subjectId, body.date, period, r.status, r.notes || null, now()]
+        );
+      }
       saved++;
     }
 
@@ -171,6 +196,52 @@ export async function onRequest(context) {
     const zoneId = path.split('/').pop();
     await dbRun(env.DB, 'DELETE FROM attendance_zones WHERE id = ? AND teacher_id = ?', [zoneId, env.user.id]);
     return success({ deleted: true });
+  }
+
+  // ===== ATTENDANCE SESSIONS (GPS self check-in sessions) =====
+
+  // POST /api/attendance/session — open a new check-in session
+  if (path === '/api/attendance/session' && method === 'POST') {
+    const body = await parseBody(request);
+    if (!body?.classroom_id || !body?.date) return error('classroom_id และ date จำเป็น');
+    // Close any existing open sessions for this classroom+date+period
+    await dbRun(env.DB,
+      `UPDATE attendance_sessions SET is_open=0, closed_at=? WHERE teacher_id=? AND classroom_id=? AND date=? AND ${body.period ? 'period=?' : 'period IS NULL'} AND is_open=1`,
+      body.period
+        ? [now(), env.user.id, body.classroom_id, body.date, body.period]
+        : [now(), env.user.id, body.classroom_id, body.date]
+    );
+    const id = generateUUID();
+    await dbRun(env.DB,
+      `INSERT INTO attendance_sessions (id, teacher_id, classroom_id, date, period, subject_id, semester_id, is_open, opened_at)
+       VALUES (?,?,?,?,?,?,?,1,?)`,
+      [id, env.user.id, body.classroom_id, body.date, body.period || null,
+       body.subject_id || null, body.semester_id || null, now()]
+    );
+    return success({ id });
+  }
+
+  // GET /api/attendance/sessions?classroom_id=&date= — list sessions
+  if (path === '/api/attendance/sessions' && method === 'GET') {
+    const classroomId = url.searchParams.get('classroom_id');
+    const date = url.searchParams.get('date');
+    if (!classroomId) return error('classroom_id จำเป็น');
+    let sql = 'SELECT * FROM attendance_sessions WHERE teacher_id=? AND classroom_id=?';
+    const params = [env.user.id, classroomId];
+    if (date) { sql += ' AND date=?'; params.push(date); }
+    sql += ' ORDER BY opened_at DESC LIMIT 10';
+    return success(await dbAll(env.DB, sql, params));
+  }
+
+  // PUT /api/attendance/sessions/:id/close — close session
+  if (path.match(/\/api\/attendance\/sessions\/[^/]+\/close/) && method === 'PUT') {
+    const parts = path.split('/');
+    const sessionId = parts[4]; // /api/attendance/sessions/:id/close
+    await dbRun(env.DB,
+      'UPDATE attendance_sessions SET is_open=0, closed_at=? WHERE id=? AND teacher_id=?',
+      [now(), sessionId, env.user.id]
+    );
+    return success({ closed: true });
   }
 
   return error('Not Found', 404);

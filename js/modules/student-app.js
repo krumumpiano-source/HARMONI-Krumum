@@ -73,16 +73,35 @@ const StudentApp = {
   // ==================== FEED ====================
   async renderFeed(container) {
     container.innerHTML = '<div class="loading"></div>';
-    const res = await API.get('/api/student/feed');
+    const [res, sessRes] = await Promise.all([
+      API.get('/api/student/feed'),
+      API.get('/api/student/sessions')
+    ]);
+    const openSessions = (sessRes.success && sessRes.data) ? sessRes.data : [];
+
+    const sessionBanners = openSessions.map(sess => `
+      <div class="card border-success border-2 shadow mb-3" id="checkin-card-${escAttr(sess.id)}">
+        <div class="card-body">
+          <div class="fw-bold text-success mb-1"><i class="bi bi-broadcast me-2"></i>ครูเปิดรับเช็คชื่อ!</div>
+          <div class="small text-muted mb-2">${escAttr(sess.classroom_name)}${sess.period ? ' · คาบ ' + sess.period : ''} · ${escAttr(sess.date)}</div>
+          <button class="btn btn-success btn-sm btn-checkin-gps" data-session="${escAttr(sess.id)}">
+            <i class="bi bi-geo-alt-fill me-1"></i>เช็คชื่อผ่าน GPS ตอนนี้
+          </button>
+          <div class="mt-2 d-none" id="checkin-status-${escAttr(sess.id)}"></div>
+        </div>
+      </div>`).join('');
 
     if (!res.success || !res.data || res.data.length === 0) {
       container.innerHTML = `
         <h5 class="fw-bold mb-3"><i class="bi bi-house-door me-2"></i>หน้าหลัก</h5>
+        ${sessionBanners}
         <div class="empty-state">
           <i class="bi bi-inbox d-block"></i>
           <p>ยังไม่มีโพสต์</p>
           <small class="text-muted">รอครูโพสต์เนื้อหาในห้องเรียน</small>
         </div>`;
+      container.querySelectorAll('.btn-checkin-gps').forEach(btn =>
+        btn.addEventListener('click', () => this.selfCheckIn(btn.dataset.session)));
       return;
     }
 
@@ -92,6 +111,7 @@ const StudentApp = {
 
     container.innerHTML = `
       <h5 class="fw-bold mb-3"><i class="bi bi-house-door me-2"></i>หน้าหลัก</h5>
+      ${sessionBanners}
       ${res.data.map(post => {
         const isVideoPost = post.post_type === 'material' && post.file_url && /youtube\.com|youtu\.be|\.mp4|\.webm/.test(post.file_url || '');
         return `
@@ -119,6 +139,42 @@ const StudentApp = {
     container.querySelectorAll('.btn-watch-video').forEach(btn => {
       btn.addEventListener('click', () => this.watchInteractiveVideo(btn.dataset.matId, btn.dataset.url, btn.dataset.title));
     });
+    // Bind GPS check-in buttons
+    container.querySelectorAll('.btn-checkin-gps').forEach(btn =>
+      btn.addEventListener('click', () => this.selfCheckIn(btn.dataset.session)));
+  },
+
+  async selfCheckIn(sessionId) {
+    const statusEl = document.getElementById(`checkin-status-${sessionId}`);
+    const btn = document.querySelector(`[data-session="${sessionId}"].btn-checkin-gps`);
+    if (!navigator.geolocation) {
+      if (statusEl) { statusEl.className = 'text-danger small mt-2'; statusEl.textContent = 'GPS ไม่รองรับบนอุปกรณ์นี้'; statusEl.classList.remove('d-none'); }
+      return;
+    }
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>กำลังค้นหาตำแหน่ง...'; }
+    if (statusEl) { statusEl.classList.remove('d-none'); statusEl.className = 'text-muted small mt-2'; statusEl.textContent = 'กำลังค้นหาตำแหน่ง GPS...'; }
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      const res = await API.post('/api/student/checkin', {
+        session_id: sessionId,
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude
+      });
+      if (statusEl) statusEl.classList.remove('d-none');
+      if (res.success) {
+        if (res.data && res.data.already_checked) {
+          if (statusEl) { statusEl.className = 'text-warning small mt-2'; statusEl.textContent = '✅ คุณเช็คชื่อแล้ว'; }
+        } else {
+          if (statusEl) { statusEl.className = 'text-success small mt-2'; statusEl.textContent = `✅ เช็คชื่อสำเร็จ! ห่างจุดเช็คชื่อ ${res.data ? res.data.distance_m : ''}ม.`; }
+        }
+        if (btn) { btn.disabled = true; btn.className = 'btn btn-success btn-sm'; btn.innerHTML = '<i class="bi bi-check-circle me-1"></i>เช็คชื่อแล้ว'; }
+      } else {
+        if (statusEl) { statusEl.className = 'text-danger small mt-2'; statusEl.textContent = `❌ ${res.error || 'เช็คชื่อไม่สำเร็จ'}`; }
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-geo-alt-fill me-1"></i>ลองใหม่'; }
+      }
+    }, () => {
+      if (statusEl) { statusEl.classList.remove('d-none'); statusEl.className = 'text-danger small mt-2'; statusEl.textContent = 'ไม่สามารถเข้าถึง GPS กรุณาเปิดตำแหน่งที่ตั้ง'; }
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-geo-alt-fill me-1"></i>ลองใหม่'; }
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
   },
 
   // ==================== INTERACTIVE VIDEO PLAYER ====================

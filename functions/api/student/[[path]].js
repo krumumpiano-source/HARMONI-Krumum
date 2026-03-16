@@ -810,5 +810,118 @@ export async function onRequest(context) {
     return success(classrooms);
   }
 
+  // ======================== STUDENT SELF CHECK-IN (GPS) ========================
+
+  // GET /api/student/sessions — get open attendance sessions for student's classrooms
+  if ((path === '/sessions' || path === '/sessions/') && method === 'GET') {
+    // Get all classrooms this student is in
+    const myClassrooms = await dbAll(db,
+      `SELECT classroom_id FROM student_classrooms WHERE student_id = ? AND is_active = 1`,
+      [studentId]
+    );
+    if (!myClassrooms.length) return success([]);
+    const ids = myClassrooms.map(r => `'${r.classroom_id.replace(/'/g,"''")}'`).join(',');
+    const sessions = await dbAll(db,
+      `SELECT s.*, c.name as classroom_name
+       FROM attendance_sessions s
+       JOIN classrooms c ON c.id = s.classroom_id
+       WHERE s.classroom_id IN (${ids}) AND s.is_open = 1
+       ORDER BY s.opened_at DESC`,
+      []
+    );
+    return success(sessions);
+  }
+
+  // POST /api/student/checkin — GPS self check-in
+  if ((path === '/checkin' || path === '/checkin/') && method === 'POST') {
+    const body = await parseBody(request);
+    const { session_id, lat, lng } = body || {};
+    if (!session_id) return error('session_id จำเป็น');
+    if (lat == null || lng == null) return error('lat และ lng จำเป็น');
+
+    // Get the session
+    const sess = await dbFirst(db,
+      `SELECT * FROM attendance_sessions WHERE id = ? AND is_open = 1`,
+      [session_id]
+    );
+    if (!sess) return error('ไม่พบเซสชันหรือปิดไปแล้ว', 404);
+
+    // Verify student is in this classroom
+    const inClass = await dbFirst(db,
+      `SELECT 1 FROM student_classrooms WHERE student_id = ? AND classroom_id = ? AND is_active = 1`,
+      [studentId, sess.classroom_id]
+    );
+    if (!inClass) return error('คุณไม่ได้อยู่ในห้องเรียนนี้', 403);
+
+    // Check for existing check-in record
+    const existing = await dbFirst(db,
+      `SELECT id, check_in_method FROM attendance_records
+       WHERE student_id = ? AND classroom_id = ? AND date = ?
+       ${sess.period ? 'AND period = ?' : 'AND (period IS NULL OR period = ?)'}`,
+      sess.period
+        ? [studentId, sess.classroom_id, sess.date, sess.period]
+        : [studentId, sess.classroom_id, sess.date, sess.period]
+    );
+    if (existing && existing.check_in_method === 'student_app') {
+      return success({ already_checked: true, message: 'คุณเช็คชื่อแล้ว' });
+    }
+
+    // Get attendance zones for this classroom
+    const zones = await dbAll(db,
+      `SELECT * FROM attendance_zones WHERE classroom_id = ? AND is_active = 1`,
+      [sess.classroom_id]
+    );
+    if (!zones.length) return error('ครูยังไม่ได้ตั้งค่าโซน GPS ของห้องนี้ กรุณาแจ้งครู');
+
+    // Check GPS distance
+    let matched = false;
+    let nearestDist = Infinity;
+    for (const z of zones) {
+      const dist = haversineDistance(lat, lng, z.lat, z.lng);
+      if (dist < nearestDist) nearestDist = dist;
+      if (dist <= (z.radius_meters || 100)) { matched = true; break; }
+    }
+
+    if (!matched) {
+      return error(`อยู่นอกโซนเช็คชื่อ (ห่าง ${Math.round(nearestDist)} เมตร) กรุณาเข้าห้องเรียนก่อนเช็คชื่อ`);
+    }
+
+    // Record the check-in
+    const checkTime = now();
+    if (existing) {
+      await dbRun(db,
+        `UPDATE attendance_records SET status='present', check_in_method='student_app', check_in_time=?, check_in_lat=?, check_in_lng=? WHERE id=?`,
+        [checkTime, lat, lng, existing.id]
+      );
+    } else {
+      await dbRun(db,
+        `INSERT INTO attendance_records
+         (id, teacher_id, student_id, classroom_id, semester_id, subject_id, date, period, status, check_in_method, check_in_time, check_in_lat, check_in_lng, created_at)
+         VALUES (?,?,?,?,?,?,?,?,  'present','student_app',?,?,?,?)`,
+        [generateUUID(), sess.teacher_id, studentId, sess.classroom_id,
+         sess.semester_id, sess.subject_id, sess.date, sess.period || null,
+         checkTime, lat, lng, checkTime]
+      );
+    }
+
+    // Award XP for attendance
+    await dbRun(db,
+      `INSERT INTO student_xp (id, student_id, source_type, source_id, xp_amount, created_at) VALUES (?,?,'attendance',?,5,?)`,
+      [generateUUID(), studentId, session_id, checkTime]
+    );
+
+    return success({ checked_in: true, distance_m: Math.round(nearestDist), message: 'เช็คชื่อสำเร็จ!' });
+  }
+
   return error('Not found', 404);
+}
+
+// Haversine distance formula (meters)
+function haversineDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }

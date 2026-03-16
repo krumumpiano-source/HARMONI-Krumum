@@ -129,17 +129,55 @@ const AIPanel = {
   renderChat() {
     const body = document.getElementById('ai-panel-body');
     const taskInfo = [...this.QUICK_TASKS, ...this.CHAT_TASKS].find(t => t.id === this.template);
-    body.innerHTML = 
+
+    // Build context hint for lesson_plan / course_structure
+    let ctxHint = '';
+    let autoDraftBtn = '';
+    if (this.template === 'lesson_plan' && this.context?.subject) {
+      const parts = [];
+      if (this.context.subject) parts.push((this.context.subject_code ? this.context.subject_code + ' ' : '') + this.context.subject);
+      if (this.context.unit_title) parts.push('\u0e2b\u0e19\u0e48\u0e27\u0e22\u0e17\u0e35\u0e48 ' + this.context.unit_number + ': ' + this.context.unit_title);
+      if (this.context.indicators) parts.push('\u0e15\u0e31\u0e27\u0e0a\u0e35\u0e49\u0e27\u0e31\u0e14: ' + this.context.indicators);
+      if (this.context.duration_minutes) parts.push(this.context.duration_minutes + ' \u0e19\u0e32\u0e17\u0e35');
+      if (parts.length) {
+        ctxHint = `<div class="alert alert-info small py-2 px-3 mb-2"><i class="bi bi-info-circle me-1"></i>${parts.join(' \u2022 ')}</div>`;
+        autoDraftBtn = `<div class="d-grid mb-3"><button class="btn btn-primary btn-sm" id="btn-ai-auto-draft"><i class="bi bi-stars me-1"></i>\u0e23\u0e48\u0e32\u0e07\u0e41\u0e1c\u0e19\u0e01\u0e32\u0e23\u0e2a\u0e2d\u0e19\u0e43\u0e2b\u0e49\u0e40\u0e25\u0e22</button></div>`;
+      }
+    } else if (this.template === 'course_structure' && this.context?.subject) {
+      ctxHint = `<div class="alert alert-info small py-2 px-3 mb-2"><i class="bi bi-info-circle me-1"></i>\u0e27\u0e34\u0e0a\u0e32: ${this.context.subject}</div>`;
+      autoDraftBtn = `<div class="d-grid mb-3"><button class="btn btn-primary btn-sm" id="btn-ai-auto-draft"><i class="bi bi-stars me-1"></i>\u0e2d\u0e2d\u0e01\u0e41\u0e1a\u0e1a\u0e42\u0e04\u0e23\u0e07\u0e2a\u0e23\u0e49\u0e32\u0e07\u0e23\u0e32\u0e22\u0e27\u0e34\u0e0a\u0e32\u0e43\u0e2b\u0e49\u0e40\u0e25\u0e22</button></div>`;
+    }
+
+    body.innerHTML = `
       <div class="d-flex justify-content-between align-items-center mb-3">
-        <h6 class="mb-0 fw-semibold"></h6>
+        <h6 class="mb-0 fw-semibold">${taskInfo?.name || '\u0e2a\u0e19\u0e17\u0e19\u0e32\u0e01\u0e31\u0e1a AI'}</h6>
         <button class="btn btn-sm btn-outline-secondary" onclick="AIPanel.open()"><i class="bi bi-arrow-left me-1"></i>\u0e01\u0e25\u0e31\u0e1a</button>
       </div>
+      ${ctxHint}
+      ${autoDraftBtn}
       <div id="ai-messages"></div>
       <div class="ai-input-area">
         <input type="text" class="form-control" id="ai-input" placeholder="\u0e1e\u0e34\u0e21\u0e1e\u0e4c\u0e02\u0e49\u0e2d\u0e04\u0e27\u0e32\u0e21..." onkeydown="if(event.key==='Enter')AIPanel.sendMessage()">
         <button class="btn btn-primary" onclick="AIPanel.sendMessage()"><i class="bi bi-send"></i></button>
-      </div>;
+      </div>`;
     document.getElementById('ai-input')?.focus();
+
+    // Auto-draft button handler
+    document.getElementById('btn-ai-auto-draft')?.addEventListener('click', () => {
+      const ctx = this.context;
+      let msg = '';
+      if (this.template === 'lesson_plan') {
+        const sub = (ctx.subject_code ? ctx.subject_code + ' ' : '') + (ctx.subject || '');
+        const unit = ctx.unit_title ? ` \u0e2b\u0e19\u0e48\u0e27\u0e22: ${ctx.unit_title}` : '';
+        const ind = ctx.indicators ? ` \u0e15\u0e31\u0e27\u0e0a\u0e35\u0e49\u0e27\u0e31\u0e14: ${ctx.indicators}` : '';
+        const dur = ctx.duration_minutes ? ` \u0e40\u0e27\u0e25\u0e32 ${ctx.duration_minutes} \u0e19\u0e32\u0e17\u0e35` : '';
+        const pln = ctx.plan_number ? ` \u0e41\u0e1c\u0e19\u0e17\u0e35\u0e48 ${ctx.plan_number}` : '';
+        msg = `\u0e23\u0e48\u0e32\u0e07\u0e41\u0e1c\u0e19\u0e01\u0e32\u0e23\u0e2a\u0e2d\u0e19${pln} \u0e27\u0e34\u0e0a\u0e32 ${sub}${unit}${ind}${dur}`.trim();
+      } else if (this.template === 'course_structure') {
+        msg = `\u0e2d\u0e2d\u0e01\u0e41\u0e1a\u0e1a\u0e42\u0e04\u0e23\u0e07\u0e2a\u0e23\u0e49\u0e32\u0e07\u0e23\u0e32\u0e22\u0e27\u0e34\u0e0a\u0e32 ${ctx.subject || ''}`.trim();
+      }
+      if (msg) this.sendMessage(msg);
+    });
   },
 
   async sendMessage(userInput) {
@@ -222,7 +260,10 @@ const AIPanel = {
   useResult(btn) {
     const text = btn.closest('.ai-msg-ai')?.querySelector('pre')?.textContent;
     if (!text) return;
-    // Try to find a visible textarea and paste
+    const parsed = this._extractJSON(text);
+    if (parsed && this.template === 'lesson_plan') { this._fillLessonPlanForm(parsed); return; }
+    if (parsed && this.template === 'course_structure') { this._fillCourseStructureForm(parsed); return; }
+    // Fallback: paste into last textarea
     const textareas = document.querySelectorAll('#main-content textarea:not([readonly])');
     if (textareas.length > 0) {
       const ta = textareas[textareas.length - 1];
@@ -232,7 +273,67 @@ const AIPanel = {
       this.close();
     } else {
       navigator.clipboard.writeText(text);
-      App.toast('\u0e04\u0e31\u0e14\u0e25\u0e2d\u0e01\u0e41\u0e25\u0e49\u0e27 (\u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e0a\u0e48\u0e2d\u0e07\u0e01\u0e23\u0e2d\u0e01)', 'info');
+      App.toast('\u0e04\u0e31\u0e14\u0e25\u0e2d\u0e01\u0e41\u0e25\u0e49\u0e27', 'info');
+    }
+  },
+
+  _extractJSON(text) {
+    // Try ===JSON=== marker first
+    const marker = '===JSON===';
+    const mIdx = text.lastIndexOf(marker);
+    if (mIdx >= 0) {
+      const after = text.slice(mIdx + marker.length).trim();
+      const fb = after.indexOf('{');
+      if (fb >= 0) { try { return JSON.parse(after.slice(fb)); } catch (e) {} }
+    }
+    // Try ```json code block
+    const cb = text.match(/```json\s*([\s\S]*?)\s*```/);
+    if (cb) { try { return JSON.parse(cb[1]); } catch (e) {} }
+    // Try last { ... } in text
+    let depth = 0, end = -1, start = -1;
+    for (let i = text.length - 1; i >= 0; i--) {
+      if (text[i] === '}') { if (depth === 0) end = i; depth++; }
+      else if (text[i] === '{') { depth--; if (depth === 0) { start = i; break; } }
+    }
+    if (start >= 0 && end > start) { try { return JSON.parse(text.slice(start, end + 1)); } catch (e) {} }
+    return null;
+  },
+
+  _fillLessonPlanForm(plan) {
+    // Find the currently open plan form
+    let formArea = null;
+    document.querySelectorAll('[id^="plan-form-area-"]').forEach(el => {
+      if (el.querySelector('#lp-title')) formArea = el;
+    });
+    if (!formArea) {
+      navigator.clipboard.writeText(JSON.stringify(plan, null, 2));
+      App.toast('\u0e04\u0e31\u0e14\u0e25\u0e2d\u0e01 JSON \u2014 \u0e40\u0e1b\u0e34\u0e14\u0e1f\u0e2d\u0e23\u0e4c\u0e21\u0e41\u0e1c\u0e19\u0e01\u0e48\u0e2d\u0e19', 'info');
+      return;
+    }
+    const g = id => formArea.querySelector('#' + id);
+    if (plan.title)            { const el = g('lp-title');       if (el) el.value = plan.title; }
+    if (plan.objectives)       { const el = g('lp-objectives');  if (el) el.value = plan.objectives; }
+    if (plan.content)          { const el = g('lp-content-text'); if (el) el.value = plan.content; }
+    if (plan.steps)            { const el = g('lp-steps');       if (el) el.value = plan.steps; }
+    if (plan.materials)        { const el = g('lp-materials');   if (el) el.value = plan.materials; }
+    if (plan.assessment_notes) { const el = g('lp-assessment');  if (el) el.value = plan.assessment_notes; }
+    App.toast('AI \u0e40\u0e15\u0e34\u0e21\u0e41\u0e1c\u0e19\u0e01\u0e32\u0e23\u0e2a\u0e2d\u0e19\u0e25\u0e07\u0e1f\u0e2d\u0e23\u0e4c\u0e21\u0e41\u0e25\u0e49\u0e27!');
+    this.close();
+  },
+
+  _fillCourseStructureForm(data) {
+    const g = id => document.getElementById(id);
+    let filled = 0;
+    if (data.learning_objectives && g('cs-objectives')) { g('cs-objectives').value = data.learning_objectives; filled++; }
+    if (data.total_hours && g('cs-hours'))               { g('cs-hours').value = data.total_hours; filled++; }
+    if (data.score_distribution && g('cs-score-dist'))   { g('cs-score-dist').value = data.score_distribution; filled++; }
+    if (filled > 0) {
+      const u = Array.isArray(data.units) ? ` (AI \u0e41\u0e19\u0e30\u0e19\u0e33 ${data.units.length} \u0e2b\u0e19\u0e48\u0e27\u0e22)` : '';
+      App.toast(`AI \u0e40\u0e15\u0e34\u0e21\u0e02\u0e49\u0e2d\u0e21\u0e39\u0e25\u0e42\u0e04\u0e23\u0e07\u0e2a\u0e23\u0e49\u0e32\u0e07\u0e23\u0e32\u0e22\u0e27\u0e34\u0e0a\u0e32\u0e41\u0e25\u0e49\u0e27${u}`);
+      this.close();
+    } else {
+      navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+      App.toast('\u0e04\u0e31\u0e14\u0e25\u0e2d\u0e01 JSON \u2014 \u0e40\u0e1b\u0e34\u0e14\u0e2b\u0e19\u0e49\u0e32\u0e42\u0e04\u0e23\u0e07\u0e2a\u0e23\u0e49\u0e32\u0e07\u0e01\u0e48\u0e2d\u0e19', 'info');
     }
   }
 };

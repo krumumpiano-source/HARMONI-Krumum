@@ -3328,8 +3328,9 @@ App.modules['lesson-plan'] = {
 
     formArea.innerHTML = `
       <div class="card border-primary border-2 shadow-sm my-2">
-        <div class="card-header bg-white fw-semibold small">
-          <i class="bi bi-pencil-square me-2"></i>${isEdit ? 'แก้ไขแผน' : `เขียนแผนใหม่ — หน่วยที่ ${unitNum}`}
+        <div class="card-header bg-white fw-semibold small d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-pencil-square me-2"></i>${isEdit ? 'แก้ไขแผน' : `เขียนแผนใหม่ — หน่วยที่ ${unitNum}`}</span>
+          <button class="btn btn-sm btn-outline-primary py-0 px-2" id="btn-lp-ai-help"><i class="bi bi-stars me-1"></i>AI ร่างให้</button>
         </div>
         <div class="card-body">
           <input type="hidden" id="lp-edit-id" value="${existingPlan?.id || ''}">
@@ -3356,6 +3357,22 @@ App.modules['lesson-plan'] = {
 
     formArea.querySelector('#btn-lp-cancel').addEventListener('click', () => { formArea.innerHTML = ''; });
     formArea.querySelector('#btn-lp-save').addEventListener('click', () => this._savePlan(unitId, formArea));
+    formArea.querySelector('#btn-lp-ai-help')?.addEventListener('click', () => {
+      const unit = this._units?.find(u => String(u.id) === String(unitId));
+      const subj = this._subjects?.find(s => String(s.id) === String(this._subjectId));
+      const planNum  = parseInt(formArea.querySelector('#lp-num')?.value) || planCount + 1;
+      const duration = parseInt(formArea.querySelector('#lp-duration')?.value) || 50;
+      AIPanel.open('lesson_plan', {
+        subject:          subj?.name || '',
+        subject_code:     subj?.code || '',
+        unit_number:      unit?.unit_number || unitNum,
+        unit_title:       unit?.title || '',
+        indicators:       unit?.standard || '',
+        description:      unit?.description || '',
+        plan_number:      planNum,
+        duration_minutes: duration
+      }, 'chat');
+    });
     formArea.querySelector('#lp-title')?.focus();
   },
 

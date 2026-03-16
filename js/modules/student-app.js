@@ -278,51 +278,162 @@ const StudentApp = {
     }
   },
 
-  // ==================== ASSIGNMENTS ====================
+  // ==================== ASSIGNMENTS + SCORES DASHBOARD ====================
+  _workloadFilter: 'all',
+
   async renderAssignments(container) {
     container.innerHTML = '<div class="loading"></div>';
-    const res = await API.get('/api/student/feed?type=assignment');
-
-    if (!res.success || !res.data || res.data.length === 0) {
-      container.innerHTML = `
-        <h5 class="fw-bold mb-3"><i class="bi bi-file-earmark-text me-2"></i>งานที่ได้รับ</h5>
-        <div class="empty-state"><i class="bi bi-inbox d-block"></i><p>ยังไม่มีงาน</p></div>`;
+    const res = await API.get('/api/student/workload');
+    if (!res.success) {
+      container.innerHTML = `<h5 class="fw-bold mb-3"><i class="bi bi-file-earmark-text me-2"></i>งาน & คะแนน</h5>
+        <div class="alert alert-danger">โหลดข้อมูลไม่สำเร็จ</div>`;
       return;
     }
+    this._workloadData = res.data;
+    this._renderWorkloadView(container, this._workloadFilter || 'all');
+  },
 
-    container.innerHTML = `
-      <h5 class="fw-bold mb-3"><i class="bi bi-file-earmark-text me-2"></i>งานที่ได้รับ</h5>
-      ${res.data.map((a, idx) => {
-        const sub = a.submission;
-        const statusBadge = sub
-          ? (sub.status === 'graded' ? `<span class="badge bg-success">ตรวจแล้ว ${sub.score !== null ? sub.score + ' คะแนน' : ''}</span>`
-            : `<span class="badge bg-info">ส่งแล้ว</span>`)
-          : (a.due_date && new Date(a.due_date) < new Date() ? '<span class="badge bg-danger">เลยกำหนด</span>' : '<span class="badge bg-warning text-dark">ยังไม่ส่ง</span>');
+  _gradeColor(grade) {
+    return { A: 'success', 'B+': 'success', B: 'primary', 'C+': 'primary', C: 'warning', 'D+': 'warning', D: 'danger', F: 'danger' }[grade] || 'secondary';
+  },
+
+  _scoreTypeTH(t) {
+    return { midterm: 'กลางภาค', final: 'ปลายภาค', assignment: 'งาน', quiz: 'ทดสอบ', behavior: 'พฤติกรรม' }[t] || t;
+  },
+
+  _renderWorkloadView(container, filter) {
+    this._workloadFilter = filter;
+    const { assignments = [], subjects = [] } = this._workloadData || {};
+    const now = new Date();
+
+    // Categorise each assignment
+    const categorised = assignments.map(a => {
+      const sub = a.submission;
+      const due = a.due_date ? new Date(a.due_date) : null;
+      let cat;
+      if (sub?.status === 'graded')       cat = 'graded';
+      else if (sub)                        cat = 'submitted';
+      else if (due && due < now)           cat = 'overdue';
+      else                                 cat = 'pending';
+      return { ...a, _cat: cat };
+    });
+
+    const counts = {
+      all: categorised.length,
+      pending:   categorised.filter(a => a._cat === 'pending').length,
+      overdue:   categorised.filter(a => a._cat === 'overdue').length,
+      submitted: categorised.filter(a => a._cat === 'submitted').length,
+      graded:    categorised.filter(a => a._cat === 'graded').length
+    };
+    const filtered = filter === 'all' ? categorised : categorised.filter(a => {
+      if (filter === 'todo') return a._cat === 'pending' || a._cat === 'overdue';
+      return a._cat === filter;
+    });
+
+    const filterBtns = [
+      { key: 'all',      label: `ทั้งหมด <span class="badge bg-secondary ms-1">${counts.all}</span>` },
+      { key: 'todo',     label: `ค้าง <span class="badge bg-warning text-dark ms-1">${counts.pending + counts.overdue}</span>` },
+      { key: 'submitted',label: `รอตรวจ <span class="badge bg-info ms-1">${counts.submitted}</span>` },
+      { key: 'graded',   label: `ตรวจแล้ว <span class="badge bg-success ms-1">${counts.graded}</span>` },
+    ].map(f => `<button class="btn btn-sm ${filter === f.key ? 'btn-primary' : 'btn-outline-secondary'} filter-btn" data-filter="${escAttr(f.key)}">${f.label}</button>`).join('');
+
+    const assignmentCards = filtered.length === 0
+      ? `<div class="empty-state text-center py-4"><i class="bi bi-inbox d-block fs-1 text-muted mb-2"></i><p class="text-muted">ไม่มีรายการ</p></div>`
+      : filtered.map(a => {
+          const sub = a.submission;
+          const due = a.due_date ? new Date(a.due_date) : null;
+          let badge, extras = '';
+
+          if (a._cat === 'graded') {
+            badge = `<span class="badge bg-success"><i class="bi bi-patch-check me-1"></i>ตรวจแล้ว${sub.score !== null ? ' · ' + sub.score + '/' + (sub.max_score || '?') + ' คะแนน' : ''}</span>`;
+            if (sub.feedback) extras += `<div class="mt-2 p-2 bg-light rounded small"><i class="bi bi-chat-text text-primary me-1"></i>${DOMPurify.sanitize(sub.feedback)}</div>`;
+            extras += `<div class="mt-1 text-muted small"><i class="bi bi-clock me-1"></i>ส่งเมื่อ ${new Date(sub.submitted_at || sub.resubmitted_at).toLocaleString('th-TH')}</div>`;
+            if (sub.graded_at) extras += `<div class="text-muted small"><i class="bi bi-check2 me-1"></i>ตรวจเมื่อ ${new Date(sub.graded_at).toLocaleString('th-TH')}</div>`;
+          } else if (a._cat === 'submitted') {
+            badge = `<span class="badge bg-info"><i class="bi bi-send me-1"></i>ส่งแล้ว รอตรวจ</span>`;
+            extras += `<div class="mt-1 text-muted small"><i class="bi bi-clock me-1"></i>ส่งเมื่อ ${new Date(sub.submitted_at || sub.resubmitted_at).toLocaleString('th-TH')}${sub.is_late ? ' <span class="text-danger">(ช้า)</span>' : ''}</div>`;
+          } else if (a._cat === 'overdue') {
+            badge = `<span class="badge bg-danger"><i class="bi bi-exclamation-triangle me-1"></i>เลยกำหนด</span>`;
+          } else {
+            badge = `<span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>ยังไม่ส่ง</span>`;
+          }
+
+          const dueStr = due
+            ? `<div class="small ${due < now && a._cat !== 'graded' && a._cat !== 'submitted' ? 'text-danger fw-semibold' : 'text-muted'}"><i class="bi bi-calendar-event me-1"></i>กำหนดส่ง ${due.toLocaleDateString('th-TH')}</div>`
+            : '<div class="small text-muted">ไม่มีกำหนดส่ง</div>';
+
+          const canSubmit = a._cat !== 'graded';
+          const submitBtn = canSubmit
+            ? `<button class="btn btn-sm btn-primary btn-submit-assignment mt-2" data-post-id="${escAttr(a.id)}" data-title="${escAttr(a.title)}">
+                <i class="bi bi-upload me-1"></i>${sub ? 'ส่งใหม่' : 'ส่งงาน'}
+               </button>`
+            : '';
+
+          return `
+            <div class="card border-0 shadow-sm mb-3">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+                  <h6 class="fw-bold mb-0 flex-grow-1">${DOMPurify.sanitize(a.title)}</h6>
+                  ${badge}
+                </div>
+                <div class="small text-muted mb-1"><i class="bi bi-book me-1"></i>${DOMPurify.sanitize(a.subject_name || '')} · ${DOMPurify.sanitize(a.classroom_name || '')}</div>
+                ${dueStr}${extras}${submitBtn}
+              </div>
+            </div>`;
+        }).join('');
+
+    // Scores & grades by subject
+    const scoreSection = subjects.length === 0 ? '' : `
+      <h6 class="fw-bold mt-4 mb-3"><i class="bi bi-bar-chart-line me-2 text-primary"></i>คะแนน & เกรดปัจจุบัน</h6>
+      ${subjects.map(sub => {
+        const gColor = this._gradeColor(sub.grade);
+        const items = sub.items.map(it => `
+          <div class="d-flex justify-content-between align-items-center py-1 border-bottom small">
+            <div>
+              <span class="badge bg-light text-dark me-1">${escAttr(this._scoreTypeTH(it.score_type))}</span>
+              ${DOMPurify.sanitize(it.description || '')}
+            </div>
+            <div class="text-end fw-semibold">${it.score}/${it.max_score}</div>
+          </div>`).join('');
         return `
           <div class="card border-0 shadow-sm mb-3">
             <div class="card-body">
               <div class="d-flex justify-content-between align-items-center mb-2">
-                <h6 class="fw-bold mb-0">${DOMPurify.sanitize(a.title)}</h6>
-                ${statusBadge}
+                <div>
+                  <span class="fw-bold">${DOMPurify.sanitize(sub.subject_name)}</span>
+                  ${sub.subject_code ? `<span class="text-muted small ms-1">(${escAttr(sub.subject_code)})</span>` : ''}
+                </div>
+                <div class="text-end">
+                  <span class="badge bg-${gColor} fs-6 px-3">${escAttr(sub.grade)}</span>
+                </div>
               </div>
-              <small class="text-muted d-block mb-1">${DOMPurify.sanitize(a.subject_name || '')}</small>
-              <small class="text-muted">${a.due_date ? 'กำหนดส่ง: ' + new Date(a.due_date).toLocaleDateString('th-TH') : 'ไม่มีกำหนดส่ง'}</small>
-              ${!sub || sub.status !== 'graded' ? `
-                <div class="mt-2">
-                  <button class="btn btn-sm btn-primary btn-submit-assignment" data-post-id="${escAttr(a.id)}" data-title="${escAttr(a.title)}">
-                    <i class="bi bi-upload me-1"></i>${sub ? 'ส่งใหม่' : 'ส่งงาน'}
-                  </button>
-                </div>` : ''}
+              ${items}
+              <div class="d-flex justify-content-between align-items-center mt-2 pt-1">
+                <div class="small text-muted">รวม ${sub.total.toFixed(1)} / ${sub.maxTotal.toFixed(1)} คะแนน</div>
+                <div>
+                  <div class="progress" style="width:120px;height:8px;">
+                    <div class="progress-bar bg-${gColor}" style="width:${Math.min(sub.pct,100)}%"></div>
+                  </div>
+                  <div class="text-end small text-muted mt-1">${sub.pct}%</div>
+                </div>
+              </div>
             </div>
           </div>`;
       }).join('')}`;
 
-    // Bind submit buttons via addEventListener (no inline onclick)
-    container.querySelectorAll('.btn-submit-assignment').forEach(btn => {
-      btn.addEventListener('click', () => {
-        this.openSubmitForm(btn.dataset.postId, btn.dataset.title);
-      });
-    });
+    container.innerHTML = `
+      <h5 class="fw-bold mb-3"><i class="bi bi-clipboard2-check me-2"></i>งาน & คะแนน</h5>
+      <div class="d-flex flex-wrap gap-2 mb-3">${filterBtns}</div>
+      ${assignmentCards}
+      ${scoreSection}`;
+
+    // Bind filter buttons
+    container.querySelectorAll('.filter-btn').forEach(btn =>
+      btn.addEventListener('click', () => this._renderWorkloadView(container, btn.dataset.filter)));
+
+    // Bind submit buttons
+    container.querySelectorAll('.btn-submit-assignment').forEach(btn =>
+      btn.addEventListener('click', () => this.openSubmitForm(btn.dataset.postId, btn.dataset.title)));
   },
 
   // ==================== IMAGE COMPRESSION ====================

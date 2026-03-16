@@ -810,6 +810,72 @@ export async function onRequest(context) {
     return success(classrooms);
   }
 
+  // ======================== WORKLOAD: ASSIGNMENTS + SCORES ========================
+  // GET /api/student/workload — all assignments with submission status + scores per subject
+  if ((path === '/workload' || path === '/workload/') && method === 'GET') {
+    // 1) Get all assignment posts for student's classrooms
+    const assignments = await dbAll(db, `
+      SELECT cp.id, cp.title, cp.content, cp.due_date, cp.allow_late, cp.created_at,
+             s.name AS subject_name, s.id AS subject_id, c.name AS classroom_name
+      FROM classroom_posts cp
+      JOIN subject_classrooms sc ON sc.id = cp.subject_classroom_id
+      JOIN subjects s ON s.id = sc.subject_id
+      JOIN classrooms c ON c.id = sc.classroom_id
+      JOIN student_classrooms stc ON stc.classroom_id = sc.classroom_id
+        AND stc.student_id = ? AND stc.is_active = 1
+      WHERE cp.post_type = 'assignment' AND cp.is_published = 1
+      ORDER BY cp.due_date ASC NULLS LAST, cp.created_at DESC
+    `, [studentId]);
+
+    // 2) Fetch submissions for all those assignments
+    if (assignments.length > 0) {
+      const postIds = assignments.map(a => `'${a.id.replace(/'/g,"''")}'`).join(',');
+      const subs = await dbAll(db,
+        `SELECT post_id, status, score, max_score, feedback, submitted_at, resubmitted_at, graded_at, is_late
+         FROM assignment_submissions WHERE post_id IN (${postIds}) AND student_id = ?`,
+        [studentId]
+      );
+      const subMap = {};
+      for (const s of subs) subMap[s.post_id] = s;
+      for (const a of assignments) a.submission = subMap[a.id] || null;
+    }
+
+    // 3) Get all teacher-entered scores for this student
+    const scores = await dbAll(db, `
+      SELECT sc.*, s.name AS subject_name, s.code AS subject_code
+      FROM scores sc
+      JOIN subjects s ON s.id = sc.subject_id
+      WHERE sc.student_id = ?
+      ORDER BY sc.score_type, sc.created_at
+    `, [studentId]);
+
+    // 4) Group scores by subject → calculate total, pct, grade
+    const subjectMap = {};
+    for (const sc of scores) {
+      if (!subjectMap[sc.subject_id]) {
+        subjectMap[sc.subject_id] = {
+          subject_id: sc.subject_id,
+          subject_name: sc.subject_name,
+          subject_code: sc.subject_code,
+          items: [],
+          total: 0,
+          maxTotal: 0
+        };
+      }
+      subjectMap[sc.subject_id].items.push(sc);
+      subjectMap[sc.subject_id].total += sc.score || 0;
+      subjectMap[sc.subject_id].maxTotal += sc.max_score || 0;
+    }
+    const subjects = Object.values(subjectMap).map(sub => {
+      const pct = sub.maxTotal > 0 ? (sub.total / sub.maxTotal) * 100 : 0;
+      sub.pct = parseFloat(pct.toFixed(1));
+      sub.grade = calcGrade(pct);
+      return sub;
+    });
+
+    return success({ assignments, subjects });
+  }
+
   // ======================== STUDENT SELF CHECK-IN (GPS) ========================
 
   // GET /api/student/sessions — get open attendance sessions for student's classrooms
@@ -924,4 +990,16 @@ function haversineDistance(lat1, lng1, lat2, lng2) {
   const dLng = toRad(lng2 - lng1);
   const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2)**2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// Grade from percentage (Thai school standard)
+function calcGrade(pct) {
+  if (pct >= 80) return 'A';
+  if (pct >= 75) return 'B+';
+  if (pct >= 70) return 'B';
+  if (pct >= 65) return 'C+';
+  if (pct >= 60) return 'C';
+  if (pct >= 55) return 'D+';
+  if (pct >= 50) return 'D';
+  return 'F';
 }

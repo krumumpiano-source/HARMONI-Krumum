@@ -7,7 +7,7 @@
 
 import { generateUUID, now, success, error, parseBody, dbFirst, dbRun } from '../../_helpers.js';
 
-const SCOPES = 'https://www.googleapis.com/auth/drive.file';
+const SCOPES = 'https://www.googleapis.com/auth/drive';
 const REDIRECT_URI_PATH = '/api/drive/auth/callback';
 
 function getRedirectUri(request) {
@@ -113,6 +113,78 @@ export async function onRequest(context) {
     return tokens.access_token;
   }
 
+  // Helper: find or create a folder in Drive (with in-memory cache per request)
+  const folderCache = {};
+  async function findOrCreateFolder(accessToken, name, parentId) {
+    const cacheKey = `${parentId}/${name}`;
+    if (folderCache[cacheKey]) return folderCache[cacheKey];
+
+    const q = `name='${name.replace(/'/g, "\\'")}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    const searchResp = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&pageSize=1`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    const searchData = await searchResp.json();
+    if (searchData.files && searchData.files.length > 0) {
+      folderCache[cacheKey] = searchData.files[0].id;
+      return searchData.files[0].id;
+    }
+    const createResp = await fetch('https://www.googleapis.com/drive/v3/files', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] })
+    });
+    const folder = await createResp.json();
+    folderCache[cacheKey] = folder.id;
+    return folder.id;
+  }
+
+  // Helper: create folder chain from array of names under root
+  async function createFolderChain(accessToken, folderPath, rootId) {
+    let parentId = rootId;
+    for (const name of folderPath) {
+      parentId = await findOrCreateFolder(accessToken, name, parentId);
+    }
+    return parentId;
+  }
+
+  // GET /api/drive/root — get/set root folder ID
+  if (path === '/api/drive/root' && method === 'GET') {
+    const row = await dbFirst(env.DB,
+      "SELECT value FROM app_settings WHERE teacher_id = ? AND key = 'drive_root_folder'",
+      [env.user.id]
+    );
+    return success({ root_folder_id: row?.value || '1NE_KC6zWdyaURFMmLVRw1aXXD-dWede0' });
+  }
+
+  // POST /api/drive/root — save root folder ID
+  if (path === '/api/drive/root' && method === 'POST') {
+    const body = await parseBody(request);
+    if (!body?.folder_id) return error('กรุณาส่ง folder_id');
+    await dbRun(env.DB,
+      `INSERT INTO app_settings (id, teacher_id, key, value, updated_at)
+       VALUES (?, ?, 'drive_root_folder', ?, ?)
+       ON CONFLICT(teacher_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      [generateUUID(), env.user.id, body.folder_id, now()]
+    );
+    return success({ saved: true });
+  }
+
+  // POST /api/drive/folder-chain — create folder chain and return final folder ID
+  if (path === '/api/drive/folder-chain' && method === 'POST') {
+    const accessToken = await getAccessToken();
+    if (!accessToken) return error('ยังไม่ได้เชื่อมต่อ Google Drive');
+    const body = await parseBody(request);
+    if (!body?.path || !Array.isArray(body.path)) return error('กรุณาส่ง path[]');
+    const rootRow = await dbFirst(env.DB,
+      "SELECT value FROM app_settings WHERE teacher_id = ? AND key = 'drive_root_folder'",
+      [env.user.id]
+    );
+    const rootId = rootRow?.value || '1NE_KC6zWdyaURFMmLVRw1aXXD-dWede0';
+    const folderId = await createFolderChain(accessToken, body.path, rootId);
+    return success({ folder_id: folderId });
+  }
+
   // GET /api/drive — list files
   if (path === '/api/drive' && method === 'GET') {
     const accessToken = await getAccessToken();
@@ -140,11 +212,21 @@ export async function onRequest(context) {
     const body = await parseBody(request);
     if (!body?.name || !body?.content) return error('กรุณาส่ง name และ content (base64)');
 
-    const defaultFolder = env.DRIVE_FOLDER_ID || '1NE_KC6zWdyaURFMmLVRw1aXXD-dWede0';
+    // Support folder_path array to auto-create folder chain
+    let parentFolder = body.folder_id || null;
+    if (!parentFolder && body.folder_path && Array.isArray(body.folder_path)) {
+      const rootRow = await dbFirst(env.DB,
+        "SELECT value FROM app_settings WHERE teacher_id = ? AND key = 'drive_root_folder'",
+        [env.user.id]
+      );
+      const rootId = rootRow?.value || '1NE_KC6zWdyaURFMmLVRw1aXXD-dWede0';
+      parentFolder = await createFolderChain(accessToken, body.folder_path, rootId);
+    }
+
     const metadata = {
       name: body.name,
       mimeType: body.mimeType || 'application/octet-stream',
-      parents: [body.folder_id || defaultFolder]
+      parents: parentFolder ? [parentFolder] : []
     };
 
     // Simple upload using multipart

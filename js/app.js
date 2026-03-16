@@ -1012,17 +1012,19 @@ App.modules['settings'] = {
   async render(container) {
     container.innerHTML = '<div class="loading"></div>';
 
-    const [setRes, semRes, subRes, classRes] = await Promise.all([
+    const [setRes, semRes, subRes, classRes, driveRootRes] = await Promise.all([
       API.get('/api/settings'),
       API.get('/api/semesters'),
       API.get('/api/subjects'),
-      API.get('/api/classrooms')
+      API.get('/api/classrooms'),
+      API.get('/api/drive/root')
     ]);
 
     const s = setRes.success ? setRes.data : {};
     const semesters = semRes.success ? semRes.data : [];
     const subjects = subRes.success ? subRes.data : [];
     const classrooms = classRes.success ? classRes.data : [];
+    const driveRoot = driveRootRes.success ? driveRootRes.data.root_folder_id : '';
 
     container.innerHTML = `
       <h4 class="fw-bold mb-4"><i class="bi bi-gear me-2 text-primary"></i>ตั้งค่าเริ่มต้น</h4>
@@ -1109,23 +1111,6 @@ App.modules['settings'] = {
         </div>
       </div>
 
-      <!-- Google Drive Storage -->
-      <div class="card border-0 shadow-sm mb-4">
-        <div class="card-header bg-white">
-          <span class="fw-semibold"><i class="bi bi-google me-2"></i>Google Drive — ที่เก็บไฟล์</span>
-        </div>
-        <div class="card-body">
-          <p class="text-muted small mb-2">รูปภาพ/คลิปจากนักเรียนส่งงาน และไฟล์ที่อัปโหลดทั้งหมด จะถูกเก็บในโฟลเดอร์นี้</p>
-          <a href="https://drive.google.com/drive/folders/1NE_KC6zWdyaURFMmLVRw1aXXD-dWede0" target="_blank" rel="noopener" class="btn btn-outline-primary me-2">
-            <i class="bi bi-folder2-open me-1"></i>เปิดโฟลเดอร์ Google Drive
-          </a>
-          <button class="btn btn-outline-success" id="btn-connect-drive">
-            <i class="bi bi-plug me-1"></i>เชื่อมต่อ Google Drive
-          </button>
-          <div id="drive-status" class="mt-2"></div>
-        </div>
-      </div>
-
       <!-- Classrooms -->
       <div class="card border-0 shadow-sm mb-4">
         <div class="card-header bg-white d-flex justify-content-between align-items-center">
@@ -1153,9 +1138,58 @@ App.modules['settings'] = {
             </table>
           </div>
         </div>
+      </div>
+
+      <!-- Google Drive -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-semibold"><i class="bi bi-cloud me-2"></i>Google Drive</div>
+        <div class="card-body">
+          <p class="text-muted small mb-3">เชื่อมต่อ Google Drive เพื่อเก็บไฟล์งานนักเรียนและสื่อการสอนอัตโนมัติ</p>
+          <div class="row g-3 align-items-end mb-3">
+            <div class="col-md-8">
+              <label class="form-label small mb-1">Root Folder ID</label>
+              <input type="text" class="form-control form-control-sm" id="set-drive-root" value="${DOMPurify.sanitize(driveRoot)}" placeholder="Google Drive Folder ID">
+            </div>
+            <div class="col-md-4 d-flex gap-2">
+              <button class="btn btn-sm btn-outline-primary flex-fill" id="btn-save-drive-root"><i class="bi bi-check-lg me-1"></i>บันทึก</button>
+              <a href="https://drive.google.com/drive/folders/${DOMPurify.sanitize(driveRoot)}" target="_blank" class="btn btn-sm btn-outline-secondary" title="เปิดโฟลเดอร์"><i class="bi bi-box-arrow-up-right"></i></a>
+            </div>
+          </div>
+          <div class="d-flex gap-2">
+            <button class="btn btn-success btn-sm" id="btn-drive-connect"><i class="bi bi-google me-1"></i>เชื่อมต่อ Google Drive</button>
+            <span class="text-muted small align-self-center" id="drive-status"></span>
+          </div>
+        </div>
       </div>`;
 
+    // Check Drive connection status
+    API.get('/api/drive').then(res => {
+      const el = document.getElementById('drive-status');
+      if (el) el.textContent = res.success ? '✅ เชื่อมต่อแล้ว' : '⚠️ ยังไม่ได้เชื่อมต่อ';
+    });
+
     // Event bindings
+    document.getElementById('btn-drive-connect').addEventListener('click', async () => {
+      const res = await API.get('/api/drive/auth');
+      if (res.success && res.data.auth_url) {
+        const popup = window.open(res.data.auth_url, 'drive_auth', 'width=500,height=600');
+        window.addEventListener('message', async (e) => {
+          if (e.data?.type === 'drive_auth' && e.data.code) {
+            const tokenRes = await API.post('/api/drive/auth', { code: e.data.code });
+            if (tokenRes.success) { App.toast('เชื่อมต่อ Google Drive สำเร็จ!'); App.navigate('settings'); }
+            else App.toast(tokenRes.error || 'เชื่อมต่อไม่สำเร็จ', 'danger');
+          }
+        }, { once: true });
+      }
+    });
+
+    document.getElementById('btn-save-drive-root').addEventListener('click', async () => {
+      const folderId = document.getElementById('set-drive-root').value.trim();
+      if (!folderId) { App.toast('กรุณากรอก Folder ID', 'warning'); return; }
+      const res = await API.post('/api/drive/root', { folder_id: folderId });
+      if (res.success) App.toast('บันทึก Root Folder สำเร็จ');
+      else App.toast(res.error || 'บันทึกไม่สำเร็จ', 'danger');
+    });
     document.getElementById('btn-save-profile').addEventListener('click', async () => {
       await API.put('/api/settings', {
         teacher_title: document.getElementById('set-title').value,
@@ -1208,29 +1242,6 @@ App.modules['settings'] = {
         if (code && name) { await API.post('/api/subjects', { code, name, subject_type: type }); App.navigate('settings'); }
         else { App.toast('กรุณากรอกรหัสและชื่อวิชา', 'warning'); }
       });
-    });
-
-    // Google Drive connect button
-    document.getElementById('btn-connect-drive').addEventListener('click', async () => {
-      const statusEl = document.getElementById('drive-status');
-      statusEl.innerHTML = '<span class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>กำลังเชื่อมต่อ...</span>';
-      const res = await API.get('/api/drive/auth');
-      if (res.success && res.data.auth_url) {
-        const popup = window.open(res.data.auth_url, 'drive_auth', 'width=500,height=600');
-        window.addEventListener('message', async function handler(e) {
-          if (e.data && e.data.type === 'drive_auth' && e.data.code) {
-            window.removeEventListener('message', handler);
-            const r2 = await API.post('/api/drive/auth', { code: e.data.code });
-            if (r2.success) {
-              statusEl.innerHTML = '<span class="text-success small"><i class="bi bi-check-circle me-1"></i>เชื่อมต่อ Google Drive สำเร็จ!</span>';
-            } else {
-              statusEl.innerHTML = `<span class="text-danger small">${r2.error || 'เชื่อมต่อไม่สำเร็จ'}</span>`;
-            }
-          }
-        });
-      } else {
-        statusEl.innerHTML = '<span class="text-danger small">ไม่สามารถเริ่มเชื่อมต่อ Drive ได้ — ตรวจสอบ GOOGLE_DRIVE_CLIENT_ID/SECRET</span>';
-      }
     });
 
     document.getElementById('btn-add-classroom').addEventListener('click', () => {
@@ -2130,20 +2141,33 @@ App.modules['student-classroom'] = {
         <div class="card-header bg-white fw-semibold"><i class="bi bi-plus-circle me-2"></i>สร้างงานใหม่</div>
         <div class="card-body">
           <div class="row g-2 mb-2">
-            <div class="col-md-4">
+            <div class="col-md-3">
               <label class="form-label small mb-1">ประเภท</label>
               <select class="form-select" id="sc-type">
-                <option value="assignment">สั่งงาน</option>
-                <option value="announcement">ประกาศ</option>
+                <option value="assignment">📝 สั่งงาน</option>
+                <option value="quiz">📋 แบบทดสอบ</option>
+                <option value="material">📚 สื่อการสอน</option>
+                <option value="announcement">📢 ประกาศ</option>
+                <option value="practical">🔬 ปฏิบัติ</option>
+                <option value="poll">📊 โพล/สำรวจ</option>
+                <option value="board">💬 กระดานร่วม</option>
+                <option value="discussion">🗣️ อภิปราย</option>
               </select>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
               <label class="form-label small mb-1">กำหนดส่ง</label>
               <input type="date" class="form-control" id="sc-due">
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
               <label class="form-label small mb-1">คะแนนเต็ม</label>
               <input type="number" class="form-control" id="sc-max-score" placeholder="—">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small mb-1">ส่งสาย</label>
+              <select class="form-select" id="sc-allow-late">
+                <option value="1">อนุญาต</option>
+                <option value="0">ไม่อนุญาต</option>
+              </select>
             </div>
           </div>
           <div class="mb-2">
@@ -2154,7 +2178,30 @@ App.modules['student-classroom'] = {
             <label class="form-label small mb-1">รายละเอียด</label>
             <textarea class="form-control" id="sc-content" rows="2" placeholder="คำอธิบาย..."></textarea>
           </div>
-          <button class="btn btn-primary btn-sm" id="sc-post-btn"><i class="bi bi-send me-1"></i>โพสต์</button>
+          <!-- Poll options (shown when type=poll) -->
+          <div class="mb-2 d-none" id="sc-poll-area">
+            <label class="form-label small mb-1">ตัวเลือกโพล <small class="text-muted">(แต่ละบรรทัด 1 ตัวเลือก)</small></label>
+            <textarea class="form-control" id="sc-poll-options" rows="4" placeholder="ตัวเลือก 1&#10;ตัวเลือก 2&#10;ตัวเลือก 3"></textarea>
+          </div>
+          <!-- Quiz link (shown when type=quiz) -->
+          <div class="mb-2 d-none" id="sc-quiz-area">
+            <label class="form-label small mb-1">เลือกแบบทดสอบ</label>
+            <select class="form-select" id="sc-test-id"><option value="">— เลือก —</option></select>
+          </div>
+          <!-- Attachments -->
+          <div class="mb-2">
+            <label class="form-label small mb-1"><i class="bi bi-paperclip me-1"></i>แนบไฟล์ (URL)</label>
+            <div id="sc-attachments-list"></div>
+            <div class="input-group input-group-sm">
+              <input type="text" class="form-control" id="sc-attach-url" placeholder="วาง URL ไฟล์หรือ Drive">
+              <input type="text" class="form-control" id="sc-attach-name" placeholder="ชื่อไฟล์" style="max-width:120px">
+              <button class="btn btn-outline-primary" id="sc-attach-add"><i class="bi bi-plus-lg"></i></button>
+            </div>
+          </div>
+          <div class="d-flex gap-2">
+            <button class="btn btn-primary btn-sm" id="sc-post-btn"><i class="bi bi-send me-1"></i>โพสต์</button>
+            <button class="btn btn-outline-info btn-sm" id="sc-clone-btn" title="ใช้ซ้ำจากโพสต์เดิม"><i class="bi bi-copy me-1"></i>ใช้ซ้ำ</button>
+          </div>
         </div>
       </div>
 
@@ -2163,12 +2210,62 @@ App.modules['student-classroom'] = {
 
     document.getElementById('sc-load').addEventListener('click', () => this.loadPosts());
     document.getElementById('sc-post-btn').addEventListener('click', () => this.createPost());
+
+    // Toggle poll/quiz sections based on type
+    document.getElementById('sc-type').addEventListener('change', (e) => {
+      document.getElementById('sc-poll-area').classList.toggle('d-none', e.target.value !== 'poll');
+      document.getElementById('sc-quiz-area').classList.toggle('d-none', e.target.value !== 'quiz');
+      if (e.target.value === 'quiz') this.loadTests();
+    });
+
+    // Attachment management
+    this._attachments = [];
+    document.getElementById('sc-attach-add').addEventListener('click', () => {
+      const url = document.getElementById('sc-attach-url').value.trim();
+      const name = document.getElementById('sc-attach-name').value.trim() || 'ไฟล์แนบ';
+      if (!url) return;
+      this._attachments.push({ url, name });
+      document.getElementById('sc-attach-url').value = '';
+      document.getElementById('sc-attach-name').value = '';
+      this.renderAttachments();
+    });
+
+    // Clone button
+    document.getElementById('sc-clone-btn').addEventListener('click', () => this.showCloneDialog());
+  },
+
+  renderAttachments() {
+    const list = document.getElementById('sc-attachments-list');
+    list.innerHTML = this._attachments.map((a, i) =>
+      `<span class="badge bg-light text-dark border me-1 mb-1">${DOMPurify.sanitize(a.name)} <i class="bi bi-x-lg ms-1" style="cursor:pointer" onclick="App.modules['student-classroom'].removeAttach(${i})"></i></span>`
+    ).join('');
+  },
+
+  removeAttach(index) {
+    this._attachments.splice(index, 1);
+    this.renderAttachments();
+  },
+
+  async loadTests() {
+    const sel = document.getElementById('sc-test-id');
+    if (sel.options.length > 1) return;
+    const res = await API.get('/api/test');
+    if (res.success) {
+      res.data.forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t.id;
+        opt.textContent = `${t.title} (${t.total_score} คะแนน)`;
+        sel.appendChild(opt);
+      });
+    }
   },
 
   async loadPosts() {
     const classroomId = document.getElementById('sc-classroom').value;
     const subjectId = document.getElementById('sc-subject').value;
     if (!classroomId || !subjectId) { App.toast('เลือกห้องเรียนและวิชาก่อน', 'warning'); return; }
+    this.classroomId = classroomId;
+    this.subjectId = subjectId;
 
     document.getElementById('sc-form-card').classList.remove('d-none');
     const area = document.getElementById('sc-posts-area');
@@ -2182,26 +2279,49 @@ App.modules['student-classroom'] = {
       return;
     }
 
+    const typeConfig = {
+      assignment: { icon: '📝', label: 'สั่งงาน', color: 'warning text-dark' },
+      quiz:       { icon: '📋', label: 'แบบทดสอบ', color: 'primary' },
+      material:   { icon: '📚', label: 'สื่อ', color: 'success' },
+      announcement: { icon: '📢', label: 'ประกาศ', color: 'info' },
+      practical:  { icon: '🔬', label: 'ปฏิบัติ', color: 'danger' },
+      poll:       { icon: '📊', label: 'โพล', color: 'secondary' },
+      board:      { icon: '💬', label: 'กระดาน', color: 'dark' },
+      discussion: { icon: '🗣️', label: 'อภิปราย', color: 'info' }
+    };
+
     area.innerHTML = posts.map(p => {
-      const typeLabel = p.post_type === 'assignment' ? '<span class="badge bg-warning text-dark">สั่งงาน</span>' : '<span class="badge bg-info">ประกาศ</span>';
+      const cfg = typeConfig[p.post_type] || { icon: '📄', label: p.post_type, color: 'secondary' };
       const score = p.max_score ? `<span class="badge bg-secondary">${p.max_score} คะแนน</span>` : '';
       const due = p.due_date ? `<span class="text-muted small ms-2"><i class="bi bi-calendar me-1"></i>ส่ง ${p.due_date}</span>` : '';
-      const subCount = p.post_type === 'assignment' ? `<span class="small text-muted ms-2">ส่งแล้ว ${p.submission_count || 0}/${p.total_students || '?'}</span>` : '';
+      const subCount = p.post_type === 'assignment' || p.post_type === 'practical' ? `<span class="small text-muted ms-2">ส่งแล้ว ${p.submission_count || 0}/${p.total_students || '?'}</span>` : '';
+      // Attachments
+      let attachHtml = '';
+      if (p.attachments) {
+        try { const atts = JSON.parse(p.attachments); attachHtml = atts.map(a => `<a href="${DOMPurify.sanitize(a.url)}" target="_blank" rel="noopener" class="badge bg-light text-primary border me-1"><i class="bi bi-paperclip me-1"></i>${DOMPurify.sanitize(a.name || 'ไฟล์')}</a>`).join(''); } catch(e) {}
+      }
+      const hasSubmissions = ['assignment', 'practical'].includes(p.post_type);
+      const hasPoll = p.post_type === 'poll';
+      const hasBoard = p.post_type === 'board';
       return `
       <div class="card border-0 shadow-sm mb-2">
         <div class="card-body p-3">
           <div class="d-flex justify-content-between align-items-start">
             <div>
-              ${typeLabel} ${score}
+              <span class="badge bg-${cfg.color}">${cfg.icon} ${cfg.label}</span> ${score}
               <strong class="ms-2">${DOMPurify.sanitize(p.title)}</strong>
               ${due} ${subCount}
             </div>
-            <div>
-              ${p.post_type === 'assignment' ? `<button class="btn btn-sm btn-outline-primary me-1" onclick="App.modules['student-classroom'].viewSubs('${p.id}','${DOMPurify.sanitize(p.title)}')"><i class="bi bi-people"></i></button>` : ''}
+            <div class="d-flex gap-1">
+              ${hasSubmissions ? `<button class="btn btn-sm btn-outline-primary" onclick="App.modules['student-classroom'].viewSubs('${p.id}','${DOMPurify.sanitize(p.title)}')"><i class="bi bi-people"></i></button>` : ''}
+              ${hasPoll ? `<button class="btn btn-sm btn-outline-info" onclick="App.modules['student-classroom'].viewPoll('${p.id}')"><i class="bi bi-bar-chart"></i></button>` : ''}
+              ${hasBoard ? `<button class="btn btn-sm btn-outline-dark" onclick="App.modules['student-classroom'].viewBoard('${p.id}')"><i class="bi bi-chat-square-text"></i></button>` : ''}
+              <button class="btn btn-sm btn-outline-secondary" onclick="App.modules['student-classroom'].clonePost('${p.id}')" title="ใช้ซ้ำ"><i class="bi bi-copy"></i></button>
               <button class="btn btn-sm btn-outline-danger" onclick="App.modules['student-classroom'].deletePost('${p.id}')"><i class="bi bi-trash"></i></button>
             </div>
           </div>
           ${p.content ? `<div class="small mt-2 text-muted">${DOMPurify.sanitize(p.content)}</div>` : ''}
+          ${attachHtml ? `<div class="mt-2">${attachHtml}</div>` : ''}
         </div>
       </div>`;
     }).join('');
@@ -2210,16 +2330,29 @@ App.modules['student-classroom'] = {
   async createPost() {
     const title = document.getElementById('sc-title').value.trim();
     if (!title) { App.toast('กรุณากรอกหัวข้อ', 'warning'); return; }
+    const postType = document.getElementById('sc-type').value;
+
+    // Poll options
+    let pollOptions = null;
+    if (postType === 'poll') {
+      const lines = document.getElementById('sc-poll-options').value.split('\n').filter(l => l.trim());
+      if (lines.length < 2) { App.toast('โพลต้องมีอย่างน้อย 2 ตัวเลือก', 'warning'); return; }
+      pollOptions = lines;
+    }
 
     const res = await API.post('/api/student-classroom/posts', {
       classroom_id: document.getElementById('sc-classroom').value,
       subject_id: document.getElementById('sc-subject').value,
       semester_id: this.activeSemId,
-      post_type: document.getElementById('sc-type').value,
+      post_type: postType,
       title,
       content: document.getElementById('sc-content').value.trim(),
       due_date: document.getElementById('sc-due').value || null,
-      max_score: document.getElementById('sc-max-score').value ? parseFloat(document.getElementById('sc-max-score').value) : null
+      max_score: document.getElementById('sc-max-score').value ? parseFloat(document.getElementById('sc-max-score').value) : null,
+      allow_late: document.getElementById('sc-allow-late').value === '1',
+      test_id: postType === 'quiz' ? document.getElementById('sc-test-id').value || null : null,
+      poll_options: pollOptions,
+      attachments: this._attachments.length > 0 ? this._attachments : null
     });
 
     if (res.success) {
@@ -2228,10 +2361,99 @@ App.modules['student-classroom'] = {
       document.getElementById('sc-content').value = '';
       document.getElementById('sc-due').value = '';
       document.getElementById('sc-max-score').value = '';
+      document.getElementById('sc-poll-options').value = '';
+      this._attachments = [];
+      this.renderAttachments();
       this.loadPosts();
     } else {
       App.toast(res.error || 'สร้างไม่สำเร็จ', 'danger');
     }
+  },
+
+  async showCloneDialog() {
+    // Show a quick pick from existing posts to clone into current classroom
+    App.toast('เลือกโพสต์ที่ต้องการใช้ซ้ำจากรายการด้านล่าง แล้วกดปุ่ม 📋', 'info');
+  },
+
+  async clonePost(postId) {
+    const classroomId = document.getElementById('sc-classroom').value;
+    const subjectId = document.getElementById('sc-subject').value;
+    if (!classroomId || !subjectId) { App.toast('เลือกห้องเรียนและวิชาก่อน', 'warning'); return; }
+    if (!confirm('ใช้ซ้ำโพสต์นี้ในห้องเรียนปัจจุบัน?')) return;
+    const res = await API.post('/api/student-classroom/clone', {
+      post_id: postId,
+      classroom_id: classroomId,
+      subject_id: subjectId,
+      semester_id: this.activeSemId
+    });
+    if (res.success) { App.toast('ใช้ซ้ำสำเร็จ!'); this.loadPosts(); }
+    else App.toast(res.error || 'ใช้ซ้ำไม่สำเร็จ', 'danger');
+  },
+
+  async viewPoll(postId) {
+    const area = document.getElementById('sc-posts-area');
+    area.innerHTML = '<div class="loading"></div>';
+    const res = await API.get(`/api/student-classroom/poll/${postId}`);
+    const data = res.success ? res.data : { results: [], total: 0 };
+    const maxVotes = Math.max(...data.results.map(r => r.votes), 1);
+
+    area.innerHTML = `
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white d-flex justify-content-between">
+          <span class="fw-semibold"><i class="bi bi-bar-chart me-2"></i>ผลโพล (${data.total} คำตอบ)</span>
+          <button class="btn btn-sm btn-outline-secondary" onclick="App.modules['student-classroom'].loadPosts()"><i class="bi bi-arrow-left me-1"></i>กลับ</button>
+        </div>
+        <div class="card-body">
+          ${data.results.map(r => {
+            const pct = data.total > 0 ? ((r.votes / data.total) * 100).toFixed(1) : 0;
+            const width = (r.votes / maxVotes) * 100;
+            return `
+            <div class="mb-3">
+              <div class="d-flex justify-content-between mb-1">
+                <span>${DOMPurify.sanitize(r.option_text || `ตัวเลือก ${r.option_index + 1}`)}</span>
+                <span class="fw-semibold">${r.votes} (${pct}%)</span>
+              </div>
+              <div class="progress" style="height:24px">
+                <div class="progress-bar bg-primary" style="width:${width}%">${r.votes}</div>
+              </div>
+            </div>`;
+          }).join('')}
+          ${data.results.length === 0 ? '<p class="text-muted">ยังไม่มีคำตอบ</p>' : ''}
+        </div>
+      </div>`;
+  },
+
+  async viewBoard(postId) {
+    const area = document.getElementById('sc-posts-area');
+    area.innerHTML = '<div class="loading"></div>';
+    const res = await API.get(`/api/student-classroom/board/${postId}`);
+    const posts = res.success ? res.data : [];
+
+    area.innerHTML = `
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white d-flex justify-content-between">
+          <span class="fw-semibold"><i class="bi bi-chat-square-text me-2"></i>กระดานร่วม (${posts.length} โพสต์)</span>
+          <button class="btn btn-sm btn-outline-secondary" onclick="App.modules['student-classroom'].loadPosts()"><i class="bi bi-arrow-left me-1"></i>กลับ</button>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            ${posts.map(bp => `
+            <div class="col-md-4 col-6">
+              <div class="card h-100 border">
+                <div class="card-body p-2">
+                  <div class="small text-muted mb-1">${DOMPurify.sanitize(bp.first_name)} ${DOMPurify.sanitize(bp.last_name)}</div>
+                  <div>${DOMPurify.sanitize(bp.content)}</div>
+                  ${bp.media_url ? `<img src="${DOMPurify.sanitize(bp.media_url)}" class="img-fluid rounded mt-1" alt="">` : ''}
+                </div>
+                <div class="card-footer bg-white p-2 small text-muted">
+                  <i class="bi bi-heart-fill text-danger"></i> ${bp.likes}
+                </div>
+              </div>
+            </div>`).join('')}
+          </div>
+          ${posts.length === 0 ? '<p class="text-muted">ยังไม่มีโพสต์ในกระดาน</p>' : ''}
+        </div>
+      </div>`;
   },
 
   async viewSubs(postId, title) {
@@ -3474,12 +3696,18 @@ App.modules['assessment'] = {
 
 // ==================== Test Module ====================
 App.modules['test'] = {
+  _area: null,
+  _questions: [],
+
   async render(area) {
+    this._area = area;
     const [subRes, semRes, testRes] = await Promise.all([
       API.get('/api/subjects'), API.get('/api/semesters'), API.get('/api/test')
     ]);
     const subjects = subRes.success ? subRes.data : [];
     const activeSem = semRes.success ? semRes.data.find(s => s.is_active) : null;
+    this._activeSemId = activeSem?.id;
+    this._subjects = subjects;
     const tests = testRes.success ? testRes.data : [];
 
     area.innerHTML = `
@@ -3510,7 +3738,8 @@ App.modules['test'] = {
           <div class="row g-2 mt-1">
             <div class="col-md-3"><input class="form-control" id="tt-time" type="number" placeholder="เวลา (นาที)"></div>
             <div class="col-md-3"><input class="form-control" id="tt-pass" type="number" placeholder="คะแนนผ่าน"></div>
-            <div class="col-md-6"><input class="form-control" id="tt-inst" placeholder="คำชี้แจง (ไม่บังคับ)"></div>
+            <div class="col-md-3"><input class="form-control" id="tt-maxatt" type="number" placeholder="จำนวนครั้ง (0=ไม่จำกัด)" value="1"></div>
+            <div class="col-md-3"><input class="form-control" id="tt-inst" placeholder="คำชี้แจง"></div>
           </div>
         </div></div>
       </div>
@@ -3519,13 +3748,17 @@ App.modules['test'] = {
           tests.map(t => `
           <div class="card border-0 shadow-sm mb-2"><div class="card-body d-flex justify-content-between align-items-center">
             <div>
-              <strong>${DOMPurify.sanitize(t.title)}</strong>
-              <span class="badge bg-secondary ms-2">${DOMPurify.sanitize(t.test_type || '')}</span>
-              ${t.total_questions ? `<span class="badge bg-info ms-1">${t.total_questions} ข้อ</span>` : ''}
+              <strong class="me-2" style="cursor:pointer;text-decoration:underline" data-edit="${t.id}">${DOMPurify.sanitize(t.title)}</strong>
+              <span class="badge bg-secondary">${DOMPurify.sanitize(t.test_type || '')}</span>
+              ${t.total_questions ? `<span class="badge bg-info ms-1">${t.total_questions} ข้อ</span>` : '<span class="badge bg-danger ms-1">ยังไม่มีข้อ</span>'}
+              ${t.total_score ? `<span class="badge bg-primary ms-1">${t.total_score} คะแนน</span>` : ''}
               ${t.is_published ? '<span class="badge bg-success ms-1">เผยแพร่</span>' : '<span class="badge bg-warning text-dark ms-1">แบบร่าง</span>'}
             </div>
-            <div>
-              <button class="btn btn-sm btn-outline-primary me-1" data-pub="${t.id}" data-status="${t.is_published}">${t.is_published ? 'ยกเลิกเผยแพร่' : 'เผยแพร่'}</button>
+            <div class="d-flex gap-1">
+              <button class="btn btn-sm btn-outline-primary" data-edit="${t.id}" title="แก้ไขข้อสอบ"><i class="bi bi-pencil-square"></i></button>
+              <button class="btn btn-sm btn-outline-success" data-live="${t.id}" title="เปิด Live Quiz"><i class="bi bi-broadcast"></i></button>
+              <button class="btn btn-sm btn-outline-info" data-responses="${t.id}" title="ดูผลตอบ"><i class="bi bi-graph-up"></i></button>
+              <button class="btn btn-sm btn-outline-secondary" data-pub="${t.id}" data-status="${t.is_published}">${t.is_published ? '<i class="bi bi-eye-slash"></i>' : '<i class="bi bi-eye"></i>'}</button>
               <button class="btn btn-sm btn-outline-danger" data-del="${t.id}"><i class="bi bi-trash"></i></button>
             </div>
           </div></div>`).join('')}
@@ -3539,31 +3772,297 @@ App.modules['test'] = {
         test_type: document.getElementById('tt-type').value,
         time_limit_minutes: parseInt(document.getElementById('tt-time').value) || null,
         passing_score: parseFloat(document.getElementById('tt-pass').value) || null,
+        max_attempts: parseInt(document.getElementById('tt-maxatt').value) || 1,
         instructions: document.getElementById('tt-inst').value || null
       });
       if (res.success) { App.toast('สร้างแบบทดสอบสำเร็จ!'); this.render(area); }
       else App.toast(res.error || 'เกิดข้อผิดพลาด', 'danger');
     });
+    document.getElementById('tt-ai')?.addEventListener('click', () => AIPanel.open('create_test', {}, 'chat'));
+    area.querySelectorAll('[data-pub]').forEach(btn => btn.addEventListener('click', async () => {
+      const res = await API.put(`/api/test/${btn.dataset.pub}`, { is_published: btn.dataset.status === '1' ? 0 : 1 });
+      if (res.success) this.render(area);
+    }));
+    area.querySelectorAll('[data-del]').forEach(btn => btn.addEventListener('click', async () => {
+      if (confirm('ลบแบบทดสอบนี้?')) { await API.del(`/api/test/${btn.dataset.del}`); this.render(area); }
+    }));
+    area.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', () => this.editQuestions(btn.dataset.edit)));
+    area.querySelectorAll('[data-live]').forEach(btn => btn.addEventListener('click', () => this.startLive(btn.dataset.live)));
+    area.querySelectorAll('[data-responses]').forEach(btn => btn.addEventListener('click', () => this.viewResponses(btn.dataset.responses)));
+  },
 
-    document.getElementById('tt-ai')?.addEventListener('click', () => {
-      AIPanel.open('create_test', {}, 'chat');
-    });
+  // ==================== Question Editor ====================
+  async editQuestions(testId) {
+    const area = this._area;
+    area.innerHTML = '<div class="loading"></div>';
+    const res = await API.get(`/api/test/${testId}/questions`);
+    this._questions = res.success ? res.data : [];
+    this._editingTestId = testId;
 
-    area.querySelectorAll('[data-pub]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const newStatus = btn.dataset.status === '1' ? 0 : 1;
-        const res = await API.put(`/api/test/${btn.dataset.pub}`, { is_published: newStatus });
-        if (res.success) { App.toast(newStatus ? 'เผยแพร่แล้ว' : 'ยกเลิกเผยแพร่'); this.render(area); }
+    const qTypes = [
+      { val: 'multiple_choice', label: '🔘 ปรนัย' },
+      { val: 'true_false', label: '✅ ถูก/ผิด' },
+      { val: 'short_answer', label: '✏️ เติมคำ' },
+      { val: 'fill_blank', label: '📝 เติมช่องว่าง' },
+      { val: 'matching', label: '🔗 จับคู่' },
+      { val: 'ordering', label: '🔢 เรียงลำดับ' },
+      { val: 'multiple_select', label: '☑️ เลือกหลายข้อ' },
+      { val: 'essay', label: '📄 อัตนัย' },
+      { val: 'rating_scale', label: '⭐ ให้คะแนน' },
+      { val: 'dropdown', label: '📋 Dropdown' },
+    ];
+
+    area.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="fw-bold mb-0"><i class="bi bi-pencil-square me-2"></i>แก้ไขข้อสอบ (${this._questions.length} ข้อ)</h5>
+        <div class="d-flex gap-2">
+          <button class="btn btn-sm btn-outline-info" id="qe-ai-gen"><i class="bi bi-stars me-1"></i>AI สร้างข้อ</button>
+          <button class="btn btn-sm btn-success" id="qe-save"><i class="bi bi-check-lg me-1"></i>บันทึกทั้งหมด</button>
+          <button class="btn btn-sm btn-outline-secondary" id="qe-back"><i class="bi bi-arrow-left me-1"></i>กลับ</button>
+        </div>
+      </div>
+      <div id="qe-list"></div>
+      <div class="d-flex gap-2 mt-3">
+        <select class="form-select form-select-sm" id="qe-new-type" style="max-width:200px">
+          ${qTypes.map(t => `<option value="${t.val}">${t.label}</option>`).join('')}
+        </select>
+        <button class="btn btn-sm btn-primary" id="qe-add"><i class="bi bi-plus-lg me-1"></i>เพิ่มข้อ</button>
+      </div>`;
+
+    this.renderQuestions();
+    document.getElementById('qe-back').addEventListener('click', () => this.render(area));
+    document.getElementById('qe-save').addEventListener('click', () => this.saveQuestions());
+    document.getElementById('qe-add').addEventListener('click', () => {
+      const type = document.getElementById('qe-new-type').value;
+      this._questions.push({
+        question_number: this._questions.length + 1,
+        question_type: type,
+        question_text: '',
+        choices: type === 'multiple_choice' || type === 'multiple_select' || type === 'dropdown' ? JSON.stringify(['', '', '', '']) : null,
+        correct_answer: type === 'true_false' ? 'true' : '',
+        matching_pairs: type === 'matching' ? JSON.stringify([{left:'',right:''},{left:'',right:''}]) : null,
+        correct_order: type === 'ordering' ? JSON.stringify(['','']) : null,
+        score: 1,
+        sort_order: this._questions.length
       });
+      this.renderQuestions();
     });
+    document.getElementById('qe-ai-gen').addEventListener('click', () => {
+      AIPanel.open('create_test_questions', { testId }, 'chat');
+    });
+  },
 
-    area.querySelectorAll('[data-del]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        if (!confirm('ลบแบบทดสอบนี้?')) return;
-        const res = await API.del(`/api/test/${btn.dataset.del}`);
-        if (res.success) { App.toast('ลบแล้ว'); this.render(area); }
-      });
+  renderQuestions() {
+    const list = document.getElementById('qe-list');
+    if (!list) return;
+    list.innerHTML = this._questions.map((q, i) => {
+      const typeLabels = { multiple_choice:'ปรนัย', true_false:'ถูก/ผิด', short_answer:'เติมคำ', fill_blank:'เติมช่องว่าง',
+        matching:'จับคู่', ordering:'เรียงลำดับ', multiple_select:'เลือกหลายข้อ', essay:'อัตนัย', rating_scale:'ให้คะแนน', dropdown:'Dropdown' };
+      let choicesHtml = '';
+      if (['multiple_choice','multiple_select','dropdown'].includes(q.question_type)) {
+        let opts = [];
+        try { opts = JSON.parse(q.choices || '[]'); } catch(e) {}
+        choicesHtml = `<div class="mt-2">
+          ${opts.map((o, ci) => {
+            const optText = typeof o === 'object' ? (o.text || '') : o;
+            return `<div class="input-group input-group-sm mb-1">
+              <span class="input-group-text">${ci+1}</span>
+              <input type="text" class="form-control qe-choice" data-qi="${i}" data-ci="${ci}" value="${DOMPurify.sanitize(optText+'')}">
+              <button class="btn btn-outline-danger" onclick="App.modules.test.removeChoice(${i},${ci})"><i class="bi bi-x"></i></button>
+            </div>`;
+          }).join('')}
+          <button class="btn btn-sm btn-outline-secondary mt-1" onclick="App.modules.test.addChoice(${i})"><i class="bi bi-plus me-1"></i>เพิ่มตัวเลือก</button>
+        </div>`;
+      }
+      if (q.question_type === 'matching') {
+        let pairs = [];
+        try { pairs = JSON.parse(q.matching_pairs || '[]'); } catch(e) {}
+        choicesHtml = `<div class="mt-2">
+          ${pairs.map((p, pi) => `<div class="row g-1 mb-1">
+            <div class="col"><input type="text" class="form-control form-control-sm qe-ml" data-qi="${i}" data-pi="${pi}" value="${DOMPurify.sanitize(p.left||'')}" placeholder="ซ้าย"></div>
+            <div class="col-auto"><i class="bi bi-arrow-right mt-1"></i></div>
+            <div class="col"><input type="text" class="form-control form-control-sm qe-mr" data-qi="${i}" data-pi="${pi}" value="${DOMPurify.sanitize(p.right||'')}" placeholder="ขวา"></div>
+          </div>`).join('')}
+          <button class="btn btn-sm btn-outline-secondary mt-1" onclick="App.modules.test.addPair(${i})"><i class="bi bi-plus me-1"></i>เพิ่มคู่</button>
+        </div>`;
+      }
+      if (q.question_type === 'ordering') {
+        let items = [];
+        try { items = JSON.parse(q.correct_order || '[]'); } catch(e) {}
+        choicesHtml = `<div class="mt-2">
+          ${items.map((item, oi) => `<div class="input-group input-group-sm mb-1">
+            <span class="input-group-text">${oi+1}</span>
+            <input type="text" class="form-control qe-order" data-qi="${i}" data-oi="${oi}" value="${DOMPurify.sanitize(item+'')}">
+          </div>`).join('')}
+          <button class="btn btn-sm btn-outline-secondary mt-1" onclick="App.modules.test.addOrderItem(${i})"><i class="bi bi-plus me-1"></i>เพิ่มรายการ</button>
+        </div>`;
+      }
+      const answerHtml = ['multiple_choice','multiple_select','dropdown','true_false','short_answer','fill_blank'].includes(q.question_type)
+        ? `<div class="mt-2"><label class="form-label small mb-1">เฉลย</label><input type="text" class="form-control form-control-sm qe-answer" data-qi="${i}" value="${DOMPurify.sanitize((q.correct_answer||'')+'')}" placeholder="${q.question_type==='true_false'?'true / false':'เฉลย'}"></div>` : '';
+
+      return `
+      <div class="card border shadow-sm mb-2" id="qe-item-${i}">
+        <div class="card-body p-3">
+          <div class="d-flex justify-content-between align-items-start mb-2">
+            <span class="badge bg-primary">ข้อ ${i+1} — ${typeLabels[q.question_type] || q.question_type}</span>
+            <div class="d-flex gap-1 align-items-center">
+              <label class="small text-muted mb-0">คะแนน:</label>
+              <input type="number" class="form-control form-control-sm qe-score" data-qi="${i}" value="${q.score||1}" style="width:60px" min="0" step="0.5">
+              ${i > 0 ? `<button class="btn btn-sm btn-outline-secondary" onclick="App.modules.test.moveQ(${i},-1)"><i class="bi bi-arrow-up"></i></button>` : ''}
+              ${i < this._questions.length-1 ? `<button class="btn btn-sm btn-outline-secondary" onclick="App.modules.test.moveQ(${i},1)"><i class="bi bi-arrow-down"></i></button>` : ''}
+              <button class="btn btn-sm btn-outline-danger" onclick="App.modules.test.removeQ(${i})"><i class="bi bi-trash"></i></button>
+            </div>
+          </div>
+          <textarea class="form-control form-control-sm qe-text" data-qi="${i}" rows="2" placeholder="พิมพ์คำถาม...">${DOMPurify.sanitize(q.question_text||'')}</textarea>
+          ${choicesHtml}
+          ${answerHtml}
+        </div>
+      </div>`;
+    }).join('');
+
+    // Bind change events to sync to _questions
+    document.querySelectorAll('.qe-text').forEach(el => el.addEventListener('input', (e) => { this._questions[e.target.dataset.qi].question_text = e.target.value; }));
+    document.querySelectorAll('.qe-answer').forEach(el => el.addEventListener('input', (e) => { this._questions[e.target.dataset.qi].correct_answer = e.target.value; }));
+    document.querySelectorAll('.qe-score').forEach(el => el.addEventListener('input', (e) => { this._questions[e.target.dataset.qi].score = parseFloat(e.target.value) || 0; }));
+    document.querySelectorAll('.qe-choice').forEach(el => el.addEventListener('input', (e) => {
+      const q = this._questions[e.target.dataset.qi];
+      let opts = []; try { opts = JSON.parse(q.choices || '[]'); } catch(err) {}
+      opts[e.target.dataset.ci] = e.target.value;
+      q.choices = JSON.stringify(opts);
+    }));
+    document.querySelectorAll('.qe-ml').forEach(el => el.addEventListener('input', (e) => {
+      const q = this._questions[e.target.dataset.qi];
+      let pairs = []; try { pairs = JSON.parse(q.matching_pairs || '[]'); } catch(err) {}
+      pairs[e.target.dataset.pi].left = e.target.value;
+      q.matching_pairs = JSON.stringify(pairs);
+    }));
+    document.querySelectorAll('.qe-mr').forEach(el => el.addEventListener('input', (e) => {
+      const q = this._questions[e.target.dataset.qi];
+      let pairs = []; try { pairs = JSON.parse(q.matching_pairs || '[]'); } catch(err) {}
+      pairs[e.target.dataset.pi].right = e.target.value;
+      q.matching_pairs = JSON.stringify(pairs);
+    }));
+    document.querySelectorAll('.qe-order').forEach(el => el.addEventListener('input', (e) => {
+      const q = this._questions[e.target.dataset.qi];
+      let items = []; try { items = JSON.parse(q.correct_order || '[]'); } catch(err) {}
+      items[e.target.dataset.oi] = e.target.value;
+      q.correct_order = JSON.stringify(items);
+    }));
+  },
+
+  addChoice(qi) { const q = this._questions[qi]; let opts = []; try { opts = JSON.parse(q.choices||'[]'); } catch(e){} opts.push(''); q.choices = JSON.stringify(opts); this.renderQuestions(); },
+  removeChoice(qi, ci) { const q = this._questions[qi]; let opts = []; try { opts = JSON.parse(q.choices||'[]'); } catch(e){} opts.splice(ci,1); q.choices = JSON.stringify(opts); this.renderQuestions(); },
+  addPair(qi) { const q = this._questions[qi]; let pairs = []; try { pairs = JSON.parse(q.matching_pairs||'[]'); } catch(e){} pairs.push({left:'',right:''}); q.matching_pairs = JSON.stringify(pairs); this.renderQuestions(); },
+  addOrderItem(qi) { const q = this._questions[qi]; let items = []; try { items = JSON.parse(q.correct_order||'[]'); } catch(e){} items.push(''); q.correct_order = JSON.stringify(items); this.renderQuestions(); },
+  moveQ(i, dir) { const j = i + dir; if (j < 0 || j >= this._questions.length) return; [this._questions[i], this._questions[j]] = [this._questions[j], this._questions[i]]; this.renderQuestions(); },
+  removeQ(i) { this._questions.splice(i, 1); this.renderQuestions(); },
+
+  async saveQuestions() {
+    const questions = this._questions.map((q, i) => ({
+      ...q, question_number: i + 1, sort_order: i
+    }));
+    const res = await API.post(`/api/test/${this._editingTestId}/questions`, { questions });
+    if (res.success) App.toast(`บันทึก ${res.data.saved} ข้อสำเร็จ!`);
+    else App.toast(res.error || 'บันทึกไม่สำเร็จ', 'danger');
+  },
+
+  // ==================== Live Quiz Host ====================
+  async startLive(testId) {
+    const res = await API.post('/api/test/live/create', { test_id: testId });
+    if (!res.success) { App.toast(res.error || 'สร้าง session ไม่สำเร็จ', 'danger'); return; }
+    this._liveSessionId = res.data.id;
+    this._liveCode = res.data.session_code;
+    this.renderLiveHost();
+  },
+
+  async renderLiveHost() {
+    const area = this._area;
+    const res = await API.get(`/api/test/live/${this._liveSessionId}`);
+    if (!res.success) { App.toast('โหลด session ไม่สำเร็จ', 'danger'); return; }
+    const { session, participants, questions } = res.data;
+    this._liveQuestions = questions;
+
+    const isFinished = session.status === 'finished';
+    const curQ = session.current_question;
+
+    area.innerHTML = `
+      <div class="text-center mb-4">
+        <h3 class="fw-bold"><i class="bi bi-broadcast text-danger me-2"></i>Live Quiz</h3>
+        <div class="display-4 fw-bold text-primary my-3">${this._liveCode}</div>
+        <p class="text-muted">บอกนักเรียนใส่รหัส <strong>${this._liveCode}</strong> เพื่อเข้าร่วม</p>
+        <div class="badge bg-success fs-6 mb-3">${participants.length} คนเข้าร่วม</div>
+      </div>
+      ${!isFinished ? `
+      <div class="text-center mb-4">
+        <button class="btn btn-lg btn-primary" id="live-next"><i class="bi bi-skip-forward me-2"></i>${curQ === 0 ? 'เริ่มข้อแรก' : `ข้อถัดไป (${curQ}/${questions.length})`}</button>
+        <button class="btn btn-lg btn-outline-danger ms-2" id="live-end"><i class="bi bi-stop-fill me-2"></i>จบ</button>
+      </div>
+      ${curQ > 0 && curQ <= questions.length ? `
+      <div class="card border-0 shadow mb-3">
+        <div class="card-body text-center">
+          <h5 class="mb-2">ข้อ ${curQ}/${questions.length}</h5>
+          <p class="lead">${DOMPurify.sanitize(questions[curQ-1]?.question_text || '')}</p>
+        </div>
+      </div>` : ''}` : `
+      <div class="alert alert-success text-center"><h4>🏆 จบแล้ว!</h4></div>`}
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold"><i class="bi bi-trophy me-2"></i>อันดับ</div>
+        <div class="card-body p-0">
+          <table class="table table-sm mb-0">
+            <thead class="table-light"><tr><th>#</th><th>ชื่อ</th><th>คะแนน</th><th>XP</th></tr></thead>
+            <tbody>${participants.map((p, i) => `
+              <tr class="${i<3?'table-warning':''}">\
+<td>${i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</td>\
+<td>${DOMPurify.sanitize(p.first_name)} ${DOMPurify.sanitize(p.last_name)}</td>\
+<td class="fw-bold">${p.total_score}</td><td>${p.total_xp}</td></tr>`).join('')}</tbody>
+          </table>
+        </div>
+      </div>
+      <div class="text-center mt-3"><button class="btn btn-outline-secondary" id="live-back"><i class="bi bi-arrow-left me-1"></i>กลับ</button></div>`;
+
+    document.getElementById('live-next')?.addEventListener('click', async () => {
+      const r = await API.post(`/api/test/live/${this._liveSessionId}/next`);
+      if (r.success) this.renderLiveHost();
     });
+    document.getElementById('live-end')?.addEventListener('click', async () => {
+      if (!confirm('จบ Live Quiz?')) return;
+      await API.post(`/api/test/live/${this._liveSessionId}/end`);
+      this.renderLiveHost();
+    });
+    document.getElementById('live-back')?.addEventListener('click', () => this.render(this._area));
+
+    // Auto-refresh every 3s if active
+    if (!isFinished) {
+      this._liveTimer = setTimeout(() => this.renderLiveHost(), 3000);
+    } else if (this._liveTimer) {
+      clearTimeout(this._liveTimer);
+    }
+  },
+
+  async viewResponses(testId) {
+    const area = this._area;
+    area.innerHTML = '<div class="loading"></div>';
+    const res = await API.get(`/api/test/${testId}/responses`);
+    const rows = res.success ? res.data : [];
+    area.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="fw-bold"><i class="bi bi-graph-up me-2"></i>ผลการตอบ (${rows.length} คำตอบ)</h5>
+        <button class="btn btn-sm btn-outline-secondary" id="resp-back"><i class="bi bi-arrow-left me-1"></i>กลับ</button>
+      </div>
+      <div class="table-responsive"><table class="table table-sm table-striped">
+        <thead class="table-primary"><tr><th>รหัส</th><th>ชื่อ</th><th>ครั้งที่</th><th>คะแนน</th><th>เต็ม</th><th>เวลา</th><th>ส่งเมื่อ</th></tr></thead>
+        <tbody>${rows.map(r => `<tr>
+          <td>${DOMPurify.sanitize(r.student_code||'')}</td>
+          <td>${DOMPurify.sanitize(r.first_name||'')} ${DOMPurify.sanitize(r.last_name||'')}</td>
+          <td>${r.attempt_number}</td>
+          <td class="fw-bold">${r.total_score||0}</td>
+          <td>${r.max_score||0}</td>
+          <td>${r.time_spent_seconds ? Math.floor(r.time_spent_seconds/60)+'นาที' : '-'}</td>
+          <td class="small">${r.submitted_at ? new Date(r.submitted_at).toLocaleString('th-TH') : '-'}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+      ${rows.length === 0 ? '<p class="text-muted text-center">ยังไม่มีคำตอบ</p>' : ''}`;
+    document.getElementById('resp-back').addEventListener('click', () => this.render(area));
   }
 };
 

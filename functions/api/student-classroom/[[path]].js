@@ -62,12 +62,39 @@ export async function onRequest(context) {
     const scId = await getOrCreateSC(env.DB, env.user.id, body.subject_id, body.classroom_id, body.semester_id);
     const postId = generateUUID();
     await dbRun(env.DB,
-      `INSERT INTO classroom_posts (id, teacher_id, subject_classroom_id, post_type, title, content, due_date, max_score, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO classroom_posts (id, teacher_id, subject_classroom_id, post_type, title, content, due_date, max_score,
+       test_id, attachments, assignment_type, allow_late, lesson_plan_id, poll_options, topic_id, is_published, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [postId, env.user.id, scId, body.post_type || 'announcement', body.title, body.content || null,
-       body.due_date || null, body.max_score || null, now(), now()]
+       body.due_date || null, body.max_score || null,
+       body.test_id || null, body.attachments ? JSON.stringify(body.attachments) : null,
+       body.assignment_type || 'file', body.allow_late ? 1 : 0,
+       body.lesson_plan_id || null, body.poll_options ? JSON.stringify(body.poll_options) : null,
+       body.topic_id || null, body.is_published !== false ? 1 : 0, now(), now()]
     );
     return success({ id: postId });
+  }
+
+  // Clone post to another classroom
+  if (path === '/api/student-classroom/clone' && method === 'POST') {
+    const body = await parseBody(request);
+    if (!body?.post_id || !body?.classroom_id || !body?.subject_id || !body?.semester_id) {
+      return error('กรุณาระบุ post_id และห้องเรียนปลายทาง');
+    }
+    const original = await dbFirst(env.DB, 'SELECT * FROM classroom_posts WHERE id = ? AND teacher_id = ?', [body.post_id, env.user.id]);
+    if (!original) return error('ไม่พบโพสต์ต้นทาง', 404);
+    const scId = await getOrCreateSC(env.DB, env.user.id, body.subject_id, body.classroom_id, body.semester_id);
+    const newId = generateUUID();
+    await dbRun(env.DB,
+      `INSERT INTO classroom_posts (id, teacher_id, subject_classroom_id, post_type, title, content, due_date, max_score,
+       test_id, attachments, assignment_type, allow_late, lesson_plan_id, poll_options, topic_id, is_published, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [newId, env.user.id, scId, original.post_type, original.title, original.content,
+       original.due_date, original.max_score, original.test_id, original.attachments,
+       original.assignment_type, original.allow_late, original.lesson_plan_id, original.poll_options,
+       original.topic_id, 1, now(), now()]
+    );
+    return success({ id: newId, cloned: true });
   }
 
   // Delete post
@@ -114,6 +141,37 @@ export async function onRequest(context) {
       [body.score ?? null, body.feedback || null, now(), body.submission_id]
     );
     return success({ graded: true });
+  }
+
+  // ======================== BOARD MODE ========================
+  // GET board posts for a classroom post
+  if (path.startsWith('/api/student-classroom/board/') && method === 'GET') {
+    const postId = extractParam(path, '/api/student-classroom/board/');
+    if (!postId) return error('Missing post id');
+    const posts = await dbAll(env.DB,
+      `SELECT bp.*, st.first_name, st.last_name, st.student_code
+       FROM board_posts bp
+       JOIN students st ON st.id = bp.student_id
+       WHERE bp.post_id = ?
+       ORDER BY bp.likes DESC, bp.created_at DESC`,
+      [postId]
+    );
+    return success(posts);
+  }
+
+  // ======================== POLL ========================
+  // GET poll results for a post
+  if (path.startsWith('/api/student-classroom/poll/') && method === 'GET') {
+    const postId = extractParam(path, '/api/student-classroom/poll/');
+    if (!postId) return error('Missing post id');
+    const results = await dbAll(env.DB,
+      `SELECT option_index, option_text, COUNT(*) as votes
+       FROM poll_responses WHERE post_id = ?
+       GROUP BY option_index ORDER BY option_index`,
+      [postId]
+    );
+    const total = results.reduce((s, r) => s + r.votes, 0);
+    return success({ results, total });
   }
 
   return error('Not found', 404);

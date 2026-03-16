@@ -96,9 +96,99 @@ export async function onRequest(context) {
     }
   }
 
+  // ======================== LIVE QUIZ ========================
+  // POST /api/test/live/create — create a live session
+  if (path === '/api/test/live/create' && method === 'POST') {
+    const body = await parseBody(request);
+    if (!body?.test_id) return error('กรุณาเลือกแบบทดสอบ');
+    const test = await dbFirst(env.DB, 'SELECT id FROM tests WHERE id = ? AND teacher_id = ?', [body.test_id, env.user.id]);
+    if (!test) return error('ไม่พบแบบทดสอบ', 404);
+    // Generate unique 6-digit code
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const id = generateUUID();
+    await dbRun(env.DB,
+      `INSERT INTO live_sessions (id, teacher_id, test_id, session_code, status, scoring_mode, team_mode, created_at)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      [id, env.user.id, body.test_id, code, 'waiting', body.scoring_mode || 'speed_accuracy', body.team_mode ? 1 : 0, now()]
+    );
+    return success({ id, session_code: code });
+  }
+
+  // GET /api/test/live/:sessionId — get live session status + participants
+  const liveMatch = path.match(/^\/api\/test\/live\/([^/]+)$/);
+  if (liveMatch && method === 'GET') {
+    const sessionId = liveMatch[1];
+    const session = await dbFirst(env.DB, 'SELECT * FROM live_sessions WHERE id = ? AND teacher_id = ?', [sessionId, env.user.id]);
+    if (!session) return error('ไม่พบ session', 404);
+    const participants = await dbAll(env.DB,
+      `SELECT lp.*, st.first_name, st.last_name, st.student_code
+       FROM live_participants lp
+       JOIN students st ON st.id = lp.student_id
+       WHERE lp.session_id = ? ORDER BY lp.total_score DESC`,
+      [sessionId]
+    );
+    const questions = await dbAll(env.DB,
+      'SELECT id, question_number, question_type, question_text, choices, score, sort_order FROM test_questions WHERE test_id = ? ORDER BY sort_order',
+      [session.test_id]
+    );
+    return success({ session, participants, questions });
+  }
+
+  // POST /api/test/live/:sessionId/next — advance to next question
+  const liveNextMatch = path.match(/^\/api\/test\/live\/([^/]+)\/next$/);
+  if (liveNextMatch && method === 'POST') {
+    const sessionId = liveNextMatch[1];
+    const session = await dbFirst(env.DB, 'SELECT * FROM live_sessions WHERE id = ? AND teacher_id = ?', [sessionId, env.user.id]);
+    if (!session) return error('ไม่พบ session', 404);
+    const nextQ = session.current_question + 1;
+    const totalQ = await dbFirst(env.DB, 'SELECT COUNT(*) as cnt FROM test_questions WHERE test_id = ?', [session.test_id]);
+    if (nextQ > totalQ.cnt) {
+      // Finish
+      await dbRun(env.DB, "UPDATE live_sessions SET status = 'finished', finished_at = ?, current_question = ? WHERE id = ?",
+        [now(), nextQ, sessionId]);
+      return success({ finished: true, current_question: nextQ });
+    }
+    await dbRun(env.DB, "UPDATE live_sessions SET status = 'question', current_question = ?, started_at = COALESCE(started_at, ?) WHERE id = ?",
+      [nextQ, now(), sessionId]);
+    return success({ current_question: nextQ });
+  }
+
+  // GET /api/test/live/:sessionId/responses — get all responses for current question
+  const liveRespMatch = path.match(/^\/api\/test\/live\/([^/]+)\/responses$/);
+  if (liveRespMatch && method === 'GET') {
+    const sessionId = liveRespMatch[1];
+    const session = await dbFirst(env.DB, 'SELECT current_question FROM live_sessions WHERE id = ? AND teacher_id = ?', [sessionId, env.user.id]);
+    if (!session) return error('ไม่พบ session', 404);
+    const responses = await dbAll(env.DB,
+      `SELECT lr.*, st.first_name, st.last_name, st.student_code
+       FROM live_responses lr
+       JOIN students st ON st.id = lr.student_id
+       WHERE lr.session_id = ? ORDER BY lr.time_ms ASC`,
+      [sessionId]
+    );
+    // Leaderboard
+    const leaderboard = await dbAll(env.DB,
+      `SELECT lp.student_id, lp.total_score, lp.total_xp, st.first_name, st.last_name, st.student_code
+       FROM live_participants lp
+       JOIN students st ON st.id = lp.student_id
+       WHERE lp.session_id = ? ORDER BY lp.total_score DESC LIMIT 10`,
+      [sessionId]
+    );
+    return success({ responses, leaderboard });
+  }
+
+  // POST /api/test/live/:sessionId/end — end session
+  const liveEndMatch = path.match(/^\/api\/test\/live\/([^/]+)\/end$/);
+  if (liveEndMatch && method === 'POST') {
+    const sessionId = liveEndMatch[1];
+    await dbRun(env.DB, "UPDATE live_sessions SET status = 'finished', finished_at = ? WHERE id = ? AND teacher_id = ?",
+      [now(), sessionId, env.user.id]);
+    return success({ finished: true });
+  }
+
   // Update / Delete / Publish
   const testId = extractParam(path, '/api/test/');
-  if (testId && method === 'PUT') {
+  if (testId && testId !== 'live' && method === 'PUT') {
     const body = await parseBody(request);
     const fields = [];
     const params = [];

@@ -61,6 +61,8 @@ const StudentApp = {
       case 'assignments': this.renderAssignments(content); break;
       case 'quizzes': this.renderQuizzes(content); break;
       case 'grades': this.renderGrades(content); break;
+      case 'live': this.renderLive(content); break;
+      case 'xp': this.renderXP(content); break;
       case 'notifications': this.renderNotifications(content); break;
       case 'profile': this.renderProfile(content); break;
       default: content.innerHTML = '<div class="empty-state"><i class="bi bi-tools d-block"></i><p>กำลังพัฒนา</p></div>';
@@ -720,6 +722,212 @@ const StudentApp = {
     } catch (e) {
       statusEl.textContent = 'ไม่สามารถเข้าถึงไมโครโฟน';
     }
+  },
+
+  // ==================== LIVE QUIZ ====================
+  async renderLive(container) {
+    container.innerHTML = `
+      <h5 class="fw-bold mb-3"><i class="bi bi-broadcast me-2 text-danger"></i>Live Quiz</h5>
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body text-center py-4">
+          <p class="text-muted mb-2">ใส่รหัสที่ครูแจ้ง</p>
+          <div class="d-flex justify-content-center gap-2">
+            <input class="form-control text-center fs-3 fw-bold" id="live-code" maxlength="6" style="max-width:200px;letter-spacing:8px" placeholder="______">
+            <button class="btn btn-lg btn-danger" id="live-join"><i class="bi bi-play-fill me-1"></i>เข้าร่วม</button>
+          </div>
+        </div>
+      </div>
+      <div id="live-area"></div>`;
+    document.getElementById('live-join').addEventListener('click', () => this.joinLive());
+  },
+
+  async joinLive() {
+    const code = document.getElementById('live-code')?.value?.trim();
+    if (!code || code.length < 4) { this.toast('กรุณาใส่รหัส', 'danger'); return; }
+    const res = await API.post('/api/student/live/join', { session_code: code });
+    if (!res.success) { this.toast(res.error || 'เข้าร่วมไม่สำเร็จ', 'danger'); return; }
+    this._liveSessionId = res.data.session_id;
+    this._liveLastQ = 0;
+    this.pollLive();
+  },
+
+  async pollLive() {
+    if (!this._liveSessionId) return;
+    const res = await API.get(`/api/student/live/${encodeURIComponent(this._liveSessionId)}`);
+    if (!res.success) { this.toast('โหลดไม่สำเร็จ', 'danger'); return; }
+    const { status, current_question, question, total_questions, leaderboard } = res.data;
+    const area = document.getElementById('live-area') || document.getElementById('student-content');
+
+    if (status === 'waiting') {
+      area.innerHTML = `<div class="text-center py-5">
+        <div class="spinner-border text-primary mb-3"></div>
+        <h5>รอครูเริ่ม...</h5>
+        <p class="text-muted">เข้าร่วมแล้ว กรุณารอ</p>
+      </div>`;
+      setTimeout(() => this.pollLive(), 2000);
+      return;
+    }
+
+    if (status === 'finished') {
+      area.innerHTML = `<div class="text-center py-4">
+        <h3 class="fw-bold">🏆 จบแล้ว!</h3>
+        ${leaderboard && leaderboard.length ? `
+        <div class="table-responsive mt-3"><table class="table table-sm">
+          <thead><tr><th>#</th><th>ชื่อ</th><th>คะแนน</th></tr></thead>
+          <tbody>${leaderboard.map((p,i) => `<tr class="${i<3?'table-warning':''}">
+            <td>${i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</td>
+            <td>${DOMPurify.sanitize(p.first_name)} ${DOMPurify.sanitize(p.last_name)}</td>
+            <td class="fw-bold">${p.total_score}</td>
+          </tr>`).join('')}</tbody>
+        </table></div>` : ''}
+      </div>`;
+      return;
+    }
+
+    // Active question
+    if (question && current_question > this._liveLastQ) {
+      this._liveLastQ = current_question;
+      this._liveAnswered = false;
+      this._liveQStartTime = Date.now();
+    }
+
+    if (!question) {
+      area.innerHTML = `<div class="text-center py-4"><div class="spinner-border text-primary"></div><p class="text-muted mt-2">รอข้อถัดไป...</p></div>`;
+      setTimeout(() => this.pollLive(), 1500);
+      return;
+    }
+
+    if (this._liveAnswered) {
+      area.innerHTML = `<div class="text-center py-4">
+        <i class="bi bi-check-circle text-success" style="font-size:3rem"></i>
+        <h5 class="mt-2">ส่งแล้ว! รอข้อถัดไป...</h5>
+        <p class="text-muted">ข้อ ${current_question}/${total_questions}</p>
+      </div>`;
+      setTimeout(() => this.pollLive(), 2000);
+      return;
+    }
+
+    let opts = [];
+    try { opts = JSON.parse(question.choices || '[]'); } catch(e){}
+    const colors = ['primary','success','warning','danger','info','secondary'];
+
+    area.innerHTML = `
+      <div class="card border-0 shadow mb-3">
+        <div class="card-body text-center">
+          <div class="d-flex justify-content-between mb-2">
+            <span class="badge bg-primary">ข้อ ${current_question}/${total_questions}</span>
+            <span class="badge bg-secondary">${question.score} คะแนน</span>
+          </div>
+          <h5 class="mb-3">${DOMPurify.sanitize(question.question_text)}</h5>
+          ${question.question_type === 'multiple_choice' || question.question_type === 'dropdown' ? `
+          <div class="d-grid gap-2">
+            ${opts.map((o,i) => `<button class="btn btn-lg btn-outline-${colors[i%colors.length]} live-ans-btn" data-answer="${escAttr(String(o))}">${DOMPurify.sanitize(String(o))}</button>`).join('')}
+          </div>` : ''}
+          ${question.question_type === 'true_false' ? `
+          <div class="d-grid gap-2">
+            <button class="btn btn-lg btn-outline-success live-ans-btn" data-answer="true"><i class="bi bi-check-lg me-2"></i>ถูก</button>
+            <button class="btn btn-lg btn-outline-danger live-ans-btn" data-answer="false"><i class="bi bi-x-lg me-2"></i>ผิด</button>
+          </div>` : ''}
+          ${['short_answer','fill_blank'].includes(question.question_type) ? `
+          <div class="d-flex gap-2 mt-2">
+            <input class="form-control fs-5 text-center" id="live-text-ans" placeholder="พิมพ์คำตอบ">
+            <button class="btn btn-primary" id="live-text-submit"><i class="bi bi-send"></i></button>
+          </div>` : ''}
+        </div>
+      </div>`;
+
+    area.querySelectorAll('.live-ans-btn').forEach(btn => {
+      btn.addEventListener('click', () => this.submitLiveAnswer(question.id, btn.dataset.answer));
+    });
+    document.getElementById('live-text-submit')?.addEventListener('click', () => {
+      const val = document.getElementById('live-text-ans')?.value;
+      if (val) this.submitLiveAnswer(question.id, val);
+    });
+  },
+
+  async submitLiveAnswer(questionId, answer) {
+    if (this._liveAnswered) return;
+    this._liveAnswered = true;
+    const timeMs = Date.now() - (this._liveQStartTime || Date.now());
+    const res = await API.post(`/api/student/live/${encodeURIComponent(this._liveSessionId)}/answer`, {
+      question_id: questionId, answer, time_ms: timeMs
+    });
+    if (res.success) {
+      const d = res.data;
+      const area = document.getElementById('live-area') || document.getElementById('student-content');
+      area.innerHTML = `<div class="text-center py-4">
+        ${d.is_correct ? '<i class="bi bi-check-circle text-success" style="font-size:4rem"></i><h4 class="text-success mt-2">ถูกต้อง!</h4>'
+          : '<i class="bi bi-x-circle text-danger" style="font-size:4rem"></i><h4 class="text-danger mt-2">ผิด</h4>'}
+        <p class="fs-5">+${d.score_earned} คะแนน &nbsp; +${d.xp_earned} XP</p>
+        ${d.streak > 1 ? `<p class="text-warning fw-bold">🔥 Streak x${d.streak}!</p>` : ''}
+      </div>`;
+      setTimeout(() => this.pollLive(), 2500);
+    } else {
+      this.toast(res.error || 'ส่งไม่สำเร็จ', 'danger');
+      this._liveAnswered = false;
+    }
+  },
+
+  // ==================== XP / GAMIFICATION ====================
+  async renderXP(container) {
+    container.innerHTML = '<div class="loading"></div>';
+    const res = await API.get('/api/student/xp');
+    if (!res.success) { container.innerHTML = '<div class="text-center text-muted py-4">ไม่สามารถโหลดข้อมูล XP</div>'; return; }
+    const { total_xp, level, streak, badges, league } = res.data;
+    const xpInLevel = total_xp % 100;
+    const xpNeeded = 100;
+    const progressPct = Math.min(100, Math.round((xpInLevel / xpNeeded) * 100));
+
+    const leagueColors = { bronze: '#CD7F32', silver: '#C0C0C0', gold: '#FFD700' };
+    const leagueNames = { bronze: 'Bronze', silver: 'Silver', gold: 'Gold' };
+
+    container.innerHTML = `
+      <h5 class="fw-bold mb-3"><i class="bi bi-trophy me-2 text-warning"></i>XP & ความสำเร็จ</h5>
+      <!-- XP Card -->
+      <div class="card border-0 shadow-sm mb-3" style="background:linear-gradient(135deg,#667eea,#764ba2);color:#fff">
+        <div class="card-body text-center py-4">
+          <h1 class="display-3 fw-bold mb-0">${total_xp || 0}</h1>
+          <p class="mb-2">XP</p>
+          <div class="d-flex align-items-center justify-content-center gap-3 mb-2">
+            <span class="badge bg-light text-dark fs-6">Lv.${level || 1}</span>
+            ${league ? `<span class="badge fs-6" style="background:${leagueColors[league]||'#888'}">${leagueNames[league]||league} League</span>` : ''}
+          </div>
+          <div class="progress" style="height:12px;background:rgba(255,255,255,0.3)">
+            <div class="progress-bar bg-warning" style="width:${progressPct}%"></div>
+          </div>
+          <small class="opacity-75">${xpInLevel}/${xpNeeded} XP ถึงเลเวลถัดไป</small>
+        </div>
+      </div>
+      <!-- Streak -->
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body d-flex justify-content-between align-items-center">
+          <div>
+            <h6 class="fw-bold mb-0">🔥 Streak</h6>
+            <small class="text-muted">เข้าใช้งานต่อเนื่อง</small>
+          </div>
+          <div class="text-center">
+            <span class="display-6 fw-bold text-warning">${streak?.current_streak || 0}</span>
+            <small class="d-block text-muted">วัน</small>
+          </div>
+        </div>
+        ${streak?.current_streak >= 7 ? `<div class="card-footer bg-warning bg-opacity-10 text-center small text-warning">🏆 ต่อเนื่อง ${streak.current_streak} วัน!</div>` : ''}
+      </div>
+      <!-- Badges -->
+      <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-white fw-semibold"><i class="bi bi-award me-2"></i>เหรียญตรา (${badges?.length || 0})</div>
+        <div class="card-body">
+          ${badges && badges.length > 0 ? `
+          <div class="d-flex flex-wrap gap-2">
+            ${badges.map(b => `
+            <div class="text-center" style="width:80px">
+              <div class="badge-icon rounded-circle d-flex align-items-center justify-content-center mx-auto mb-1" style="width:50px;height:50px;background:linear-gradient(135deg,#ffd700,#ff8c00);font-size:1.5rem">
+                ${b.icon || '🏅'}
+              </div>
+              <small class="d-block text-truncate">${DOMPurify.sanitize(b.name || b.badge_type || '')}</small>
+            </div>`).join('')}
+          </div>` : '<p class="text-muted text-center mb-0">ยังไม่มีเหรียญตรา — ทำกิจกรรมเพื่อสะสม!</p>'}
+        </div>
+      </div>`;
   },
 
   toast(message, type = 'success') {

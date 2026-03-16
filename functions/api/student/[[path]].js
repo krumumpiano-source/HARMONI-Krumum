@@ -1,8 +1,8 @@
 // HARMONI — Student API
 import { success, error, parseBody, dbAll, dbFirst, dbRun, generateUUID, now, extractParam, extractAction, paginate } from '../../_helpers.js';
 
-// Helper: upload file to teacher's Google Drive
-async function uploadToDrive(env, teacherId, fileName, base64Content, mimeType) {
+// Helper: upload file to teacher's Google Drive with folder chain
+async function uploadToDrive(env, teacherId, fileName, base64Content, mimeType, folderPath) {
   const row = await dbFirst(env.DB,
     "SELECT value FROM app_settings WHERE teacher_id = ? AND key = 'drive_tokens'",
     [teacherId]
@@ -28,11 +28,39 @@ async function uploadToDrive(env, teacherId, fileName, base64Content, mimeType) 
   if (!refreshed.access_token) return null;
   const accessToken = refreshed.access_token;
 
-  // Use the designated HARMONI shared folder
-  const folderId = env.DRIVE_FOLDER_ID || '1NE_KC6zWdyaURFMmLVRw1aXXD-dWede0';
+  // Get root folder
+  const rootRow = await dbFirst(env.DB,
+    "SELECT value FROM app_settings WHERE teacher_id = ? AND key = 'drive_root_folder'",
+    [teacherId]
+  );
+  const rootId = rootRow?.value || '1NE_KC6zWdyaURFMmLVRw1aXXD-dWede0';
+
+  // Build folder chain: root → HARMONI-Submissions → [folderPath...]
+  const chain = ['HARMONI-Submissions', ...(folderPath || [])];
+  let parentId = rootId;
+  for (const name of chain) {
+    // Find or create each folder in chain
+    const q = `name='${name.replace(/'/g, "\\'")}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    const searchResp = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&pageSize=1`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    const searchData = await searchResp.json();
+    if (searchData.files && searchData.files.length > 0) {
+      parentId = searchData.files[0].id;
+    } else {
+      const createResp = await fetch('https://www.googleapis.com/drive/v3/files', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] })
+      });
+      const folder = await createResp.json();
+      parentId = folder.id;
+    }
+  }
 
   // Upload file
-  const metadata = { name: fileName, mimeType: mimeType || 'image/jpeg', parents: [folderId] };
+  const metadata = { name: fileName, mimeType: mimeType || 'image/jpeg', parents: [parentId] };
   const boundary = '-------harmoni_stu_upload';
   const multipartBody = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: ${metadata.mimeType}\r\nContent-Transfer-Encoding: base64\r\n\r\n${base64Content}\r\n--${boundary}--`;
 
@@ -161,12 +189,30 @@ export async function onRequest(context) {
     let fileUrls = null;
     if (body.files && Array.isArray(body.files) && body.files.length > 0) {
       const teacherId = post.teacher_id;
+      // Build folder path: ภาคเรียน → วิชา → ห้อง → ชื่องาน
+      const scInfo = await dbFirst(db, `
+        SELECT s.name AS subject_name, s.code AS subject_code, c.name AS classroom_name,
+               sem.year, sem.term
+        FROM subject_classrooms sc
+        JOIN subjects s ON s.id = sc.subject_id
+        JOIN classrooms c ON c.id = sc.classroom_id
+        JOIN semesters sem ON sem.id = sc.semester_id
+        WHERE sc.id = ?
+      `, [post.subject_classroom_id]);
+      const folderPath = scInfo ? [
+        `${scInfo.year}-${scInfo.term}`,
+        scInfo.subject_code || scInfo.subject_name,
+        scInfo.classroom_name,
+        post.title || 'งาน'
+      ] : [];
+      const studentPrefix = student.student_code ? `${student.student_code}_` : '';
       const uploadResults = [];
       for (const file of body.files.slice(0, 5)) { // max 5 files
         if (!file.content || !file.name) continue;
         // Validate base64 content size (max ~5MB decoded)
         if (file.content.length > 7_000_000) continue;
-        const result = await uploadToDrive(env, teacherId, file.name, file.content, file.mimeType || 'image/jpeg');
+        const prefixedName = `${studentPrefix}${file.name}`;
+        const result = await uploadToDrive(env, teacherId, prefixedName, file.content, file.mimeType || 'image/jpeg', folderPath);
         if (result) uploadResults.push(result);
       }
       if (uploadResults.length > 0) fileUrls = JSON.stringify(uploadResults);
@@ -210,6 +256,133 @@ export async function onRequest(context) {
           fileUrls, now(), isLate, lateDays]);
       return success({ id, submitted: true });
     }
+  }
+
+  // ======================== LIVE QUIZ (Student) ========================
+  // POST /live/join — join session by code
+  if (path === '/live/join' && method === 'POST') {
+    const body = await parseBody(request);
+    if (!body?.code) return error('กรุณากรอกรหัสเข้าร่วม');
+    const session = await dbFirst(db, "SELECT * FROM live_sessions WHERE session_code = ? AND status != 'finished'", [body.code]);
+    if (!session) return error('ไม่พบ session หรือปิดแล้ว', 404);
+    // Join or re-join
+    const existing = await dbFirst(db, 'SELECT id FROM live_participants WHERE session_id = ? AND student_id = ?', [session.id, studentId]);
+    if (!existing) {
+      await dbRun(db,
+        'INSERT INTO live_participants (id, session_id, student_id, nickname, joined_at) VALUES (?,?,?,?,?)',
+        [generateUUID(), session.id, studentId, body.nickname || null, now()]
+      );
+    }
+    return success({ session_id: session.id, status: session.status, current_question: session.current_question });
+  }
+
+  // GET /live/:sessionId — poll current state
+  if (path.startsWith('/live/') && method === 'GET') {
+    const sessionId = extractParam(path, '/live/');
+    const action = extractAction(path, '/live/');
+    if (!action) {
+      const session = await dbFirst(db, 'SELECT id, status, current_question, scoring_mode, test_id FROM live_sessions WHERE id = ?', [sessionId]);
+      if (!session) return error('ไม่พบ session', 404);
+      let question = null;
+      if (session.status === 'question' && session.current_question > 0) {
+        const questions = await dbAll(db,
+          'SELECT id, question_type, question_text, choices, score, sort_order FROM test_questions WHERE test_id = ? ORDER BY sort_order',
+          [session.test_id]
+        );
+        const q = questions[session.current_question - 1];
+        if (q && q.choices) {
+          try { q.choices = JSON.stringify(JSON.parse(q.choices).map(o => typeof o === 'object' ? (o.text || String(o)) : o)); } catch(e) {}
+        }
+        question = q || null;
+      }
+      // Get participant rank
+      const me = await dbFirst(db, 'SELECT total_score, total_xp FROM live_participants WHERE session_id = ? AND student_id = ?', [sessionId, studentId]);
+      const leaderboard = await dbAll(db,
+        `SELECT lp.student_id, lp.total_score, st.first_name FROM live_participants lp
+         JOIN students st ON st.id = lp.student_id WHERE lp.session_id = ? ORDER BY lp.total_score DESC LIMIT 5`,
+        [sessionId]
+      );
+      return success({ status: session.status, current_question: session.current_question, question, me, leaderboard });
+    }
+  }
+
+  // POST /live/:sessionId/answer — submit answer for current question
+  if (path.match(/\/live\/[^/]+\/answer/) && method === 'POST') {
+    const parts = path.split('/');
+    const sessionId = parts[2]; // /live/{id}/answer
+    const body = await parseBody(request);
+    if (!body || body.answer === undefined) return error('กรุณาตอบคำถาม');
+
+    const session = await dbFirst(db, 'SELECT * FROM live_sessions WHERE id = ?', [sessionId]);
+    if (!session || session.status !== 'question') return error('ไม่อยู่ในช่วงตอบคำถาม');
+
+    // Get current question
+    const questions = await dbAll(db, 'SELECT * FROM test_questions WHERE test_id = ? ORDER BY sort_order', [session.test_id]);
+    const q = questions[session.current_question - 1];
+    if (!q) return error('ไม่พบคำถาม');
+
+    // Check if already answered
+    const alreadyAnswered = await dbFirst(db,
+      'SELECT id FROM live_responses WHERE session_id = ? AND student_id = ? AND question_id = ?',
+      [sessionId, studentId, q.id]
+    );
+    if (alreadyAnswered) return error('ตอบแล้ว');
+
+    // Auto-grade
+    let isCorrect = 0;
+    const answer = String(body.answer).trim().toLowerCase();
+    if (q.correct_answer) {
+      const correct = String(q.correct_answer).trim().toLowerCase();
+      isCorrect = answer === correct ? 1 : 0;
+    }
+
+    // XP calculation
+    const timeMs = body.time_ms || 10000;
+    let xpEarned = 0;
+    if (isCorrect) {
+      xpEarned = 10;
+      if (session.scoring_mode === 'speed_accuracy') {
+        const speedBonus = Math.max(0, Math.floor((30000 - timeMs) / 1000));
+        xpEarned += speedBonus;
+      }
+    }
+
+    // Count streak
+    const prevResponses = await dbAll(db,
+      'SELECT is_correct FROM live_responses WHERE session_id = ? AND student_id = ? ORDER BY created_at DESC LIMIT 5',
+      [sessionId, studentId]
+    );
+    let streakCount = 0;
+    if (isCorrect) {
+      streakCount = 1;
+      for (const r of prevResponses) {
+        if (r.is_correct) streakCount++;
+        else break;
+      }
+      if (streakCount >= 3) xpEarned += streakCount * 2; // streak bonus
+    }
+
+    await dbRun(db,
+      'INSERT INTO live_responses (id, session_id, student_id, question_id, answer, is_correct, time_ms, xp_earned, streak_count, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+      [generateUUID(), sessionId, studentId, q.id, body.answer, isCorrect, timeMs, xpEarned, streakCount, now()]
+    );
+
+    // Update participant score
+    const score = isCorrect ? (q.score || 1) : 0;
+    await dbRun(db,
+      'UPDATE live_participants SET total_score = total_score + ?, total_xp = total_xp + ? WHERE session_id = ? AND student_id = ?',
+      [score, xpEarned, sessionId, studentId]
+    );
+
+    // Award XP
+    if (xpEarned > 0) {
+      await dbRun(db,
+        'INSERT INTO student_xp (id, student_id, xp_amount, source, source_id, created_at) VALUES (?,?,?,?,?,?)',
+        [generateUUID(), studentId, xpEarned, 'live_quiz', sessionId, now()]
+      );
+    }
+
+    return success({ is_correct: isCorrect, xp_earned: xpEarned, streak: streakCount, score });
   }
 
   // ======================== GRADES ========================
@@ -496,6 +669,131 @@ export async function onRequest(context) {
       return success(profile);
     }
     return error('Method not allowed', 405);
+  }
+
+  // ======================== BOARD MODE (Student posting) ========================
+  if (path.startsWith('/board/')) {
+    const postId = extractParam(path, '/board/');
+    const action = extractAction(path, '/board/');
+
+    // POST /board/:postId — create board post
+    if (method === 'POST' && !action) {
+      const body = await parseBody(request);
+      if (!body?.content) return error('กรุณากรอกเนื้อหา');
+      const id = generateUUID();
+      await dbRun(db,
+        `INSERT INTO board_posts (id, post_id, student_id, content, media_url, media_type, created_at)
+         VALUES (?,?,?,?,?,?,?)`,
+        [id, postId, studentId, body.content, body.media_url || null, body.media_type || null, now()]
+      );
+      return success({ id });
+    }
+
+    // POST /board/:postId/like/:boardPostId — toggle like
+    if (method === 'POST' && action === 'like') {
+      const boardPostId = path.split('/').pop();
+      const existing = await dbFirst(db,
+        'SELECT id FROM board_likes WHERE board_post_id = ? AND student_id = ?',
+        [boardPostId, studentId]
+      );
+      if (existing) {
+        await dbRun(db, 'DELETE FROM board_likes WHERE id = ?', [existing.id]);
+        await dbRun(db, 'UPDATE board_posts SET likes = likes - 1 WHERE id = ?', [boardPostId]);
+        return success({ liked: false });
+      } else {
+        await dbRun(db,
+          'INSERT INTO board_likes (id, board_post_id, student_id, created_at) VALUES (?,?,?,?)',
+          [generateUUID(), boardPostId, studentId, now()]
+        );
+        await dbRun(db, 'UPDATE board_posts SET likes = likes + 1 WHERE id = ?', [boardPostId]);
+        return success({ liked: true });
+      }
+    }
+
+    // GET /board/:postId — list board posts
+    if (method === 'GET') {
+      const posts = await dbAll(db,
+        `SELECT bp.*, st.first_name, st.last_name, st.student_code,
+         (SELECT COUNT(*) FROM board_likes bl WHERE bl.board_post_id = bp.id AND bl.student_id = ?) as my_like
+         FROM board_posts bp
+         JOIN students st ON st.id = bp.student_id
+         WHERE bp.post_id = ?
+         ORDER BY bp.likes DESC, bp.created_at DESC`,
+        [studentId, postId]
+      );
+      return success(posts);
+    }
+  }
+
+  // ======================== POLL VOTE ========================
+  if (path.startsWith('/poll/') && method === 'POST') {
+    const postId = extractParam(path, '/poll/');
+    const body = await parseBody(request);
+    if (body?.option_index === undefined) return error('กรุณาเลือกตัวเลือก');
+    // Upsert poll response
+    const existing = await dbFirst(db, 'SELECT id FROM poll_responses WHERE post_id = ? AND student_id = ?', [postId, studentId]);
+    if (existing) {
+      await dbRun(db, 'UPDATE poll_responses SET option_index = ?, option_text = ? WHERE id = ?',
+        [body.option_index, body.option_text || null, existing.id]);
+    } else {
+      await dbRun(db,
+        'INSERT INTO poll_responses (id, post_id, student_id, option_index, option_text, created_at) VALUES (?,?,?,?,?,?)',
+        [generateUUID(), postId, studentId, body.option_index, body.option_text || null, now()]
+      );
+    }
+    return success({ voted: true });
+  }
+
+  // ======================== XP & GAMIFICATION ========================
+  if (path === '/xp' || path === '/xp/') {
+    if (method !== 'GET') return error('Method not allowed', 405);
+    const totalXp = await dbFirst(db, 'SELECT COALESCE(SUM(xp_amount), 0) as total FROM student_xp WHERE student_id = ?', [studentId]);
+    const streak = await dbFirst(db, 'SELECT * FROM student_streaks WHERE student_id = ?', [studentId]);
+    const badges = await dbAll(db, 'SELECT badge_key, unlocked_at FROM student_badges WHERE student_id = ?', [studentId]);
+    const league = await dbFirst(db,
+      `SELECT * FROM weekly_leagues WHERE student_id = ? ORDER BY week_start DESC LIMIT 1`,
+      [studentId]
+    );
+    const level = Math.floor((totalXp?.total || 0) / 100) + 1;
+    return success({
+      total_xp: totalXp?.total || 0,
+      level: Math.min(level, 10),
+      streak: streak || { current_streak: 0, longest_streak: 0, freeze_count: 2 },
+      badges,
+      league: league || { league: 'bronze', weekly_xp: 0 }
+    });
+  }
+
+  // ======================== PORTFOLIO (Student-managed) ========================
+  if (path === '/portfolio' || path === '/portfolio/') {
+    if (method === 'GET') {
+      const items = await dbAll(db,
+        `SELECT spi.*, s.name as subject_name FROM student_portfolio_items spi
+         LEFT JOIN subjects s ON s.id = spi.subject_id
+         WHERE spi.student_id = ? ORDER BY spi.created_at DESC`,
+        [studentId]
+      );
+      return success(items);
+    }
+    if (method === 'POST') {
+      const body = await parseBody(request);
+      if (!body?.title) return error('กรุณากรอกชื่อผลงาน');
+      const id = generateUUID();
+      await dbRun(db,
+        `INSERT INTO student_portfolio_items (id, student_id, title, description, category, subject_id, file_urls, reflection, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        [id, studentId, body.title, body.description || null, body.category || 'general',
+         body.subject_id || null, body.file_urls ? JSON.stringify(body.file_urls) : null,
+         body.reflection || null, now(), now()]
+      );
+      return success({ id });
+    }
+  }
+
+  if (path.startsWith('/portfolio/') && method === 'DELETE') {
+    const itemId = extractParam(path, '/portfolio/');
+    await dbRun(db, 'DELETE FROM student_portfolio_items WHERE id = ? AND student_id = ?', [itemId, studentId]);
+    return success({ deleted: true });
   }
 
   // ======================== MY CLASSROOMS ========================

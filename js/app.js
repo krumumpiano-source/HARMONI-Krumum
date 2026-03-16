@@ -3061,10 +3061,18 @@ App.modules['lesson-plan'] = {
 // ==================== Register Classroom-Materials Module ====================
 
 App.modules['classroom-materials'] = {
-  types: ['ใบงาน', 'วิดีโอ', 'เสียง', 'สไลด์', 'เอกสาร', 'อื่นๆ'],
+  types: [
+    { val: 'video', label: '🎬 วิดีโอ', icon: 'bi-play-circle' },
+    { val: 'worksheet', label: '📝 ใบงาน', icon: 'bi-file-text' },
+    { val: 'audio', label: '🔊 เสียง', icon: 'bi-music-note' },
+    { val: 'presentation', label: '📊 สไลด์', icon: 'bi-file-slides' },
+    { val: 'link', label: '🔗 ลิงก์', icon: 'bi-link-45deg' },
+    { val: 'other', label: '📁 อื่นๆ', icon: 'bi-folder' }
+  ],
 
   async render(container) {
     container.innerHTML = '<div class="loading"></div>';
+    this._container = container;
 
     const [subRes, matRes] = await Promise.all([
       API.get('/api/subjects'),
@@ -3075,19 +3083,21 @@ App.modules['classroom-materials'] = {
     const materials = matRes.success ? matRes.data : [];
 
     container.innerHTML = `
-      <h4 class="fw-bold mb-4"><i class="bi bi-folder2-open me-2 text-primary"></i>สื่อการสอน</h4>
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="fw-bold mb-0"><i class="bi bi-folder2-open me-2 text-primary"></i>สื่อการสอน</h4>
+        <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#mat-form"><i class="bi bi-plus-lg me-1"></i>เพิ่มสื่อ</button>
+      </div>
 
-      <div class="card border-0 shadow-sm mb-4">
-        <div class="card-header bg-white fw-semibold"><i class="bi bi-plus-circle me-2"></i>เพิ่มสื่อ</div>
-        <div class="card-body">
+      <div class="collapse mb-4" id="mat-form">
+        <div class="card border-0 shadow-sm"><div class="card-body">
           <div class="row g-2 mb-2">
             <div class="col-md-4">
-              <input type="text" class="form-control" id="mat-title" placeholder="ชื่อสื่อ เช่น ใบงานจังหวะดนตรี">
+              <input type="text" class="form-control" id="mat-title" placeholder="ชื่อสื่อ">
             </div>
             <div class="col-md-3">
               <select class="form-select" id="mat-type">
                 <option value="">— ประเภท —</option>
-                ${this.types.map(t => `<option value="${t}">${t}</option>`).join('')}
+                ${this.types.map(t => `<option value="${t.val}">${t.label}</option>`).join('')}
               </select>
             </div>
             <div class="col-md-3">
@@ -3097,44 +3107,57 @@ App.modules['classroom-materials'] = {
               </select>
             </div>
             <div class="col-md-2">
-              <button class="btn btn-primary w-100" id="mat-save"><i class="bi bi-plus-lg"></i></button>
+              <button class="btn btn-success w-100" id="mat-save"><i class="bi bi-check-lg me-1"></i>บันทึก</button>
             </div>
           </div>
           <div class="row g-2">
-            <div class="col-md-6">
-              <input type="text" class="form-control" id="mat-url" placeholder="ลิงก์ไฟล์ / Google Drive / YouTube (ไม่บังคับ)">
+            <div class="col-md-8">
+              <input type="text" class="form-control" id="mat-url" placeholder="URL วิดีโอ YouTube / Google Drive / ลิงก์ไฟล์">
             </div>
-            <div class="col-md-6">
+            <div class="col-md-4">
               <input type="text" class="form-control" id="mat-desc" placeholder="รายละเอียด (ไม่บังคับ)">
             </div>
           </div>
-        </div>
+        </div></div>
       </div>
 
-      <div id="mat-list">
-        ${materials.length === 0 ? '<p class="text-muted">ยังไม่มีสื่อ</p>' :
-        materials.map(m => `
-          <div class="card border-0 shadow-sm mb-2">
-            <div class="card-body p-3 d-flex justify-content-between align-items-start">
-              <div>
-                <strong>${DOMPurify.sanitize(m.title)}</strong>
-                ${m.material_type ? `<span class="badge bg-secondary ms-2">${DOMPurify.sanitize(m.material_type)}</span>` : ''}
-                ${m.subject_code ? `<span class="badge bg-primary ms-1">${DOMPurify.sanitize(m.subject_code)}</span>` : ''}
-                ${m.description ? `<div class="small text-muted mt-1">${DOMPurify.sanitize(m.description)}</div>` : ''}
-                ${m.file_url ? `<div class="small mt-1"><a href="${DOMPurify.sanitize(m.file_url)}" target="_blank" rel="noopener"><i class="bi bi-link-45deg"></i> ดูสื่อ</a></div>` : ''}
+      <div class="row g-3" id="mat-list">
+        ${materials.length === 0 ? '<div class="col-12 text-muted text-center py-4">ยังไม่มีสื่อการสอน</div>' :
+        materials.map(m => {
+          const typeInfo = this.types.find(t => t.val === m.material_type) || this.types[5];
+          const isVideo = m.material_type === 'video';
+          return `
+          <div class="col-md-4">
+            <div class="card border-0 shadow-sm h-100">
+              <div class="card-body">
+                <div class="d-flex align-items-start mb-2">
+                  <i class="bi ${typeInfo.icon} text-primary me-2 fs-5"></i>
+                  <div class="flex-grow-1">
+                    <strong class="d-block">${DOMPurify.sanitize(m.title)}</strong>
+                    <small class="text-muted">${typeInfo.label}${m.subject_code ? ' · ' + DOMPurify.sanitize(m.subject_code) : ''}</small>
+                  </div>
+                </div>
+                ${m.description ? `<p class="text-muted small mb-1">${DOMPurify.sanitize(m.description)}</p>` : ''}
+                <div class="d-flex gap-1 mt-2 flex-wrap">
+                  ${m.file_url ? `<a href="${DOMPurify.sanitize(m.file_url)}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-info"><i class="bi bi-box-arrow-up-right me-1"></i>เปิด</a>` : ''}
+                  ${isVideo ? `<button class="btn btn-sm btn-outline-primary mat-edit-vq" data-id="${m.id}" data-title="${DOMPurify.sanitize(m.title)}" data-url="${DOMPurify.sanitize(m.file_url || '')}"><i class="bi bi-question-circle me-1"></i>แก้ไขคำถาม</button>` : ''}
+                  <button class="btn btn-sm btn-outline-danger mat-del" data-id="${m.id}"><i class="bi bi-trash"></i></button>
+                </div>
               </div>
-              <button class="btn btn-sm btn-outline-danger" onclick="App.modules['classroom-materials'].deleteMat('${m.id}')"><i class="bi bi-trash"></i></button>
             </div>
-          </div>`).join('')}
+          </div>`;
+        }).join('')}
       </div>`;
 
-    document.getElementById('mat-save').addEventListener('click', () => this.saveMat());
+    document.getElementById('mat-save').addEventListener('click', () => this.saveMat(subjects));
+    container.querySelectorAll('.mat-del').forEach(btn => btn.addEventListener('click', () => this.deleteMat(btn.dataset.id)));
+    container.querySelectorAll('.mat-edit-vq').forEach(btn => btn.addEventListener('click', () =>
+      this.editVideoQuestions(btn.dataset.id, btn.dataset.title, btn.dataset.url)));
   },
 
-  async saveMat() {
+  async saveMat(subjects) {
     const title = document.getElementById('mat-title').value.trim();
     if (!title) { App.toast('กรุณากรอกชื่อสื่อ', 'warning'); return; }
-
     const res = await API.post('/api/classroom-materials', {
       title,
       material_type: document.getElementById('mat-type').value || null,
@@ -3142,27 +3165,149 @@ App.modules['classroom-materials'] = {
       file_url: document.getElementById('mat-url').value.trim() || null,
       description: document.getElementById('mat-desc').value.trim() || null
     });
-
-    if (res.success) {
-      App.toast('เพิ่มสื่อสำเร็จ!');
-      App.navigate('classroom-materials');
-    } else {
-      App.toast(res.error || 'เพิ่มไม่สำเร็จ', 'danger');
-    }
+    if (res.success) { App.toast('เพิ่มสื่อสำเร็จ!'); this.render(this._container); }
+    else App.toast(res.error || 'เพิ่มไม่สำเร็จ', 'danger');
   },
 
   async deleteMat(id) {
     if (!confirm('ลบสื่อนี้?')) return;
     const res = await API.del(`/api/classroom-materials/${id}`);
-    if (res.success) { App.toast('ลบสื่อแล้ว'); App.navigate('classroom-materials'); }
+    if (res.success) { App.toast('ลบสื่อแล้ว'); this.render(this._container); }
     else App.toast(res.error || 'ลบไม่สำเร็จ', 'danger');
+  },
+
+  // ==================== INTERACTIVE VIDEO EDITOR ====================
+  async editVideoQuestions(matId, title, videoUrl) {
+    const container = this._container;
+    container.innerHTML = '<div class="loading"></div>';
+
+    const [qRes] = await Promise.all([API.get(`/api/classroom-materials/${matId}/vq`)]);
+    const questions = qRes.success ? qRes.data : [];
+    this._vqMatId = matId;
+    this._vqQuestions = questions;
+
+    // Convert YouTube URL to embed URL
+    const embedUrl = this._toEmbedUrl(videoUrl);
+
+    container.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="fw-bold mb-0"><i class="bi bi-play-circle me-2 text-danger"></i>Interactive Video — ${DOMPurify.sanitize(title)}</h5>
+        <button class="btn btn-sm btn-outline-secondary" id="vq-back"><i class="bi bi-arrow-left me-1"></i>กลับ</button>
+      </div>
+      <div class="row g-3">
+        <!-- Video Player -->
+        <div class="col-md-7">
+          <div class="card border-0 shadow-sm">
+            <div class="card-body p-2">
+              ${embedUrl
+                ? `<div class="ratio ratio-16x9 mb-2">
+                    <iframe id="vq-iframe" src="${embedUrl}" allowfullscreen></iframe>
+                  </div>`
+                : `<div class="ratio ratio-16x9 mb-2">
+                    <video id="vq-video" controls src="${DOMPurify.sanitize(videoUrl || '')}" class="w-100"></video>
+                  </div>`}
+              <div class="d-flex align-items-center gap-2 px-2 pb-2">
+                <input type="number" class="form-control form-control-sm" id="vq-ts" placeholder="เวลา (วินาที)" min="0" style="max-width:120px">
+                <select class="form-select form-select-sm" id="vq-qtype" style="max-width:150px">
+                  <option value="multiple_choice">ปรนัย</option>
+                  <option value="true_false">ถูก/ผิด</option>
+                  <option value="short_answer">เติมคำ</option>
+                </select>
+                <button class="btn btn-sm btn-primary" id="vq-add-q"><i class="bi bi-plus-lg me-1"></i>เพิ่มคำถาม</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Question List -->
+        <div class="col-md-5">
+          <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-semibold">
+              <i class="bi bi-question-circle me-2"></i>คำถาม (${questions.length})
+            </div>
+            <div class="card-body p-0" id="vq-list" style="max-height:500px;overflow-y:auto"></div>
+          </div>
+        </div>
+      </div>`;
+
+    document.getElementById('vq-back').addEventListener('click', () => this.render(container));
+    document.getElementById('vq-add-q').addEventListener('click', () => this.addVQ());
+    this.renderVQList();
+  },
+
+  _toEmbedUrl(url) {
+    if (!url) return null;
+    // YouTube
+    const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&?/]+)/);
+    if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}`;
+    return null; // not embeddable or direct video
+  },
+
+  renderVQList() {
+    const list = document.getElementById('vq-list');
+    if (!list) return;
+    const qs = this._vqQuestions;
+    if (!qs.length) { list.innerHTML = '<div class="text-muted text-center py-3">ยังไม่มีคำถาม</div>'; return; }
+    list.innerHTML = qs.map((q, i) => `
+      <div class="border-bottom p-3">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <span class="badge bg-danger me-2">${Math.floor(q.timestamp_seconds/60)}:${String(q.timestamp_seconds%60).padStart(2,'0')}</span>
+            <small class="text-muted">${q.question_type === 'multiple_choice' ? 'ปรนัย' : q.question_type === 'true_false' ? 'ถูก/ผิด' : 'เติมคำ'}</small>
+          </div>
+          <button class="btn btn-xs btn-outline-danger btn-vq-del" data-id="${q.id}"><i class="bi bi-trash fs-6"></i></button>
+        </div>
+        <p class="mb-1 mt-1 small">${DOMPurify.sanitize(q.question_text)}</p>
+        ${q.correct_answer ? `<small class="text-success">เฉลย: ${DOMPurify.sanitize(q.correct_answer)}</small>` : ''}
+      </div>`).join('');
+    list.querySelectorAll('.btn-vq-del').forEach(btn => btn.addEventListener('click', async () => {
+      await API.del(`/api/classroom-materials/${this._vqMatId}/vq/${btn.dataset.id}`);
+      this._vqQuestions = this._vqQuestions.filter(q => q.id !== btn.dataset.id);
+      this.renderVQList();
+    }));
+  },
+
+  async addVQ() {
+    const ts = parseInt(document.getElementById('vq-ts').value) || 0;
+    const qtype = document.getElementById('vq-qtype').value;
+    const text = prompt('พิมพ์คำถาม:');
+    if (!text) return;
+    let choices = null, correct = null;
+    if (qtype === 'multiple_choice') {
+      const input = prompt('ตัวเลือก (คั่นด้วย,):', 'A,B,C,D');
+      choices = input ? JSON.stringify(input.split(',').map(s=>s.trim())) : null;
+      correct = prompt('เฉลย (พิมพ์ตัวเลือกที่ถูก):') || null;
+    } else if (qtype === 'true_false') {
+      correct = confirm('คำตอบที่ถูก: ถูก?') ? 'true' : 'false';
+    } else {
+      correct = prompt('เฉลย:') || null;
+    }
+    const res = await API.post(`/api/classroom-materials/${this._vqMatId}/vq`, {
+      timestamp_seconds: ts, question_type: qtype, question_text: text,
+      choices, correct_answer: correct
+    });
+    if (res.success) {
+      App.toast('เพิ่มคำถามสำเร็จ!');
+      const qRes = await API.get(`/api/classroom-materials/${this._vqMatId}/vq`);
+      this._vqQuestions = qRes.success ? qRes.data : [];
+      this.renderVQList();
+    } else {
+      App.toast(res.error || 'ไม่สำเร็จ', 'danger');
+    }
   }
 };
 
 // ==================== Register Scores Module ====================
 
 App.modules['scores'] = {
-  scoreTypes: ['เก็บคะแนน', 'สอบย่อย', 'สอบกลางภาค', 'สอบปลายภาค', 'ปฏิบัติ', 'จิตพิสัย', 'อื่นๆ'],
+  scoreTypes: [
+    { val: 'assignment', label: 'เก็บคะแนน' },
+    { val: 'quiz', label: 'สอบย่อย' },
+    { val: 'midterm', label: 'สอบกลางภาค' },
+    { val: 'final', label: 'สอบปลายภาค' },
+    { val: 'practical', label: 'ปฏิบัติ' },
+    { val: 'behavior', label: 'จิตพิสัย' },
+    { val: 'other', label: 'อื่นๆ' }
+  ],
 
   async render(container) {
     container.innerHTML = '<div class="loading"></div>';
@@ -3182,11 +3327,12 @@ App.modules['scores'] = {
       return;
     }
     this.activeSemId = activeSem.id;
+    this._container = container;
 
     container.innerHTML = `
-      <h4 class="fw-bold mb-4"><i class="bi bi-graph-up me-2 text-primary"></i>คะแนน</h4>
+      <h4 class="fw-bold mb-4"><i class="bi bi-table me-2 text-primary"></i>ตารางคะแนน</h4>
 
-      <div class="row g-2 mb-4">
+      <div class="row g-2 mb-3">
         <div class="col-md-3">
           <select class="form-select" id="sc2-classroom">
             <option value="">— ห้องเรียน —</option>
@@ -3200,157 +3346,246 @@ App.modules['scores'] = {
           </select>
         </div>
         <div class="col-md-3">
-          <select class="form-select" id="sc2-type">
-            ${this.scoreTypes.map(t => `<option value="${t}">${t}</option>`).join('')}
-          </select>
+          <button class="btn btn-primary w-100" id="sc2-load"><i class="bi bi-table me-1"></i>โหลดตาราง</button>
         </div>
         <div class="col-md-3">
-          <button class="btn btn-primary w-100" id="sc2-load"><i class="bi bi-search me-1"></i>โหลดรายชื่อ</button>
+          <button class="btn btn-outline-info w-100" id="sc2-import-quiz"><i class="bi bi-download me-1"></i>นำเข้าจากแบบทดสอบ</button>
         </div>
       </div>
 
       <div id="sc2-content"></div>`;
 
-    document.getElementById('sc2-load').addEventListener('click', () => this.loadStudents());
+    document.getElementById('sc2-load').addEventListener('click', () => this.loadGrid());
+    document.getElementById('sc2-import-quiz').addEventListener('click', () => this.importQuizzes());
   },
 
-  async loadStudents() {
+  async loadGrid() {
     const classroomId = document.getElementById('sc2-classroom').value;
     const subjectId = document.getElementById('sc2-subject').value;
     if (!classroomId || !subjectId) { App.toast('เลือกห้องเรียนและวิชาก่อน', 'warning'); return; }
 
-    const area = document.getElementById('sc2-content');
-    area.innerHTML = '<div class="loading"></div>';
-
     this.classroomId = classroomId;
     this.subjectId = subjectId;
 
-    const stRes = await API.get(`/api/students?classroom_id=${classroomId}&limit=9999`);
-    const students = stRes.success ? stRes.data : [];
-
-    if (students.length === 0) {
-      area.innerHTML = '<p class="text-muted">ไม่พบนักเรียนในห้องนี้</p>';
-      return;
-    }
-
-    area.innerHTML = `
-      <div class="card border-0 shadow-sm">
-        <div class="card-header bg-white d-flex justify-content-between align-items-center">
-          <span class="fw-semibold"><i class="bi bi-pencil-square me-2"></i>ลงคะแนน — <span id="sc2-type-label">${document.getElementById('sc2-type').value}</span></span>
-          <div>
-            <label class="me-2 small">คะแนนเต็ม:</label>
-            <input type="number" class="form-control form-control-sm d-inline-block" style="width:80px" id="sc2-max" value="10">
-          </div>
-        </div>
-        <div class="card-body p-0">
-          <table class="table table-sm align-middle mb-0">
-            <thead class="table-light">
-              <tr><th style="width:60px">เลขที่</th><th>ชื่อ-นามสกุล</th><th style="width:100px">คะแนน</th></tr>
-            </thead>
-            <tbody>
-              ${students.map(s => `
-              <tr>
-                <td>${DOMPurify.sanitize(s.student_code)}</td>
-                <td>${DOMPurify.sanitize(s.first_name)} ${DOMPurify.sanitize(s.last_name)}</td>
-                <td><input type="number" class="form-control form-control-sm score-input" data-sid="${s.id}" step="0.5" min="0"></td>
-              </tr>`).join('')}
-            </tbody>
-          </table>
-        </div>
-        <div class="card-footer bg-white">
-          <button class="btn btn-primary" id="sc2-save"><i class="bi bi-check-lg me-1"></i>บันทึกคะแนน</button>
-          <button class="btn btn-outline-info ms-2" id="sc2-view-summary"><i class="bi bi-bar-chart me-1"></i>ดูสรุป</button>
-          <button class="btn btn-outline-secondary ms-2" id="sc2-export"><i class="bi bi-download me-1"></i>ส่งออก</button>
-        </div>
-      </div>`;
-
-    document.getElementById('sc2-save').addEventListener('click', () => this.saveScores());
-    document.getElementById('sc2-view-summary').addEventListener('click', () => this.viewSummary());
-    document.getElementById('sc2-export').addEventListener('click', () => {
-      const rows = [];
-      document.querySelectorAll('.score-input').forEach(inp => {
-        const tr = inp.closest('tr');
-        const code = tr.querySelector('td:first-child')?.textContent || '';
-        const name = tr.querySelector('td:nth-child(2)')?.textContent || '';
-        const score = inp.value || '';
-        rows.push({ code, name, score });
-      });
-      const type = document.getElementById('sc2-type').value;
-      Exporter.showExportDialog(`คะแนน${type}`, rows, {
-        headers: ['code', 'name', 'score'],
-        headerLabels: ['รหัส', 'ชื่อ-สกุล', 'คะแนน']
-      });
-    });
-  },
-
-  async saveScores() {
-    const maxScore = parseFloat(document.getElementById('sc2-max').value);
-    if (!maxScore) { App.toast('กรุณาระบุคะแนนเต็ม', 'warning'); return; }
-
-    const records = [];
-    document.querySelectorAll('.score-input').forEach(inp => {
-      if (inp.value !== '') {
-        records.push({ student_id: inp.dataset.sid, score: parseFloat(inp.value) });
-      }
-    });
-
-    if (records.length === 0) { App.toast('ยังไม่ได้กรอกคะแนน', 'warning'); return; }
-
-    const res = await API.post('/api/scores', {
-      subject_id: this.subjectId,
-      classroom_id: this.classroomId,
-      semester_id: this.activeSemId,
-      score_type: document.getElementById('sc2-type').value,
-      max_score: maxScore,
-      records
-    });
-
-    if (res.success) {
-      App.toast(`บันทึกคะแนน ${res.data.saved} คน สำเร็จ!`);
-    } else {
-      App.toast(res.error || 'บันทึกไม่สำเร็จ', 'danger');
-    }
-  },
-
-  async viewSummary() {
     const area = document.getElementById('sc2-content');
     area.innerHTML = '<div class="loading"></div>';
 
-    const res = await API.get(`/api/scores/summary?subject_id=${this.subjectId}&classroom_id=${this.classroomId}&semester_id=${this.activeSemId}`);
-    const rows = res.success ? res.data : [];
+    const res = await API.get(`/api/scores/grid?subject_id=${subjectId}&classroom_id=${classroomId}&semester_id=${this.activeSemId}`);
+    if (!res.success) { area.innerHTML = '<div class="alert alert-danger">โหลดไม่สำเร็จ</div>'; return; }
 
-    if (rows.length === 0) {
-      area.innerHTML = '<p class="text-muted">ยังไม่มีคะแนนสำหรับวิชา/ห้องนี้</p>';
-      return;
-    }
+    const { columns, grid } = res.data;
+    this._gridData = grid;
+    this._gridCols = columns;
+
+    const colorCell = (pct) => {
+      if (pct === null || pct === undefined) return '';
+      const p = parseFloat(pct);
+      if (p >= 80) return 'background:#d4edda';
+      if (p >= 60) return 'background:#fff3cd';
+      if (p >= 50) return 'background:#ffeeba';
+      return 'background:#f8d7da';
+    };
 
     area.innerHTML = `
-      <div class="card border-0 shadow-sm">
-        <div class="card-header bg-white fw-semibold"><i class="bi bi-bar-chart me-2"></i>สรุปคะแนนรวม</div>
-        <div class="card-body p-0">
-          <table class="table table-sm table-striped align-middle mb-0">
-            <thead class="table-primary">
-              <tr><th>รหัส</th><th>ชื่อ</th><th>คะแนนรวม</th><th>เต็มรวม</th><th>%</th><th>จำนวนรายการ</th></tr>
-            </thead>
-            <tbody>
-              ${rows.map(r => {
-                const pct = r.total_max > 0 ? ((r.total_score / r.total_max) * 100).toFixed(1) : '-';
-                return `<tr>
-                  <td>${DOMPurify.sanitize(r.student_code)}</td>
-                  <td>${DOMPurify.sanitize(r.first_name)} ${DOMPurify.sanitize(r.last_name)}</td>
-                  <td class="fw-semibold">${r.total_score}</td>
-                  <td>${r.total_max}</td>
-                  <td>${pct}%</td>
-                  <td>${r.score_count}</td>
-                </tr>`;
-              }).join('')}
-            </tbody>
-          </table>
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="d-flex gap-1">
+          <button class="btn btn-sm btn-success" id="sc2-add-col"><i class="bi bi-plus-lg me-1"></i>เพิ่มคอลัมน์</button>
+          <button class="btn btn-sm btn-outline-primary" id="sc2-chart"><i class="bi bi-bar-chart me-1"></i>กราฟ</button>
+          <button class="btn btn-sm btn-outline-secondary" id="sc2-export"><i class="bi bi-download me-1"></i>ส่งออก</button>
         </div>
-        <div class="card-footer bg-white">
-          <button class="btn btn-outline-secondary btn-sm" onclick="App.modules['scores'].loadStudents()"><i class="bi bi-arrow-left me-1"></i>กลับลงคะแนน</button>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-bordered align-middle mb-0" style="font-size:0.85rem" id="sc2-grid-table">
+          <thead class="table-primary">
+            <tr>
+              <th style="position:sticky;left:0;background:#cfe2ff;z-index:2">เลขที่</th>
+              <th style="position:sticky;left:50px;background:#cfe2ff;z-index:2;min-width:120px">ชื่อ-สกุล</th>
+              ${columns.map(c => `<th class="text-center" style="min-width:70px">${DOMPurify.sanitize(c.label)}<br><small class="text-muted">(${c.max_score})</small></th>`).join('')}
+              <th class="text-center bg-light">รวม</th>
+              <th class="text-center bg-light">%</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${grid.map((row, ri) => `<tr>
+              <td style="position:sticky;left:0;background:#fff;z-index:1">${DOMPurify.sanitize(row.student_code)}</td>
+              <td style="position:sticky;left:50px;background:#fff;z-index:1;white-space:nowrap">${DOMPurify.sanitize(row.name)}</td>
+              ${columns.map(c => {
+                const val = row[c.key];
+                const scoreId = row[`_id_${c.key}`] || '';
+                return `<td class="text-center p-0">
+                  <input type="number" class="form-control form-control-sm border-0 text-center sc2-cell" 
+                    data-ri="${ri}" data-col="${DOMPurify.sanitize(c.key)}" data-sid="${row.student_id}" data-score-id="${scoreId}"
+                    value="${val !== null && val !== undefined ? val : ''}" step="0.5" min="0" max="${c.max_score}"
+                    style="height:30px;${val !== null ? colorCell((val/c.max_score)*100) : ''}">
+                </td>`;
+              }).join('')}
+              <td class="text-center fw-bold bg-light">${row._total}</td>
+              <td class="text-center bg-light" style="${colorCell(row._pct)}">${row._pct}%</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div class="mt-2">
+        <button class="btn btn-primary" id="sc2-save-grid"><i class="bi bi-check-lg me-1"></i>บันทึกทั้งหมด</button>
+      </div>
+      <div id="sc2-chart-area" class="mt-3"></div>`;
+
+    // Bind save
+    document.getElementById('sc2-save-grid').addEventListener('click', () => this.saveGrid());
+    document.getElementById('sc2-add-col').addEventListener('click', () => this.addColumn());
+    document.getElementById('sc2-chart').addEventListener('click', () => this.showChart());
+    document.getElementById('sc2-export').addEventListener('click', () => this.exportGrid());
+
+    // Live coloring on cell change
+    area.querySelectorAll('.sc2-cell').forEach(inp => {
+      inp.addEventListener('input', () => {
+        const max = parseFloat(inp.max) || 10;
+        const val = parseFloat(inp.value);
+        if (isNaN(val)) { inp.style.background = ''; return; }
+        const pct = (val / max) * 100;
+        if (pct >= 80) inp.style.background = '#d4edda';
+        else if (pct >= 60) inp.style.background = '#fff3cd';
+        else if (pct >= 50) inp.style.background = '#ffeeba';
+        else inp.style.background = '#f8d7da';
+      });
+    });
+  },
+
+  addColumn() {
+    const label = prompt('ชื่อรายการคะแนน (เช่น "สอบย่อย 1", "การบ้าน 3"):');
+    if (!label) return;
+    const maxScore = parseFloat(prompt('คะแนนเต็ม:', '10'));
+    if (!maxScore || isNaN(maxScore)) return;
+    const typeSelect = prompt('ประเภท (assignment/quiz/midterm/final/practical/behavior/other):', 'assignment');
+    this._newCol = { label, max_score: maxScore, type: typeSelect || 'assignment' };
+
+    // Reload grid with extra column appended client-side
+    this._gridCols.push({ key: label, label, type: typeSelect || 'assignment', max_score: maxScore });
+    for (const row of this._gridData) {
+      row[label] = null;
+      row[`_id_${label}`] = null;
+    }
+    this.loadGrid(); // Re-render with new column
+  },
+
+  async saveGrid() {
+    const cells = document.querySelectorAll('.sc2-cell');
+    const batches = {};
+
+    cells.forEach(inp => {
+      if (inp.value === '') return;
+      const col = inp.dataset.col;
+      if (!batches[col]) batches[col] = [];
+      batches[col].push({
+        student_id: inp.dataset.sid,
+        score: parseFloat(inp.value),
+        id: inp.dataset.scoreId || null
+      });
+    });
+
+    let totalSaved = 0;
+    for (const [colKey, records] of Object.entries(batches)) {
+      const colDef = this._gridCols.find(c => c.key === colKey);
+      const res = await API.post('/api/scores', {
+        subject_id: this.subjectId,
+        classroom_id: this.classroomId,
+        semester_id: this.activeSemId,
+        score_type: colDef?.type || 'assignment',
+        max_score: colDef?.max_score || 10,
+        score_label: colKey,
+        description: colKey,
+        records
+      });
+      if (res.success) totalSaved += res.data.saved;
+    }
+    App.toast(`บันทึกคะแนน ${totalSaved} รายการสำเร็จ!`);
+    this.loadGrid(); // Refresh to get IDs
+  },
+
+  async importQuizzes() {
+    const classroomId = document.getElementById('sc2-classroom').value;
+    const subjectId = document.getElementById('sc2-subject').value;
+    if (!classroomId || !subjectId) { App.toast('เลือกห้องเรียนและวิชาก่อน', 'warning'); return; }
+
+    const res = await API.post('/api/scores/import-quizzes', {
+      subject_id: subjectId,
+      classroom_id: classroomId,
+      semester_id: this.activeSemId
+    });
+    if (res.success) {
+      App.toast(`นำเข้า ${res.data.imported} คะแนนจากแบบทดสอบสำเร็จ!`);
+      this.loadGrid();
+    } else {
+      App.toast(res.error || 'นำเข้าไม่สำเร็จ', 'danger');
+    }
+  },
+
+  showChart() {
+    const chartArea = document.getElementById('sc2-chart-area');
+    if (!this._gridData || !this._gridData.length) { App.toast('ยังไม่มีข้อมูล', 'warning'); return; }
+
+    // Destroy existing chart
+    if (this._chart) { this._chart.destroy(); this._chart = null; }
+
+    const grid = this._gridData;
+    const pcts = grid.map(r => parseFloat(r._pct)).filter(p => !isNaN(p));
+
+    // Distribution: 0-49, 50-59, 60-69, 70-79, 80-100
+    const bins = [0,0,0,0,0];
+    const binLabels = ['0-49%','50-59%','60-69%','70-79%','80-100%'];
+    pcts.forEach(p => {
+      if (p >= 80) bins[4]++;
+      else if (p >= 70) bins[3]++;
+      else if (p >= 60) bins[2]++;
+      else if (p >= 50) bins[1]++;
+      else bins[0]++;
+    });
+
+    const avg = pcts.length ? (pcts.reduce((a,b) => a+b, 0) / pcts.length).toFixed(1) : 0;
+    const max = pcts.length ? Math.max(...pcts).toFixed(1) : 0;
+    const min = pcts.length ? Math.min(...pcts).toFixed(1) : 0;
+
+    chartArea.innerHTML = `
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-semibold">
+          <i class="bi bi-bar-chart me-2"></i>วิเคราะห์คะแนน — เฉลี่ย ${avg}% | สูงสุด ${max}% | ต่ำสุด ${min}%
+        </div>
+        <div class="card-body" style="height:300px">
+          <canvas id="sc2-canvas"></canvas>
         </div>
       </div>`;
+
+    const ctx = document.getElementById('sc2-canvas').getContext('2d');
+    this._chart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: binLabels,
+        datasets: [{
+          label: 'จำนวนนักเรียน',
+          data: bins,
+          backgroundColor: ['#dc3545','#fd7e14','#ffc107','#0dcaf0','#198754']
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+      }
+    });
+  },
+
+  exportGrid() {
+    if (!this._gridData?.length) { App.toast('ยังไม่มีข้อมูล', 'warning'); return; }
+    const headers = ['เลขที่', 'ชื่อ-สกุล', ...this._gridCols.map(c => c.label), 'รวม', '%'];
+    const rows = this._gridData.map(r => [
+      r.student_code, r.name,
+      ...this._gridCols.map(c => r[c.key] ?? ''),
+      r._total, r._pct + '%'
+    ]);
+    Exporter.showExportDialog('ตารางคะแนน', rows, {
+      headers: headers.map((_,i) => 'col'+i),
+      headerLabels: headers
+    });
   }
 };
 

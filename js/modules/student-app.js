@@ -85,14 +85,16 @@ const StudentApp = {
       return;
     }
 
-    const typeIcons = { announcement: 'megaphone', material: 'book', assignment: 'file-earmark-text', quiz: 'pencil-square', poll: 'bar-chart' };
-    const typeLabels = { announcement: 'ประกาศ', material: 'สื่อการสอน', assignment: 'งาน', quiz: 'แบบทดสอบ', poll: 'โพล' };
-    const typeColors = { announcement: 'info', material: 'primary', assignment: 'warning', quiz: 'danger', poll: 'secondary' };
+    const typeIcons = { announcement: 'megaphone', material: 'book', assignment: 'file-earmark-text', quiz: 'pencil-square', poll: 'bar-chart', video: 'play-circle' };
+    const typeLabels = { announcement: 'ประกาศ', material: 'สื่อการสอน', assignment: 'งาน', quiz: 'แบบทดสอบ', poll: 'โพล', video: 'วิดีโอ' };
+    const typeColors = { announcement: 'info', material: 'primary', assignment: 'warning', quiz: 'danger', poll: 'secondary', video: 'danger' };
 
     container.innerHTML = `
       <h5 class="fw-bold mb-3"><i class="bi bi-house-door me-2"></i>หน้าหลัก</h5>
-      ${res.data.map(post => `
-        <div class="card border-0 shadow-sm mb-3">
+      ${res.data.map(post => {
+        const isVideoPost = post.post_type === 'material' && post.file_url && /youtube\.com|youtu\.be|\.mp4|\.webm/.test(post.file_url || '');
+        return `
+        <div class="card border-0 shadow-sm mb-3${isVideoPost ? ' feed-video-card' : ''}" data-post-id="${escAttr(post.id)}" data-mat-url="${escAttr(post.file_url||'')}">
           <div class="card-body">
             <div class="d-flex justify-content-between align-items-start mb-2">
               <div>
@@ -107,8 +109,116 @@ const StudentApp = {
             <h6 class="fw-bold">${DOMPurify.sanitize(post.title)}</h6>
             <p class="text-muted small mb-1">${DOMPurify.sanitize(post.content || '').substring(0, 200)}</p>
             ${post.due_date ? `<small class="text-danger"><i class="bi bi-clock me-1"></i>กำหนดส่ง: ${new Date(post.due_date).toLocaleDateString('th-TH')}</small>` : ''}
+            ${isVideoPost ? `<div class="mt-2"><button class="btn btn-sm btn-danger btn-watch-video" data-mat-id="${escAttr(post.id)}" data-url="${escAttr(post.file_url||'')}" data-title="${escAttr(post.title)}"><i class="bi bi-play-fill me-1"></i>ดูวิดีโอ</button></div>` : ''}
           </div>
-        </div>`).join('')}`;
+        </div>`;
+      }).join('')}`;
+
+    // Bind video watch buttons
+    container.querySelectorAll('.btn-watch-video').forEach(btn => {
+      btn.addEventListener('click', () => this.watchInteractiveVideo(btn.dataset.matId, btn.dataset.url, btn.dataset.title));
+    });
+  },
+
+  // ==================== INTERACTIVE VIDEO PLAYER ====================
+  async watchInteractiveVideo(matId, videoUrl, title) {
+    const content = document.getElementById('student-content');
+    content.innerHTML = '<div class="loading"></div>';
+
+    // Fetch video questions
+    const qRes = await API.get(`/api/classroom-materials/${encodeURIComponent(matId)}/vq`);
+    const questions = qRes.success ? qRes.data : [];
+    this._ivQuestions = questions;
+    this._ivAnswered = {};
+
+    // Convert to embed URL
+    const toEmbed = (url) => {
+      const yt = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&?/]+)/);
+      return yt ? `https://www.youtube.com/embed/${yt[1]}?enablejsapi=1` : null;
+    };
+    const embedUrl = toEmbed(videoUrl);
+
+    content.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="fw-bold mb-0"><i class="bi bi-play-circle-fill text-danger me-2"></i>${DOMPurify.sanitize(title)}</h5>
+        <button class="btn btn-sm btn-outline-secondary" id="iv-back"><i class="bi bi-arrow-left me-1"></i>กลับ</button>
+      </div>
+      <div class="card border-0 shadow">
+        <div class="card-body p-2">
+          ${embedUrl
+            ? `<div class="ratio ratio-16x9"><iframe id="iv-frame" src="${embedUrl}" allowfullscreen allow="autoplay"></iframe></div>`
+            : `<div class="ratio ratio-16x9"><video id="iv-video" controls src="${DOMPurify.sanitize(videoUrl)}" class="w-100"></video></div>`}
+        </div>
+      </div>
+      ${questions.length > 0 ? `
+      <div class="mt-3">
+        <h6 class="fw-bold"><i class="bi bi-question-circle me-2"></i>คำถาม (${questions.length} ข้อ)</h6>
+        <div id="iv-questions">
+          ${questions.map((q, i) => `
+          <div class="card border-0 shadow-sm mb-2 iv-q-card" id="iv-q-${q.id}">
+            <div class="card-body">
+              <div class="d-flex align-items-center mb-2">
+                <span class="badge bg-danger me-2">⏱ ${Math.floor(q.timestamp_seconds/60)}:${String(q.timestamp_seconds%60).padStart(2,'0')}</span>
+                <span class="fw-bold">ข้อ ${i+1}. ${DOMPurify.sanitize(q.question_text)}</span>
+              </div>
+              <div class="iv-choices" id="iv-choices-${q.id}">
+                ${(() => {
+                  if (q.question_type === 'true_false') return `
+                    <button class="btn btn-sm btn-outline-success me-2 iv-ans-btn" data-qid="${escAttr(q.id)}" data-val="true">✅ ถูก</button>
+                    <button class="btn btn-sm btn-outline-danger iv-ans-btn" data-qid="${escAttr(q.id)}" data-val="false">❌ ผิด</button>`;
+                  if (q.question_type === 'short_answer') return `
+                    <div class="d-flex gap-2">
+                      <input class="form-control form-control-sm" id="iv-text-${q.id}" placeholder="พิมพ์คำตอบ">
+                      <button class="btn btn-sm btn-primary iv-text-submit" data-qid="${escAttr(q.id)}"><i class="bi bi-send"></i></button>
+                    </div>`;
+                  // multiple_choice
+                  let opts = [];
+                  try { opts = JSON.parse(q.choices || '[]'); } catch(e) {}
+                  return opts.map(o => `<button class="btn btn-sm btn-outline-primary me-1 mb-1 iv-ans-btn" data-qid="${escAttr(q.id)}" data-val="${escAttr(String(o))}">${DOMPurify.sanitize(String(o))}</button>`).join('');
+                })()}
+              </div>
+              <div class="iv-feedback mt-2 d-none" id="iv-fb-${q.id}"></div>
+            </div>
+          </div>`).join('')}
+        </div>
+      </div>` : '<p class="text-muted text-center mt-3">วิดีโอนี้ไม่มีคำถาม</p>'}`;
+
+    document.getElementById('iv-back').addEventListener('click', () => this.switchTab('feed'));
+
+    // Bind answer buttons
+    content.querySelectorAll('.iv-ans-btn').forEach(btn => {
+      btn.addEventListener('click', () => this.submitVideoAnswer(btn.dataset.qid, btn.dataset.val, matId));
+    });
+    content.querySelectorAll('.iv-text-submit').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const val = document.getElementById(`iv-text-${btn.dataset.qid}`)?.value;
+        if (val) this.submitVideoAnswer(btn.dataset.qid, val, matId);
+      });
+    });
+  },
+
+  async submitVideoAnswer(questionId, answer, matId) {
+    if (this._ivAnswered[questionId]) return;
+    const res = await API.post(`/api/classroom-materials/${encodeURIComponent(matId)}/vq/${encodeURIComponent(questionId)}/answer`, { answer });
+    const fb = document.getElementById(`iv-fb-${questionId}`);
+    const area = document.getElementById(`iv-choices-${questionId}`);
+    if (!fb || !area) return;
+
+    this._ivAnswered[questionId] = true;
+    area.querySelectorAll('button').forEach(b => b.disabled = true);
+    area.querySelectorAll('input').forEach(i => i.disabled = true);
+
+    if (res.success) {
+      fb.classList.remove('d-none');
+      const { is_correct, correct_answer } = res.data;
+      if (is_correct === 1) {
+        fb.innerHTML = '<span class="text-success fw-bold">✅ ถูกต้อง!</span>';
+      } else if (is_correct === 0) {
+        fb.innerHTML = `<span class="text-danger fw-bold">❌ ผิด</span>${correct_answer ? ` <span class="text-muted">— เฉลย: <strong>${DOMPurify.sanitize(correct_answer)}</strong></span>` : ''}`;
+      } else {
+        fb.innerHTML = '<span class="text-info">บันทึกคำตอบแล้ว</span>';
+      }
+    }
   },
 
   // ==================== ASSIGNMENTS ====================

@@ -1,6 +1,83 @@
 // HARMONI — Student API
 import { success, error, parseBody, dbAll, dbFirst, dbRun, generateUUID, now, extractParam, extractAction, paginate } from '../../_helpers.js';
 
+// Helper: upload file to teacher's Google Drive
+async function uploadToDrive(env, teacherId, fileName, base64Content, mimeType) {
+  const row = await dbFirst(env.DB,
+    "SELECT value FROM app_settings WHERE teacher_id = ? AND key = 'drive_tokens'",
+    [teacherId]
+  );
+  if (!row) return null;
+  const tokens = JSON.parse(row.value);
+  const clientId = env.GOOGLE_DRIVE_CLIENT_ID;
+  const clientSecret = env.GOOGLE_DRIVE_CLIENT_SECRET;
+  if (!clientId || !clientSecret || !tokens.refresh_token) return null;
+
+  // Refresh access token
+  const refreshResp = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      refresh_token: tokens.refresh_token,
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: 'refresh_token'
+    })
+  });
+  const refreshed = await refreshResp.json();
+  if (!refreshed.access_token) return null;
+  const accessToken = refreshed.access_token;
+
+  // Find or create HARMONI-Submissions folder
+  let folderId = null;
+  const folderSearch = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent("name='HARMONI-Submissions' and mimeType='application/vnd.google-apps.folder' and trashed=false")}&fields=files(id)`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  const folderData = await folderSearch.json();
+  if (folderData.files && folderData.files.length > 0) {
+    folderId = folderData.files[0].id;
+  } else {
+    const createFolder = await fetch('https://www.googleapis.com/drive/v3/files', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'HARMONI-Submissions', mimeType: 'application/vnd.google-apps.folder' })
+    });
+    const folder = await createFolder.json();
+    folderId = folder.id;
+  }
+
+  // Upload file
+  const metadata = { name: fileName, mimeType: mimeType || 'image/jpeg', parents: [folderId] };
+  const boundary = '-------harmoni_stu_upload';
+  const multipartBody = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: ${metadata.mimeType}\r\nContent-Transfer-Encoding: base64\r\n\r\n${base64Content}\r\n--${boundary}--`;
+
+  const uploadResp = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink,webContentLink', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': `multipart/related; boundary=${boundary}`
+    },
+    body: multipartBody
+  });
+  const result = await uploadResp.json();
+  if (result.error) return null;
+
+  // Make file publicly viewable (anyone with link)
+  await fetch(`https://www.googleapis.com/drive/v3/files/${result.id}/permissions`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role: 'reader', type: 'anyone' })
+  });
+
+  return {
+    id: result.id,
+    name: result.name,
+    url: result.webViewLink || `https://drive.google.com/file/d/${result.id}/view`,
+    thumbnail: `https://drive.google.com/thumbnail?id=${result.id}&sz=w400`
+  };
+}
+
 export async function onRequest(context) {
   const { request, env } = context;
   const db = env.DB;
@@ -96,9 +173,24 @@ export async function onRequest(context) {
     const body = await parseBody(request);
     if (!body) return error('Invalid body');
 
+    // Handle file uploads via Google Drive
+    let fileUrls = null;
+    if (body.files && Array.isArray(body.files) && body.files.length > 0) {
+      const teacherId = post.teacher_id;
+      const uploadResults = [];
+      for (const file of body.files.slice(0, 5)) { // max 5 files
+        if (!file.content || !file.name) continue;
+        // Validate base64 content size (max ~5MB decoded)
+        if (file.content.length > 7_000_000) continue;
+        const result = await uploadToDrive(env, teacherId, file.name, file.content, file.mimeType || 'image/jpeg');
+        if (result) uploadResults.push(result);
+      }
+      if (uploadResults.length > 0) fileUrls = JSON.stringify(uploadResults);
+    }
+
     // Check if already submitted
     const existing = await dbFirst(db,
-      'SELECT id, attempt_count FROM assignment_submissions WHERE post_id = ? AND student_id = ?',
+      'SELECT id, attempt_count, file_urls FROM assignment_submissions WHERE post_id = ? AND student_id = ?',
       [postId, studentId]
     );
 
@@ -122,7 +214,7 @@ export async function onRequest(context) {
         SET submission_text = ?, submission_url = ?, file_urls = ?, status = 'submitted',
             resubmitted_at = ?, attempt_count = ?, is_late = ?, late_days = ?
         WHERE id = ?
-      `, [body.text || null, body.url || null, body.files ? JSON.stringify(body.files) : null,
+      `, [body.text || null, body.url || null, fileUrls || (body.files ? null : existing.file_urls),
           now(), existing.attempt_count + 1, isLate, lateDays, existing.id]);
       return success({ id: existing.id, resubmitted: true });
     } else {
@@ -131,7 +223,7 @@ export async function onRequest(context) {
         INSERT INTO assignment_submissions (id, assignment_id, post_id, student_id, submission_text, submission_url, file_urls, status, submitted_at, is_late, late_days)
         VALUES (?, ?, ?, ?, ?, ?, ?, 'submitted', ?, ?, ?)
       `, [id, postId, postId, studentId, body.text || null, body.url || null,
-          body.files ? JSON.stringify(body.files) : null, now(), isLate, lateDays]);
+          fileUrls, now(), isLate, lateDays]);
       return success({ id, submitted: true });
     }
   }

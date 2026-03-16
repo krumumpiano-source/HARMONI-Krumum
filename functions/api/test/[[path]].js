@@ -80,16 +80,18 @@ export async function onRequest(context) {
     }
   }
 
-  // Responses
+  // Responses — read from quiz_attempts (where students actually submit)
   const rMatch = path.match(/^\/api\/test\/([^/]+)\/responses$/);
   if (rMatch) {
     const testId = rMatch[1];
     if (method === 'GET') {
       const rows = await dbAll(env.DB,
-        `SELECT tr.*, s.student_code, s.first_name, s.last_name
-         FROM test_responses tr JOIN students s ON s.id = tr.student_id
-         WHERE tr.test_id = ? AND tr.teacher_id = ? ORDER BY s.student_code`,
-        [testId, env.user.id]);
+        `SELECT qa.id, qa.test_id, qa.student_id, qa.attempt_number, qa.answers, 
+                qa.total_score, qa.max_score, qa.submitted_at, qa.auto_graded, qa.time_spent_seconds,
+                s.student_code, s.first_name, s.last_name
+         FROM quiz_attempts qa JOIN students s ON s.id = qa.student_id
+         WHERE qa.test_id = ? ORDER BY s.student_code, qa.attempt_number`,
+        [testId]);
       return success(rows);
     }
   }

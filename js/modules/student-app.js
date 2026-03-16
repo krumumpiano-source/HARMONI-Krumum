@@ -156,6 +156,28 @@ const StudentApp = {
     });
   },
 
+  // ==================== IMAGE COMPRESSION ====================
+  async compressImage(file, maxWidth = 1280, quality = 0.7) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let w = img.width, h = img.height;
+          if (w > maxWidth) { h = Math.round(h * maxWidth / w); w = maxWidth; }
+          canvas.width = w;
+          canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          const base64 = canvas.toDataURL('image/jpeg', quality).split(',')[1];
+          resolve({ name: file.name.replace(/\.[^.]+$/, '.jpg'), content: base64, mimeType: 'image/jpeg' });
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  },
+
   openSubmitForm(postId, title) {
     const content = document.getElementById('student-content');
     content.innerHTML = `
@@ -167,8 +189,18 @@ const StudentApp = {
             <textarea id="submit-text" class="form-control" rows="4" placeholder="พิมพ์คำตอบหรือรายละเอียด..."></textarea>
           </div>
           <div class="mb-3">
+            <label class="form-label">แนบรูปภาพ (สูงสุด 5 รูป)</label>
+            <input id="submit-files" type="file" class="form-control" accept="image/*" multiple>
+            <div class="form-text">รองรับ jpg, png, gif — รูปจะถูกบีบอัดอัตโนมัติก่อนส่ง</div>
+            <div id="file-preview" class="d-flex flex-wrap gap-2 mt-2"></div>
+          </div>
+          <div class="mb-3">
             <label class="form-label">ลิงก์ (ถ้ามี)</label>
             <input id="submit-url" type="url" class="form-control" placeholder="https://...">
+          </div>
+          <div id="upload-progress" class="d-none mb-3">
+            <div class="progress"><div class="progress-bar progress-bar-striped progress-bar-animated" id="upload-bar" style="width:0%"></div></div>
+            <small class="text-muted" id="upload-status">กำลังอัปโหลด...</small>
           </div>
           <div class="d-flex gap-2">
             <button class="btn btn-primary" id="btn-do-submit"><i class="bi bi-send me-1"></i>ส่ง</button>
@@ -177,6 +209,18 @@ const StudentApp = {
         </div>
       </div>`;
 
+    // File preview
+    document.getElementById('submit-files').addEventListener('change', (e) => {
+      const preview = document.getElementById('file-preview');
+      preview.innerHTML = '';
+      const files = [...e.target.files].slice(0, 5);
+      for (const file of files) {
+        const url = URL.createObjectURL(file);
+        const sizeMB = (file.size / 1048576).toFixed(1);
+        preview.innerHTML += `<div class="text-center"><img src="${url}" style="width:80px;height:80px;object-fit:cover;border-radius:8px"><div class="small text-muted">${sizeMB}MB</div></div>`;
+      }
+    });
+
     document.getElementById('btn-do-submit').addEventListener('click', () => this.submitAssignment(postId));
     document.getElementById('btn-cancel-submit').addEventListener('click', () => this.switchTab('assignments'));
   },
@@ -184,14 +228,47 @@ const StudentApp = {
   async submitAssignment(postId) {
     const text = document.getElementById('submit-text').value.trim();
     const url = document.getElementById('submit-url').value.trim();
-    if (!text && !url) { this.toast('กรุณากรอกคำตอบหรือแนบลิงก์', 'danger'); return; }
+    const fileInput = document.getElementById('submit-files');
+    const rawFiles = fileInput ? [...fileInput.files].slice(0, 5) : [];
 
-    const res = await API.post(`/api/student/submit/${encodeURIComponent(postId)}`, { text, url: url || null });
+    if (!text && !url && rawFiles.length === 0) {
+      this.toast('กรุณากรอกคำตอบ แนบรูป หรือแนบลิงก์', 'danger');
+      return;
+    }
+
+    const btn = document.getElementById('btn-do-submit');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>กำลังส่ง...';
+
+    // Compress images
+    let files = [];
+    if (rawFiles.length > 0) {
+      const progressEl = document.getElementById('upload-progress');
+      const barEl = document.getElementById('upload-bar');
+      const statusEl = document.getElementById('upload-status');
+      progressEl.classList.remove('d-none');
+
+      for (let i = 0; i < rawFiles.length; i++) {
+        statusEl.textContent = `บีบอัดรูปที่ ${i + 1}/${rawFiles.length}...`;
+        barEl.style.width = `${Math.round((i / rawFiles.length) * 50)}%`;
+        const compressed = await this.compressImage(rawFiles[i]);
+        files.push(compressed);
+      }
+      statusEl.textContent = 'กำลังอัปโหลดไปยัง Google Drive...';
+      barEl.style.width = '60%';
+    }
+
+    const res = await API.post(`/api/student/submit/${encodeURIComponent(postId)}`, {
+      text, url: url || null, files: files.length > 0 ? files : undefined
+    });
+
     if (res.success) {
       this.toast('ส่งงานเรียบร้อย');
       this.switchTab('assignments');
     } else {
       this.toast(res.error || 'ส่งงานไม่สำเร็จ', 'danger');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-send me-1"></i>ส่ง';
     }
   },
 

@@ -2209,32 +2209,60 @@ App.modules['student-classroom'] = {
         </div>
         <div class="card-body">
           ${subs.length === 0 ? '<p class="text-muted mb-0">ยังไม่มีนักเรียนส่งงาน</p>' :
-          `<div class="table-responsive"><table class="table table-sm align-middle mb-0">
-            <thead><tr><th>รหัส</th><th>ชื่อ</th><th>สถานะ</th><th>คะแนน</th><th>จัดการ</th></tr></thead>
-            <tbody>
-            ${subs.map(s => `
-              <tr>
-                <td>${DOMPurify.sanitize(s.student_code)}</td>
-                <td>${DOMPurify.sanitize(s.first_name)} ${DOMPurify.sanitize(s.last_name)}</td>
-                <td><span class="badge ${s.status === 'graded' ? 'bg-success' : 'bg-warning text-dark'}">${s.status === 'graded' ? 'ตรวจแล้ว' : 'รอตรวจ'}</span></td>
-                <td>
-                  <input type="number" class="form-control form-control-sm" style="width:70px;display:inline-block" value="${s.score ?? ''}" id="score-${s.id}">
-                </td>
-                <td>
-                  <button class="btn btn-sm btn-outline-success" onclick="App.modules['student-classroom'].grade('${s.id}')"><i class="bi bi-check-lg"></i></button>
-                </td>
-              </tr>`).join('')}
-            </tbody>
-          </table></div>`}
+          subs.map(s => {
+            let filesHtml = '';
+            if (s.file_urls) {
+              try {
+                const files = JSON.parse(s.file_urls);
+                if (Array.isArray(files)) {
+                  filesHtml = `<div class="d-flex flex-wrap gap-2 mt-2">${files.map(f =>
+                    `<a href="${DOMPurify.sanitize(f.url || f)}" target="_blank" rel="noopener">
+                      <img src="${DOMPurify.sanitize(f.thumbnail || f.url || f)}" style="width:100px;height:100px;object-fit:cover;border-radius:8px;border:1px solid #ddd" alt="${DOMPurify.sanitize(f.name || 'file')}">
+                    </a>`
+                  ).join('')}</div>`;
+                }
+              } catch(e) {
+                filesHtml = `<div class="mt-2"><a href="${DOMPurify.sanitize(s.file_urls)}" target="_blank" rel="noopener"><i class="bi bi-link-45deg me-1"></i>ดูไฟล์</a></div>`;
+              }
+            }
+            return `
+            <div class="card border mb-3">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                  <div>
+                    <strong>${DOMPurify.sanitize(s.student_code || '')}</strong>
+                    <span class="ms-2">${DOMPurify.sanitize(s.first_name || '')} ${DOMPurify.sanitize(s.last_name || '')}</span>
+                  </div>
+                  <div>
+                    <span class="badge ${s.status === 'graded' ? 'bg-success' : 'bg-warning text-dark'}">${s.status === 'graded' ? 'ตรวจแล้ว' : 'รอตรวจ'}</span>
+                    ${s.is_late ? '<span class="badge bg-danger ms-1">สาย</span>' : ''}
+                  </div>
+                </div>
+                ${s.submission_text ? `<div class="bg-light rounded p-2 mb-2"><i class="bi bi-chat-text me-1 text-muted"></i>${DOMPurify.sanitize(s.submission_text)}</div>` : ''}
+                ${s.submission_url ? `<div class="mb-2"><a href="${DOMPurify.sanitize(s.submission_url)}" target="_blank" rel="noopener"><i class="bi bi-link-45deg me-1"></i>${DOMPurify.sanitize(s.submission_url)}</a></div>` : ''}
+                ${filesHtml}
+                <div class="d-flex align-items-center gap-2 mt-2 pt-2 border-top">
+                  <label class="small text-muted mb-0">คะแนน:</label>
+                  <input type="number" class="form-control form-control-sm" style="width:80px" value="${s.score ?? ''}" id="score-${s.id}">
+                  <label class="small text-muted mb-0">Feedback:</label>
+                  <input type="text" class="form-control form-control-sm" placeholder="ความคิดเห็น..." value="${DOMPurify.sanitize(s.feedback || '')}" id="fb-${s.id}">
+                  <button class="btn btn-sm btn-success" onclick="App.modules['student-classroom'].grade('${s.id}')"><i class="bi bi-check-lg me-1"></i>ให้คะแนน</button>
+                </div>
+                <small class="text-muted">ส่งเมื่อ ${s.submitted_at ? new Date(s.submitted_at).toLocaleString('th-TH') : '-'}</small>
+              </div>
+            </div>`;
+          }).join('')}
         </div>
       </div>`;
   },
 
   async grade(submissionId) {
     const scoreEl = document.getElementById(`score-${submissionId}`);
+    const fbEl = document.getElementById(`fb-${submissionId}`);
     const res = await API.post('/api/student-classroom/grade', {
       submission_id: submissionId,
-      score: scoreEl ? parseFloat(scoreEl.value) : null
+      score: scoreEl ? parseFloat(scoreEl.value) : null,
+      feedback: fbEl ? fbEl.value.trim() : null
     });
     if (res.success) {
       App.toast('ให้คะแนนแล้ว');

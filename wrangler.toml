@@ -6,3 +6,6 @@ pages_build_output_dir = "./"
 binding = "DB"
 database_name = "harmoni-db"
 database_id = "65e58e3f-bd2c-4333-b60c-c3a65a5d2460"
+
+[vars]
+DRIVE_FOLDER_ID = "1NE_KC6zWdyaURFMmLVRw1aXXD-dWede0"

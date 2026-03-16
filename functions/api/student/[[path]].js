@@ -28,24 +28,8 @@ async function uploadToDrive(env, teacherId, fileName, base64Content, mimeType) 
   if (!refreshed.access_token) return null;
   const accessToken = refreshed.access_token;
 
-  // Find or create HARMONI-Submissions folder
-  let folderId = null;
-  const folderSearch = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent("name='HARMONI-Submissions' and mimeType='application/vnd.google-apps.folder' and trashed=false")}&fields=files(id)`,
-    { headers: { Authorization: `Bearer ${accessToken}` } }
-  );
-  const folderData = await folderSearch.json();
-  if (folderData.files && folderData.files.length > 0) {
-    folderId = folderData.files[0].id;
-  } else {
-    const createFolder = await fetch('https://www.googleapis.com/drive/v3/files', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'HARMONI-Submissions', mimeType: 'application/vnd.google-apps.folder' })
-    });
-    const folder = await createFolder.json();
-    folderId = folder.id;
-  }
+  // Use the designated HARMONI shared folder
+  const folderId = env.DRIVE_FOLDER_ID || '1NE_KC6zWdyaURFMmLVRw1aXXD-dWede0';
 
   // Upload file
   const metadata = { name: fileName, mimeType: mimeType || 'image/jpeg', parents: [folderId] };

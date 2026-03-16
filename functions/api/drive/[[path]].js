@@ -140,10 +140,11 @@ export async function onRequest(context) {
     const body = await parseBody(request);
     if (!body?.name || !body?.content) return error('กรุณาส่ง name และ content (base64)');
 
+    const defaultFolder = env.DRIVE_FOLDER_ID || '1NE_KC6zWdyaURFMmLVRw1aXXD-dWede0';
     const metadata = {
       name: body.name,
       mimeType: body.mimeType || 'application/octet-stream',
-      parents: body.folder_id ? [body.folder_id] : []
+      parents: [body.folder_id || defaultFolder]
     };
 
     // Simple upload using multipart

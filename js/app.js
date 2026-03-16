@@ -1109,6 +1109,23 @@ App.modules['settings'] = {
         </div>
       </div>
 
+      <!-- Google Drive Storage -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white">
+          <span class="fw-semibold"><i class="bi bi-google me-2"></i>Google Drive — ที่เก็บไฟล์</span>
+        </div>
+        <div class="card-body">
+          <p class="text-muted small mb-2">รูปภาพ/คลิปจากนักเรียนส่งงาน และไฟล์ที่อัปโหลดทั้งหมด จะถูกเก็บในโฟลเดอร์นี้</p>
+          <a href="https://drive.google.com/drive/folders/1NE_KC6zWdyaURFMmLVRw1aXXD-dWede0" target="_blank" rel="noopener" class="btn btn-outline-primary me-2">
+            <i class="bi bi-folder2-open me-1"></i>เปิดโฟลเดอร์ Google Drive
+          </a>
+          <button class="btn btn-outline-success" id="btn-connect-drive">
+            <i class="bi bi-plug me-1"></i>เชื่อมต่อ Google Drive
+          </button>
+          <div id="drive-status" class="mt-2"></div>
+        </div>
+      </div>
+
       <!-- Classrooms -->
       <div class="card border-0 shadow-sm mb-4">
         <div class="card-header bg-white d-flex justify-content-between align-items-center">
@@ -1191,6 +1208,29 @@ App.modules['settings'] = {
         if (code && name) { await API.post('/api/subjects', { code, name, subject_type: type }); App.navigate('settings'); }
         else { App.toast('กรุณากรอกรหัสและชื่อวิชา', 'warning'); }
       });
+    });
+
+    // Google Drive connect button
+    document.getElementById('btn-connect-drive').addEventListener('click', async () => {
+      const statusEl = document.getElementById('drive-status');
+      statusEl.innerHTML = '<span class="text-muted small"><span class="spinner-border spinner-border-sm me-1"></span>กำลังเชื่อมต่อ...</span>';
+      const res = await API.get('/api/drive/auth');
+      if (res.success && res.data.auth_url) {
+        const popup = window.open(res.data.auth_url, 'drive_auth', 'width=500,height=600');
+        window.addEventListener('message', async function handler(e) {
+          if (e.data && e.data.type === 'drive_auth' && e.data.code) {
+            window.removeEventListener('message', handler);
+            const r2 = await API.post('/api/drive/auth', { code: e.data.code });
+            if (r2.success) {
+              statusEl.innerHTML = '<span class="text-success small"><i class="bi bi-check-circle me-1"></i>เชื่อมต่อ Google Drive สำเร็จ!</span>';
+            } else {
+              statusEl.innerHTML = `<span class="text-danger small">${r2.error || 'เชื่อมต่อไม่สำเร็จ'}</span>`;
+            }
+          }
+        });
+      } else {
+        statusEl.innerHTML = '<span class="text-danger small">ไม่สามารถเริ่มเชื่อมต่อ Drive ได้ — ตรวจสอบ GOOGLE_DRIVE_CLIENT_ID/SECRET</span>';
+      }
     });
 
     document.getElementById('btn-add-classroom').addEventListener('click', () => {

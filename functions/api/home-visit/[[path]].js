@@ -6,7 +6,7 @@
 
 import {
   generateUUID, now, success, error, parseBody,
-  dbAll, dbRun, extractParam
+  dbAll, dbRun, extractParam, autoCollectEvidence
 } from '../../_helpers.js';
 
 export async function onRequest(context) {
@@ -41,6 +41,7 @@ export async function onRequest(context) {
        body.photo_urls || null, body.family_present || null, body.raw_notes || null,
        body.official_notes || null, body.follow_up_needed ? 1 : 0, body.follow_up_notes || null, now()]
     );
+    await autoCollectEvidence(env.DB, env.user.id, null, 'home_visits', id, { student_name: '', visit_date: body.visit_date });
     return success({ id });
   }
 

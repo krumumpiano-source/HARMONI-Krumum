@@ -7,7 +7,7 @@
 
 import {
   generateUUID, now, success, error, parseBody,
-  dbAll, dbFirst, dbRun, extractParam
+  dbAll, dbFirst, dbRun, extractParam, autoCollectEvidence
 } from '../../_helpers.js';
 
 export async function onRequest(context) {
@@ -50,6 +50,7 @@ export async function onRequest(context) {
          body.date, body.period || null, body.topic || null, body.activities || null,
          body.observations || null, body.issues || null, body.next_plan || null, now()]
       );
+      await autoCollectEvidence(env.DB, env.user.id, body.semester_id, 'teaching_logs', id, { topic: body.topic, date: body.date });
       return success({ id, message: 'บันทึกหลังสอนสำเร็จ' });
     }
   }

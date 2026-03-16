@@ -8,7 +8,7 @@
 
 import {
   generateUUID, now, success, error, parseBody,
-  dbAll, dbFirst, dbRun, extractParam
+  dbAll, dbFirst, dbRun, extractParam, autoCollectEvidence
 } from '../../_helpers.js';
 
 export async function onRequest(context) {
@@ -38,6 +38,9 @@ export async function onRequest(context) {
        body.data_collection || null, body.data_analysis || null, body.results || null,
        body.conclusion || null, body.recommendations || null, body.status || 'draft', now(), now()]
     );
+    if (body.status === 'completed') {
+      await autoCollectEvidence(env.DB, env.user.id, body.semester_id, 'researches', id, { title: body.title });
+    }
     return success({ id });
   }
 

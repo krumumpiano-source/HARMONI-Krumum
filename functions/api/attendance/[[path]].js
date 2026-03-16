@@ -119,5 +119,70 @@ export async function onRequest(context) {
     return success(summary);
   }
 
+  // POST /api/attendance/gps — GPS check-in for a classroom
+  if (path === '/api/attendance/gps' && method === 'POST') {
+    const body = await parseBody(request);
+    if (!body || !body.lat || !body.lng || !body.classroom_id) {
+      return error('กรุณาส่ง lat, lng, classroom_id');
+    }
+
+    // Find matching attendance zone
+    const zones = await dbAll(env.DB,
+      'SELECT * FROM attendance_zones WHERE classroom_id = ? AND teacher_id = ?',
+      [body.classroom_id, env.user.id]
+    );
+
+    let matched = false;
+    for (const z of zones) {
+      const dist = haversineDistance(body.lat, body.lng, z.lat, z.lng);
+      if (dist <= (z.radius_meters || 100)) {
+        matched = true;
+        break;
+      }
+    }
+
+    return success({ matched, lat: body.lat, lng: body.lng, zones_checked: zones.length });
+  }
+
+  // GET /api/attendance/zones — list zones for classroom
+  if (path === '/api/attendance/zones' && method === 'GET') {
+    const classroomId = url.searchParams.get('classroom_id');
+    if (!classroomId) return error('กรุณาระบุ classroom_id');
+    return success(await dbAll(env.DB,
+      'SELECT * FROM attendance_zones WHERE classroom_id = ? AND teacher_id = ?',
+      [classroomId, env.user.id]));
+  }
+
+  // POST /api/attendance/zones — create zone
+  if (path === '/api/attendance/zones' && method === 'POST') {
+    const body = await parseBody(request);
+    if (!body || !body.classroom_id || !body.lat || !body.lng) return error('กรุณาส่ง classroom_id, lat, lng');
+    const id = generateUUID();
+    await dbRun(env.DB,
+      `INSERT INTO attendance_zones (id, teacher_id, classroom_id, zone_name, lat, lng, radius_meters, created_at)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      [id, env.user.id, body.classroom_id, body.zone_name || 'Zone', body.lat, body.lng, body.radius_meters || 100, now()]
+    );
+    return success({ id });
+  }
+
+  // DELETE /api/attendance/zones/:id
+  if (path.startsWith('/api/attendance/zones/') && method === 'DELETE') {
+    const zoneId = path.split('/').pop();
+    await dbRun(env.DB, 'DELETE FROM attendance_zones WHERE id = ? AND teacher_id = ?', [zoneId, env.user.id]);
+    return success({ deleted: true });
+  }
+
   return error('Not Found', 404);
+}
+
+// Haversine formula to calculate distance between two GPS coordinates
+function haversineDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371000; // Earth radius in meters
+  const toRad = (d) => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2) * Math.sin(dLng/2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }

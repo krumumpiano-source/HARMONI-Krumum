@@ -6,7 +6,7 @@
 
 import {
   generateUUID, now, success, error, parseBody,
-  dbAll, dbRun, extractParam
+  dbAll, dbRun, extractParam, autoCollectEvidence
 } from '../../_helpers.js';
 
 export async function onRequest(context) {
@@ -33,6 +33,7 @@ export async function onRequest(context) {
        body.outcomes || null, body.next_steps || null, body.evidence_urls || null,
        body.hours || null, now()]
     );
+    await autoCollectEvidence(env.DB, env.user.id, body.semester_id, 'plc_records', id, { topic: body.topic, session_date: body.session_date });
     return success({ id });
   }
 

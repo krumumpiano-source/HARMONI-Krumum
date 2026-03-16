@@ -1,5 +1,5 @@
 // HARMONI Service Worker — Network-first for local, Cache-first for CDN
-const CACHE_NAME = 'harmoni-v2';
+const CACHE_NAME = 'harmoni-v3';
 const STATIC_ASSETS = [
   '/',
   '/teacher.html',
@@ -8,6 +8,7 @@ const STATIC_ASSETS = [
   '/js/api.js',
   '/js/app.js',
   '/js/export.js',
+  '/js/ai-panel.js',
   '/manifest.json'
 ];
 
@@ -47,6 +48,18 @@ self.addEventListener('fetch', event => {
 
   // API calls — Network-first, fall back to cache
   if (url.pathname.startsWith('/api/')) {
+    // For write operations (POST/PUT/DELETE), let the client handle offline queueing
+    if (event.request.method !== 'GET') {
+      event.respondWith(
+        fetch(event.request).catch(() => {
+          return new Response(JSON.stringify({
+            success: false, offline: true,
+            error: 'Offline — request will be queued'
+          }), { headers: { 'Content-Type': 'application/json' } });
+        })
+      );
+      return;
+    }
     event.respondWith(
       fetch(event.request)
         .then(response => {

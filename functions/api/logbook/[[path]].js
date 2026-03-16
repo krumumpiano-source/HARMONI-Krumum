@@ -7,7 +7,7 @@
 
 import {
   generateUUID, now, success, error, parseBody,
-  dbAll, dbRun, extractParam
+  dbAll, dbRun, extractParam, autoCollectEvidence
 } from '../../_helpers.js';
 
 export async function onRequest(context) {
@@ -51,6 +51,7 @@ export async function onRequest(context) {
        body.category, body.hours, body.description || null, body.related_module || null,
        body.related_id || null, body.evidence_urls || null, now()]
     );
+    await autoCollectEvidence(env.DB, env.user.id, body.semester_id, 'log_entries', id, { category: body.category, description: body.description });
     return success({ id });
   }
 

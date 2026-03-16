@@ -104,3 +104,80 @@ export function extractAction(pathname, prefix) {
   const slash = rest.indexOf('/');
   return slash === -1 ? null : rest.slice(slash + 1);
 }
+
+// ==================== Evidence Auto-Collect ====================
+
+const EVIDENCE_MAP = {
+  post_lesson_notes: {
+    type: 'teaching',
+    pa_category: 'teaching_hours',
+    getTitle: (d) => `บันทึกหลังสอน: ${d.lesson_title || d.topic || ''} (${d.date || ''})`,
+  },
+  teaching_logs: {
+    type: 'teaching',
+    pa_category: 'teaching_hours',
+    getTitle: (d) => `บันทึกหลังสอน: ${d.topic || ''} (${d.date || ''})`,
+  },
+  home_visits: {
+    type: 'support',
+    pa_category: 'support_hours',
+    getTitle: (d) => `เยี่ยมบ้าน: ${d.student_name || ''} (${d.visit_date || ''})`,
+  },
+  plc_records: {
+    type: 'other',
+    pa_category: 'other_hours',
+    getTitle: (d) => `PLC: ${d.topic || ''} (${d.session_date || ''})`,
+  },
+  researches: {
+    type: 'research',
+    pa_category: 'challenging_task',
+    getTitle: (d) => `วิจัย: ${d.title || ''}`,
+    triggerOn: 'status_change_to_completed',
+  },
+  innovations: {
+    type: 'innovation',
+    pa_category: 'challenging_task',
+    getTitle: (d) => `นวัตกรรม: ${d.title || ''}`,
+  },
+  log_entries: {
+    type: (d) => d.category || 'teaching',
+    pa_category: (d) => `${d.category || 'teaching'}_hours`,
+    getTitle: (d) => `Log Book: ${d.description || ''}`,
+  },
+  attendance_records: { skip: true },
+};
+
+export async function autoCollectEvidence(db, teacherId, semesterId, sourceModule, sourceId, data) {
+  if (!semesterId || !teacherId) return;
+  const config = EVIDENCE_MAP[sourceModule];
+  if (!config || config.skip) return;
+
+  const type   = typeof config.type === 'function' ? config.type(data) : config.type;
+  const paCat  = typeof config.pa_category === 'function' ? config.pa_category(data) : config.pa_category;
+  const title  = config.getTitle(data);
+
+  try {
+    await db.prepare(`
+      INSERT OR IGNORE INTO evidence_pool
+        (id, teacher_id, semester_id, evidence_type, pa_category, title, source_module, source_id, auto_collected, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+    `).bind(
+      crypto.randomUUID(), teacherId, semesterId,
+      type, paCat, title, sourceModule, sourceId, new Date().toISOString()
+    ).run();
+  } catch (e) { /* ignore duplicate */ }
+}
+
+export async function createCrossLink(db, teacherId, sourceModule, sourceId, targetModule, targetId, linkType = 'evidence') {
+  try {
+    await db.prepare(`
+      INSERT OR IGNORE INTO cross_links
+        (id, teacher_id, source_module, source_id, target_module, target_id, link_type, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      crypto.randomUUID(), teacherId,
+      sourceModule, sourceId, targetModule, targetId,
+      linkType, new Date().toISOString()
+    ).run();
+  } catch (e) { /* ignore duplicate */ }
+}

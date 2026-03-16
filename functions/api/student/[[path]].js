@@ -1,6 +1,17 @@
 // HARMONI — Student API
 import { success, error, parseBody, dbAll, dbFirst, dbRun, generateUUID, now, extractParam, extractAction, paginate } from '../../_helpers.js';
 
+function isStudentAllowed(allowedStudentIds, studentId) {
+  if (!allowedStudentIds) return true;
+  try {
+    const list = JSON.parse(allowedStudentIds);
+    if (!Array.isArray(list) || list.length === 0) return true;
+    return list.includes(studentId);
+  } catch (_) {
+    return true;
+  }
+}
+
 // Helper: upload file to teacher's Google Drive with folder chain
 async function uploadToDrive(env, teacherId, fileName, base64Content, mimeType, folderPath) {
   const row = await dbFirst(env.DB,
@@ -97,6 +108,11 @@ export async function onRequest(context) {
   const url = new URL(request.url);
   const path = url.pathname.replace('/api/student', '');
   const method = request.method;
+
+  // Backward-compatible schema patch (older DBs may not have this column yet)
+  try {
+    await dbRun(db, 'ALTER TABLE classroom_posts ADD COLUMN allowed_student_ids TEXT', []);
+  } catch (_) {}
 
   // Resolve student record from user_id
   const student = await dbFirst(db, 'SELECT * FROM students WHERE user_id = ?', [user.id]);
@@ -415,8 +431,9 @@ export async function onRequest(context) {
     if (method !== 'GET') return error('Method not allowed', 405);
 
     // Get published tests with latest attempt only (no duplicate rows)
-    const quizzes = await dbAll(db, `
+    const quizRows = await dbAll(db, `
       SELECT cp.id AS post_id, cp.title, cp.due_date, cp.created_at,
+             cp.allowed_student_ids,
              t.id AS test_id, t.time_limit_minutes, t.max_attempts, t.total_score,
              s.name AS subject_name
       FROM classroom_posts cp
@@ -427,6 +444,8 @@ export async function onRequest(context) {
       WHERE cp.post_type = 'quiz' AND cp.is_published = 1
       ORDER BY cp.created_at DESC
     `, [studentId]);
+
+    const quizzes = quizRows.filter(q => isStudentAllowed(q.allowed_student_ids, studentId));
 
     // Attach latest attempt + attempt count per quiz
     for (const q of quizzes) {
@@ -454,13 +473,14 @@ export async function onRequest(context) {
     if (method === 'GET' && !action) {
       // Verify test is accessible
       const test = await dbFirst(db, `
-        SELECT t.*, cp.id AS post_id FROM tests t
+        SELECT t.*, cp.id AS post_id, cp.allowed_student_ids FROM tests t
         JOIN classroom_posts cp ON cp.test_id = t.id AND cp.post_type = 'quiz' AND cp.is_published = 1
         JOIN subject_classrooms sc ON sc.id = cp.subject_classroom_id
         JOIN student_classrooms stc ON stc.classroom_id = sc.classroom_id AND stc.student_id = ? AND stc.is_active = 1
         WHERE t.id = ?
       `, [studentId, testId]);
       if (!test) return error('ไม่พบแบบทดสอบ', 404);
+      if (!isStudentAllowed(test.allowed_student_ids, studentId)) return error('ไม่พบแบบทดสอบ', 404);
 
       // Check max attempts
       if (test.max_attempts) {
@@ -512,13 +532,14 @@ export async function onRequest(context) {
       if (!body || !body.answers) return error('Missing answers');
 
       const test = await dbFirst(db, `
-        SELECT t.*, cp.id AS post_id FROM tests t
+        SELECT t.*, cp.id AS post_id, cp.allowed_student_ids FROM tests t
         JOIN classroom_posts cp ON cp.test_id = t.id AND cp.post_type = 'quiz' AND cp.is_published = 1
         JOIN subject_classrooms sc ON sc.id = cp.subject_classroom_id
         JOIN student_classrooms stc ON stc.classroom_id = sc.classroom_id AND stc.student_id = ? AND stc.is_active = 1
         WHERE t.id = ?
       `, [studentId, testId]);
       if (!test) return error('ไม่พบแบบทดสอบ', 404);
+      if (!isStudentAllowed(test.allowed_student_ids, studentId)) return error('ไม่พบแบบทดสอบ', 404);
 
       // Server-side max_attempts check (prevent bypass)
       const attemptCount = await dbFirst(db,

@@ -31,6 +31,11 @@ export async function onRequest(context) {
   const path = url.pathname;
   const method = request.method;
 
+  // Backward-compatible schema patch (older DBs may not have this column yet)
+  try {
+    await dbRun(env.DB, 'ALTER TABLE classroom_posts ADD COLUMN allowed_student_ids TEXT', []);
+  } catch (_) {}
+
   // List posts
   if (path === '/api/student-classroom/posts' && method === 'GET') {
     const classroomId = url.searchParams.get('classroom_id');
@@ -61,17 +66,33 @@ export async function onRequest(context) {
 
     const scId = await getOrCreateSC(env.DB, env.user.id, body.subject_id, body.classroom_id, body.semester_id);
     const postId = generateUUID();
-    await dbRun(env.DB,
-      `INSERT INTO classroom_posts (id, teacher_id, subject_classroom_id, post_type, title, content, due_date, max_score,
-       test_id, attachments, assignment_type, allow_late, lesson_plan_id, poll_options, topic_id, is_published, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [postId, env.user.id, scId, body.post_type || 'announcement', body.title, body.content || null,
-       body.due_date || null, body.max_score || null,
-       body.test_id || null, body.attachments ? JSON.stringify(body.attachments) : null,
-       body.assignment_type || 'file', body.allow_late ? 1 : 0,
-       body.lesson_plan_id || null, body.poll_options ? JSON.stringify(body.poll_options) : null,
-       body.topic_id || null, body.is_published !== false ? 1 : 0, now(), now()]
-    );
+    try {
+      await dbRun(env.DB,
+        `INSERT INTO classroom_posts (id, teacher_id, subject_classroom_id, post_type, title, content, due_date, max_score,
+         test_id, attachments, assignment_type, allow_late, lesson_plan_id, poll_options, topic_id, allowed_student_ids, is_published, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [postId, env.user.id, scId, body.post_type || 'announcement', body.title, body.content || null,
+         body.due_date || null, body.max_score || null,
+         body.test_id || null, body.attachments ? JSON.stringify(body.attachments) : null,
+         body.assignment_type || 'file', body.allow_late ? 1 : 0,
+         body.lesson_plan_id || null, body.poll_options ? JSON.stringify(body.poll_options) : null,
+         body.topic_id || null,
+         Array.isArray(body.allowed_student_ids) ? JSON.stringify(body.allowed_student_ids) : null,
+         body.is_published !== false ? 1 : 0, now(), now()]
+      );
+    } catch (_) {
+      await dbRun(env.DB,
+        `INSERT INTO classroom_posts (id, teacher_id, subject_classroom_id, post_type, title, content, due_date, max_score,
+         test_id, attachments, assignment_type, allow_late, lesson_plan_id, poll_options, topic_id, is_published, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [postId, env.user.id, scId, body.post_type || 'announcement', body.title, body.content || null,
+         body.due_date || null, body.max_score || null,
+         body.test_id || null, body.attachments ? JSON.stringify(body.attachments) : null,
+         body.assignment_type || 'file', body.allow_late ? 1 : 0,
+         body.lesson_plan_id || null, body.poll_options ? JSON.stringify(body.poll_options) : null,
+         body.topic_id || null, body.is_published !== false ? 1 : 0, now(), now()]
+      );
+    }
     return success({ id: postId });
   }
 
@@ -85,15 +106,27 @@ export async function onRequest(context) {
     if (!original) return error('ไม่พบโพสต์ต้นทาง', 404);
     const scId = await getOrCreateSC(env.DB, env.user.id, body.subject_id, body.classroom_id, body.semester_id);
     const newId = generateUUID();
-    await dbRun(env.DB,
-      `INSERT INTO classroom_posts (id, teacher_id, subject_classroom_id, post_type, title, content, due_date, max_score,
-       test_id, attachments, assignment_type, allow_late, lesson_plan_id, poll_options, topic_id, is_published, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [newId, env.user.id, scId, original.post_type, original.title, original.content,
-       original.due_date, original.max_score, original.test_id, original.attachments,
-       original.assignment_type, original.allow_late, original.lesson_plan_id, original.poll_options,
-       original.topic_id, 1, now(), now()]
-    );
+    try {
+      await dbRun(env.DB,
+        `INSERT INTO classroom_posts (id, teacher_id, subject_classroom_id, post_type, title, content, due_date, max_score,
+         test_id, attachments, assignment_type, allow_late, lesson_plan_id, poll_options, topic_id, allowed_student_ids, is_published, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [newId, env.user.id, scId, original.post_type, original.title, original.content,
+         original.due_date, original.max_score, original.test_id, original.attachments,
+         original.assignment_type, original.allow_late, original.lesson_plan_id, original.poll_options,
+         original.topic_id, original.allowed_student_ids || null, 1, now(), now()]
+      );
+    } catch (_) {
+      await dbRun(env.DB,
+        `INSERT INTO classroom_posts (id, teacher_id, subject_classroom_id, post_type, title, content, due_date, max_score,
+         test_id, attachments, assignment_type, allow_late, lesson_plan_id, poll_options, topic_id, is_published, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [newId, env.user.id, scId, original.post_type, original.title, original.content,
+         original.due_date, original.max_score, original.test_id, original.attachments,
+         original.assignment_type, original.allow_late, original.lesson_plan_id, original.poll_options,
+         original.topic_id, 1, now(), now()]
+      );
+    }
     return success({ id: newId, cloned: true });
   }
 

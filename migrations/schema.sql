@@ -880,6 +880,7 @@ CREATE TABLE IF NOT EXISTS classroom_posts (
   title TEXT NOT NULL,
   content TEXT,
   attachments TEXT,
+  allowed_student_ids TEXT,
   is_pinned INTEGER DEFAULT 0,
   is_published INTEGER DEFAULT 1,
   scheduled_at TEXT,

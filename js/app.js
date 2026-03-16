@@ -4316,6 +4316,7 @@ App.modules['test'] = {
     this._activeSemId = activeSem?.id;
     this._subjects = subjects;
     const tests = testRes.success ? testRes.data : [];
+    this._tests = tests;
 
     area.innerHTML = `
       <div class="d-flex justify-content-between align-items-center mb-4">
@@ -4364,6 +4365,7 @@ App.modules['test'] = {
             <div class="d-flex gap-1">
               <button class="btn btn-sm btn-outline-primary" data-edit="${t.id}" title="แก้ไขข้อสอบ"><i class="bi bi-pencil-square"></i></button>
               <button class="btn btn-sm btn-outline-success" data-live="${t.id}" title="เปิด Live Quiz"><i class="bi bi-broadcast"></i></button>
+              <button class="btn btn-sm btn-outline-warning" data-homework="${t.id}" title="มอบหมายทำที่บ้านรายกรณี"><i class="bi bi-house-check"></i></button>
               <button class="btn btn-sm btn-outline-info" data-responses="${t.id}" title="ดูผลตอบ"><i class="bi bi-graph-up"></i></button>
               <button class="btn btn-sm btn-outline-secondary" data-pub="${t.id}" data-status="${t.is_published}">${t.is_published ? '<i class="bi bi-eye-slash"></i>' : '<i class="bi bi-eye"></i>'}</button>
               <button class="btn btn-sm btn-outline-danger" data-del="${t.id}"><i class="bi bi-trash"></i></button>
@@ -4395,7 +4397,60 @@ App.modules['test'] = {
     }));
     area.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', () => this.editQuestions(btn.dataset.edit)));
     area.querySelectorAll('[data-live]').forEach(btn => btn.addEventListener('click', () => this.startLive(btn.dataset.live)));
+    area.querySelectorAll('[data-homework]').forEach(btn => btn.addEventListener('click', () => this.assignHomework(btn.dataset.homework)));
     area.querySelectorAll('[data-responses]').forEach(btn => btn.addEventListener('click', () => this.viewResponses(btn.dataset.responses)));
+  },
+
+  async assignHomework(testId) {
+    const test = (this._tests || []).find(t => t.id === testId);
+    if (!test) { App.toast('ไม่พบข้อมูลแบบทดสอบ', 'danger'); return; }
+    if (!test.subject_id) { App.toast('แบบทดสอบนี้ไม่มีวิชาอ้างอิง', 'danger'); return; }
+
+    const clsRes = await API.get('/api/classrooms');
+    const classrooms = clsRes.success ? clsRes.data : [];
+    if (!classrooms.length) { App.toast('ยังไม่มีห้องเรียน', 'danger'); return; }
+
+    const classroomGuide = classrooms.map(c => `${c.id} = ${c.name}`).join('\n');
+    const classroomId = prompt(`ระบุรหัสห้องเรียนที่จะมอบหมาย\n${classroomGuide}`);
+    if (!classroomId) return;
+
+    const stuRes = await API.get(`/api/students?classroom_id=${encodeURIComponent(classroomId)}`);
+    const students = stuRes.success ? stuRes.data : [];
+    if (!students.length) { App.toast('ไม่พบนักเรียนในห้องที่เลือก', 'danger'); return; }
+
+    const studentGuide = students.map(s => `${s.student_code} ${s.first_name} ${s.last_name}`).join('\n');
+    const codesInput = prompt(
+      `ระบุรหัสนักเรียนที่อนุญาต (คั่นด้วย ,)\nตัวอย่าง: 64001,64007\n\nรายชื่อในห้อง:\n${studentGuide}`
+    );
+    if (!codesInput) return;
+
+    const wantedCodes = codesInput.split(',').map(x => x.trim()).filter(Boolean);
+    const allowedIds = students
+      .filter(s => wantedCodes.includes(String(s.student_code || '').trim()))
+      .map(s => s.id);
+
+    if (!allowedIds.length) { App.toast('ไม่พบรหัสนักเรียนที่ระบุ', 'danger'); return; }
+
+    const defaultDue = new Date();
+    defaultDue.setDate(defaultDue.getDate() + 7);
+    const dueDate = prompt('กำหนดส่ง (YYYY-MM-DD)', defaultDue.toISOString().slice(0,10));
+    if (!dueDate) return;
+
+    const res = await API.post('/api/student-classroom/posts', {
+      title: `${test.title} (มอบหมายรายกรณี)`,
+      content: 'แบบทดสอบนี้มอบหมายให้ทำนอกเวลาเฉพาะนักเรียนที่กำหนด',
+      post_type: 'quiz',
+      test_id: test.id,
+      classroom_id: classroomId,
+      subject_id: test.subject_id,
+      semester_id: test.semester_id || this._activeSemId,
+      due_date: dueDate,
+      is_published: true,
+      allowed_student_ids: allowedIds
+    });
+
+    if (res.success) App.toast(`มอบหมายสำเร็จ ${allowedIds.length} คน`);
+    else App.toast(res.error || 'มอบหมายไม่สำเร็จ', 'danger');
   },
 
   // ==================== Question Editor ====================

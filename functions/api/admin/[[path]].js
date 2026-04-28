@@ -4,9 +4,11 @@
 // POST   /api/admin/reject/:id         — reject teacher
 // GET    /api/admin/teachers           — list all teachers
 // DELETE /api/admin/teachers/:id       — remove teacher
+// POST   /api/admin/create-readonly-teacher — create a view-only teacher account
 
 import {
-  success, error, dbAll, dbFirst, dbRun, now, extractParam
+  success, error, dbAll, dbFirst, dbRun, now, extractParam,
+  generateUUID, hashPassword, parseBody
 } from '../../_helpers.js';
 
 export async function onRequest(context) {
@@ -18,6 +20,41 @@ export async function onRequest(context) {
   // Admin check
   if (!env.user || !env.user.isAdmin) {
     return error('เฉพาะแอดมินเท่านั้น', 403);
+  }
+
+  // POST /api/admin/create-readonly-teacher
+  if (path === '/api/admin/create-readonly-teacher' && method === 'POST') {
+    const body = await parseBody(request);
+    if (!body || !body.username || !body.password) {
+      return error('กรุณากรอก username และ password');
+    }
+    if (String(body.password).length < 6) {
+      return error('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
+    }
+
+    const existing = await dbFirst(env.DB, 'SELECT id FROM users WHERE username = ?', [body.username]);
+    if (existing) {
+      return error('ชื่อผู้ใช้นี้ถูกใช้แล้ว');
+    }
+
+    const userId = generateUUID();
+    const salt = generateUUID();
+    const passwordHash = await hashPassword(String(body.password), salt);
+    const displayName = body.display_name || body.displayName || body.username;
+
+    await dbRun(
+      env.DB,
+      'INSERT INTO users (id, username, password_hash, salt, role, display_name, is_admin, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)',
+      [userId, body.username, passwordHash, salt, 'teacher', displayName, 'readonly', now()]
+    );
+
+    return success({
+      message: 'สร้างบัญชีดูอย่างเดียวสำเร็จ',
+      userId,
+      username: body.username,
+      displayName,
+      status: 'readonly'
+    });
   }
 
   // GET /api/admin/pending-teachers

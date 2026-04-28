@@ -39,21 +39,21 @@ const AIPanel = {
     // Create panel element
     const panel = document.createElement('div');
     panel.id = 'ai-panel';
-    panel.innerHTML = `+
-      <div class="ai-panel-backdrop" onclick="AIPanel.close()"></div>+
-      <div class="ai-panel-drawer">+
-        <div class="ai-panel-header">+
-          <h5 class="mb-0"><i class="bi bi-stars me-2"></i>AI Assistant</h5>+
-          <button class="btn btn-sm btn-outline-light" onclick="AIPanel.close()"><i class="bi bi-x-lg"></i></button>+
-        </div>+
-        <div class="ai-panel-body" id="ai-panel-body"></div>+
-      </div>;
+    panel.innerHTML = `
+      <div class="ai-panel-backdrop" onclick="AIPanel.close()"></div>
+      <div class="ai-panel-drawer">
+        <div class="ai-panel-header">
+          <h5 class="mb-0"><i class="bi bi-stars me-2"></i>AI Assistant</h5>
+          <button class="btn btn-sm btn-outline-light" onclick="AIPanel.close()"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="ai-panel-body" id="ai-panel-body"></div>
+      </div>`;
     document.body.appendChild(panel);
     this.panelEl = panel;
 
     // Add styles
     const style = document.createElement('style');
-    style.textContent = 
+    style.textContent = `
       #ai-panel { display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999; }
       #ai-panel.open { display:flex; }
       .ai-panel-backdrop { flex:1; background:rgba(0,0,0,.3); }
@@ -69,7 +69,7 @@ const AIPanel = {
       .ai-msg-ai pre { white-space:pre-wrap; margin:0; font-family:inherit; }
       .ai-input-area { border-top:1px solid #dee2e6; padding:.75rem; display:flex; gap:.5rem; }
       .ai-loading { text-align:center; padding:2rem; color:#6c757d; }
-    ;
+    `;
     document.head.appendChild(style);
   },
 
@@ -99,17 +99,17 @@ const AIPanel = {
 
   renderTaskList() {
     const body = document.getElementById('ai-panel-body');
-    body.innerHTML = 
+    body.innerHTML = `
       <h6 class="fw-semibold text-primary mb-3"><i class="bi bi-lightning me-1"></i>Quick AI (\u0e04\u0e25\u0e34\u0e01\u0e40\u0e14\u0e35\u0e22\u0e27)</h6>
       <p class="text-muted small">\u0e23\u0e30\u0e1a\u0e1a\u0e08\u0e30\u0e14\u0e36\u0e07\u0e02\u0e49\u0e2d\u0e21\u0e39\u0e25\u0e08\u0e32\u0e01\u0e2b\u0e19\u0e49\u0e32\u0e17\u0e35\u0e48\u0e1b\u0e31\u0e08\u0e08\u0e38\u0e1a\u0e31\u0e19\u0e41\u0e25\u0e30\u0e1b\u0e23\u0e30\u0e21\u0e27\u0e25\u0e1c\u0e25\u0e43\u0e2b\u0e49\u0e2d\u0e31\u0e15\u0e42\u0e19\u0e21\u0e31\u0e15\u0e34</p>
       <div class="d-grid gap-2 mb-4">
-        +this.QUICK_TASKS.map(t => <button class="ai-task-btn" onclick="AIPanel.quickRun('')"><i class="bi "></i><div><strong></strong><br><small class="text-muted"></small></div></button>).join('')+
+        ${this.QUICK_TASKS.map(t => `<button class="ai-task-btn" onclick="AIPanel.quickRun('${t.id}')"><i class="bi ${t.icon}"></i><div><strong>${t.label}</strong><br><small class="text-muted">${t.desc}</small></div></button>`).join('')}
       </div>
       <hr>
       <h6 class="fw-semibold text-primary mb-3"><i class="bi bi-chat-dots me-1"></i>Chat AI (\u0e2a\u0e19\u0e17\u0e19\u0e32)</h6>
       <div class="d-grid gap-2">
-        +this.CHAT_TASKS.map(t => <button class="ai-task-btn" onclick="AIPanel.open('',{},'chat')"><i class="bi "></i><div><strong></strong></div></button>).join('')+
-      </div>;
+        ${this.CHAT_TASKS.map(t => `<button class="ai-task-btn" onclick="AIPanel.open('${t.id}',{},'chat')"><i class="bi ${t.icon}"></i><div><strong>${t.label}</strong></div></button>`).join('')}
+      </div>`;
   },
 
   quickRun(template) {
@@ -203,7 +203,7 @@ const AIPanel = {
     const loadId = 'ai-load-' + Date.now();
     const msgAreaEl = document.getElementById('ai-messages');
     if (msgAreaEl) {
-      msgAreaEl.innerHTML += <div id="" class="ai-loading"><div class="spinner-border spinner-border-sm me-2"></div>\u0e01\u0e33\u0e25\u0e31\u0e07\u0e1b\u0e23\u0e30\u0e21\u0e27\u0e25\u0e1c\u0e25...</div>;
+      msgAreaEl.innerHTML += `<div id="${loadId}" class="ai-loading"><div class="spinner-border spinner-border-sm me-2"></div>\u0e01\u0e33\u0e25\u0e31\u0e07\u0e1b\u0e23\u0e30\u0e21\u0e27\u0e25\u0e1c\u0e25...</div>`;
       msgAreaEl.scrollTop = msgAreaEl.scrollHeight;
     }
 
@@ -235,15 +235,15 @@ const AIPanel = {
     if (!area) return;
     area.innerHTML = this.messages.map(m => {
       if (m.role === 'user') {
-        return <div class="ai-msg ai-msg-user"></div>;
+        return `<div class="ai-msg ai-msg-user">${m.content}</div>`;
       } else {
-        return <div class="ai-msg ai-msg-ai"><pre></pre>
+        return `<div class="ai-msg ai-msg-ai"><pre>${m.content}</pre>
           <div class="mt-2">
             <button class="btn btn-sm btn-outline-primary me-1" onclick="AIPanel.copyResult(this)" title="\u0e04\u0e31\u0e14\u0e25\u0e2d\u0e01"><i class="bi bi-clipboard"></i></button>
             <button class="btn btn-sm btn-outline-success me-1" onclick="AIPanel.useResult(this)" title="\u0e40\u0e15\u0e34\u0e21\u0e25\u0e07\u0e1f\u0e2d\u0e23\u0e4c\u0e21"><i class="bi bi-box-arrow-in-down"></i></button>
             <button class="btn btn-sm btn-outline-secondary" onclick="AIPanel.sendMessage('\u0e23\u0e48\u0e32\u0e07\u0e43\u0e2b\u0e21\u0e48')" title="\u0e23\u0e48\u0e32\u0e07\u0e43\u0e2b\u0e21\u0e48"><i class="bi bi-arrow-repeat"></i></button>
           </div>
-        </div>;
+        </div>`;
       }
     }).join('');
     area.scrollTop = area.scrollHeight;

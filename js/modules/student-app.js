@@ -13,7 +13,7 @@ const StudentApp = {
   async init() {
     if (API.token) {
       const res = await API.get('/api/auth/me');
-      if (res.success && res.data.role === 'student') {
+      if (res.success && (res.data.role === 'student' || res.data.status === 'readonly')) {
         this.showApp(res.data);
         return;
       }
@@ -1372,6 +1372,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (res.success) {
       API.setToken(res.data.token);
+      if (res.data.role === 'teacher' && res.data.status !== 'readonly') {
+        // Normal teacher → redirect to teacher page
+        window.location.href = '/teacher.html';
+        return;
+      }
       StudentApp.showApp(res.data);
     } else {
       alert.textContent = res.error || 'เข้าสู่ระบบไม่สำเร็จ';

@@ -91,7 +91,8 @@ async function handleLogin(request, env) {
     role: user.role,
     displayName: user.display_name,
     userId: user.id,
-    isAdmin: user.is_admin === 1
+    isAdmin: user.is_admin === 1,
+    status: user.status
   });
 }
 
@@ -197,9 +198,11 @@ async function handleLogout(env) {
 async function handleMe(env) {
   if (!env.user) return error('ไม่ได้เข้าสู่ระบบ', 401);
 
+  // For readonly users, return their real user info (not the admin's)
+  const userId = env.user.realId || env.user.id;
   const user = await dbFirst(env.DB,
     'SELECT id, username, role, display_name, is_admin, status, created_at FROM users WHERE id = ?',
-    [env.user.id]
+    [userId]
   );
 
   if (!user) return error('ไม่พบข้อมูลผู้ใช้', 404);

@@ -117,6 +117,10 @@ export async function onRequest(context) {
   // Resolve student record from user_id
   const student = await dbFirst(db, 'SELECT * FROM students WHERE user_id = ?', [user.id]);
   if (!student && !path.startsWith('/profile')) {
+    // Readonly viewer accounts get empty data instead of error
+    if (user.status === 'readonly') {
+      return success([]);
+    }
     return error('ไม่พบข้อมูลนักเรียน กรุณาติดต่อครูผู้สอน', 404);
   }
   const studentId = student?.id;

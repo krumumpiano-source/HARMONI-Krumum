@@ -47,7 +47,17 @@ const App = {
   showApp(user) {
     document.getElementById('login-page').classList.add('d-none');
     document.getElementById('app').classList.remove('d-none');
-    document.getElementById('nav-username').textContent = user.display_name || 'ครู';
+    document.getElementById('nav-username').textContent = user.display_name || user.displayName || 'ครู';
+
+    // Detect read-only account
+    this.isReadonly = user.status === 'readonly';
+    if (this.isReadonly) {
+      const banner = document.createElement('div');
+      banner.className = 'alert alert-warning text-center py-1 mb-0 rounded-0';
+      banner.innerHTML = '<i class="bi bi-eye me-1"></i>โหมดดูอย่างเดียว — ไม่สามารถแก้ไขข้อมูลได้';
+      banner.id = 'readonly-banner';
+      document.getElementById('app').prepend(banner);
+    }
 
     // Show admin sidebar if admin
     this.isAdmin = user.is_admin === 1 || user.isAdmin === true;
@@ -59,8 +69,10 @@ const App = {
     // Load active semester display
     this.loadSemesterLabel();
 
-    // Check first-time setup
-    this.checkSetup();
+    // Check first-time setup (skip for read-only accounts)
+    if (!this.isReadonly) {
+      this.checkSetup();
+    }
 
     // Navigate to dashboard
     this.navigate('dashboard');
@@ -3427,7 +3439,6 @@ App.modules['lesson-plan'] = {
     const bsModal = new bootstrap.Modal(document.getElementById('plan-view-modal'));
     bsModal.show();
   },
-};
 };
 
 // ==================== Register Classroom-Materials Module ====================

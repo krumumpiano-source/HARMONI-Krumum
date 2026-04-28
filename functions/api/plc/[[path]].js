@@ -6,7 +6,7 @@
 
 import {
   generateUUID, now, success, error, parseBody,
-  dbAll, dbRun, extractParam, autoCollectEvidence
+  dbAll, dbFirst, dbRun, extractParam, autoCollectEvidence
 } from '../../_helpers.js';
 
 export async function onRequest(context) {
@@ -23,17 +23,20 @@ export async function onRequest(context) {
   if (path === '/api/plc' && method === 'POST') {
     const body = await parseBody(request);
     if (!body || !body.topic) return error('กรุณากรอกหัวข้อ PLC');
+    const activeSem = await dbFirst(env.DB, "SELECT id FROM semesters WHERE is_active = 1 LIMIT 1");
+    const semesterId = body.semester_id || activeSem?.id || null;
+    if (!semesterId) return error('ไม่พบภาคเรียนที่เปิดใช้งาน');
     const id = generateUUID();
     await dbRun(env.DB,
       `INSERT INTO plc_records (id, teacher_id, semester_id, session_date, topic,
        participants, objectives, activities, outcomes, next_steps, evidence_urls, hours, created_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [id, env.user.id, body.semester_id || null, body.session_date || now().split('T')[0],
+      [id, env.user.id, semesterId, body.session_date || now().split('T')[0],
        body.topic, body.participants || null, body.objectives || null, body.activities || null,
        body.outcomes || null, body.next_steps || null, body.evidence_urls || null,
        body.hours || null, now()]
     );
-    await autoCollectEvidence(env.DB, env.user.id, body.semester_id, 'plc_records', id, { topic: body.topic, session_date: body.session_date });
+    await autoCollectEvidence(env.DB, env.user.id, semesterId, 'plc_records', id, { topic: body.topic, session_date: body.session_date });
     return success({ id });
   }
 

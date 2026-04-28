@@ -43,12 +43,15 @@ export async function onRequest(context) {
     if (totalDifficulty >= 20) riskLevel = 'abnormal';
     else if (totalDifficulty >= 14) riskLevel = 'borderline';
     const id = generateUUID();
+    const activeSem = await dbFirst(env.DB, "SELECT id FROM semesters WHERE is_active = 1 LIMIT 1");
+    const semesterId = body.semester_id || activeSem?.id || null;
+    if (!semesterId) return error('ไม่พบภาคเรียนที่เปิดใช้งาน');
     await dbRun(env.DB,
       `INSERT INTO sdq_screenings (id, teacher_id, student_id, semester_id, screen_date,
        respondent_type, emotional_score, conduct_score, hyperactivity_score, peer_score,
        prosocial_score, total_difficulty, risk_level, created_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [id, env.user.id, body.student_id, body.semester_id || null,
+      [id, env.user.id, body.student_id, semesterId,
        body.screen_date || now().split('T')[0], body.respondent_type || 'teacher',
        emotional, conduct, hyperactivity, peer, prosocial, totalDifficulty, riskLevel, now()]
     );

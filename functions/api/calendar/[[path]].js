@@ -6,7 +6,7 @@
 
 import {
   generateUUID, now, success, error, parseBody,
-  dbAll, dbRun, extractParam
+  dbAll, dbFirst, dbRun, extractParam
 } from '../../_helpers.js';
 
 export async function onRequest(context) {
@@ -30,12 +30,15 @@ export async function onRequest(context) {
     const body = await parseBody(request);
     if (!body || !body.title) return error('กรุณากรอกชื่อกิจกรรม');
     if (!body.date) return error('กรุณาระบุวันที่');
+    const activeSem = await dbFirst(env.DB, "SELECT id FROM semesters WHERE is_active = 1 LIMIT 1");
+    const semesterId = body.semester_id || activeSem?.id || null;
+    if (!semesterId) return error('ไม่พบภาคเรียนที่เปิดใช้งาน');
     const id = generateUUID();
     await dbRun(env.DB,
       `INSERT INTO calendar_events (id, teacher_id, semester_id, title, event_type,
        date, end_date, all_day, color, notes, created_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-      [id, env.user.id, body.semester_id || null, body.title, body.event_type || null,
+      [id, env.user.id, semesterId, body.title, body.event_type || null,
        body.date, body.end_date || null, body.all_day !== undefined ? (body.all_day ? 1 : 0) : 1,
        body.color || null, body.notes || null, now()]
     );

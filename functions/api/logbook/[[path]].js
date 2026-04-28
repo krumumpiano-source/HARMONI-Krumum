@@ -7,7 +7,7 @@
 
 import {
   generateUUID, now, success, error, parseBody,
-  dbAll, dbRun, extractParam, autoCollectEvidence
+  dbAll, dbFirst, dbRun, extractParam, autoCollectEvidence
 } from '../../_helpers.js';
 
 export async function onRequest(context) {
@@ -42,16 +42,19 @@ export async function onRequest(context) {
     const body = await parseBody(request);
     if (!body || !body.category) return error('กรุณาเลือกหมวดหมู่');
     if (!body.hours) return error('กรุณาระบุจำนวนชั่วโมง');
+    const activeSem = await dbFirst(env.DB, "SELECT id FROM semesters WHERE is_active = 1 LIMIT 1");
+    const semesterId = body.semester_id || activeSem?.id || null;
+    if (!semesterId) return error('ไม่พบภาคเรียนที่เปิดใช้งาน');
     const id = generateUUID();
     await dbRun(env.DB,
       `INSERT INTO log_entries (id, teacher_id, semester_id, entry_date, category, hours,
        description, related_module, related_id, evidence_urls, created_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-      [id, env.user.id, body.semester_id || null, body.entry_date || now().split('T')[0],
+      [id, env.user.id, semesterId, body.entry_date || now().split('T')[0],
        body.category, body.hours, body.description || null, body.related_module || null,
        body.related_id || null, body.evidence_urls || null, now()]
     );
-    await autoCollectEvidence(env.DB, env.user.id, body.semester_id, 'log_entries', id, { category: body.category, description: body.description });
+    await autoCollectEvidence(env.DB, env.user.id, semesterId, 'log_entries', id, { category: body.category, description: body.description });
     return success({ id });
   }
 

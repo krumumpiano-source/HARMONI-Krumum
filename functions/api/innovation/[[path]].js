@@ -6,7 +6,7 @@
 
 import {
   generateUUID, now, success, error, parseBody,
-  dbAll, dbRun, extractParam, autoCollectEvidence
+  dbAll, dbFirst, dbRun, extractParam, autoCollectEvidence
 } from '../../_helpers.js';
 
 export async function onRequest(context) {
@@ -23,18 +23,21 @@ export async function onRequest(context) {
   if (path === '/api/innovation' && method === 'POST') {
     const body = await parseBody(request);
     if (!body || !body.title) return error('กรุณากรอกชื่อนวัตกรรม');
+    const activeSem = await dbFirst(env.DB, "SELECT id FROM semesters WHERE is_active = 1 LIMIT 1");
+    const semesterId = body.semester_id || activeSem?.id || null;
+    if (!semesterId) return error('ไม่พบภาคเรียนที่เปิดใช้งาน');
     const id = generateUUID();
     await dbRun(env.DB,
       `INSERT INTO innovations (id, teacher_id, semester_id, title, innovation_type,
        problem_addressed, description, implementation, results, effectiveness_data,
        published_where, evidence_urls, status, created_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [id, env.user.id, body.semester_id || null, body.title, body.innovation_type || null,
+      [id, env.user.id, semesterId, body.title, body.innovation_type || null,
        body.problem_addressed || null, body.description || null, body.implementation || null,
        body.results || null, body.effectiveness_data || null, body.published_where || null,
        body.evidence_urls || null, body.status || 'draft', now()]
     );
-    await autoCollectEvidence(env.DB, env.user.id, body.semester_id, 'innovations', id, { title: body.title });
+    await autoCollectEvidence(env.DB, env.user.id, semesterId, 'innovations', id, { title: body.title });
     return success({ id });
   }
 

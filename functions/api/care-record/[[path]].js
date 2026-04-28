@@ -32,12 +32,15 @@ export async function onRequest(context) {
     const body = await parseBody(request);
     if (!body || !body.student_id) return error('กรุณาเลือกนักเรียน');
     if (!body.description) return error('กรุณากรอกรายละเอียด');
+    const activeSem = await dbFirst(env.DB, "SELECT id FROM semesters WHERE is_active = 1 LIMIT 1");
+    const semesterId = body.semester_id || activeSem?.id || null;
+    if (!semesterId) return error('ไม่พบภาคเรียนที่เปิดใช้งาน');
     const id = generateUUID();
     await dbRun(env.DB,
       `INSERT INTO care_records (id, teacher_id, student_id, semester_id, care_step,
        record_date, description, action_taken, outcome, referral_to, created_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-      [id, env.user.id, body.student_id, body.semester_id || null,
+      [id, env.user.id, body.student_id, semesterId,
        body.care_step || 1, body.record_date || now().split('T')[0],
        body.description, body.action_taken || null, body.outcome || null,
        body.referral_to || null, now()]

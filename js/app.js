@@ -3827,6 +3827,14 @@ App.modules['scores'] = {
     const { columns, grid } = res.data;
     this._gridData = grid;
     this._gridCols = columns;
+    this._renderGrid(area);
+  },
+
+  _renderGrid(area) {
+    if (!area) area = document.getElementById('sc2-content');
+    if (!area) return;
+    const columns = this._gridCols;
+    const grid = this._gridData;
 
     const colorCell = (pct) => {
       if (pct === null || pct === undefined) return '';
@@ -3960,7 +3968,7 @@ App.modules['scores'] = {
         row[label] = null;
         row[`_id_${label}`] = null;
       }
-      this.loadGrid();
+      this._renderGrid();
     });
   },
 

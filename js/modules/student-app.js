@@ -960,7 +960,7 @@ const StudentApp = {
               <label class="form-label small fw-semibold">วิชา</label>
               <select id="pf-subject" class="form-select form-select-sm">
                 <option value="">-- ไม่ระบุ --</option>
-                ${subjects.map(s => `<option value="${escAttr(String(s.id))}">${escHtml(s.name)}</option>`).join('')}
+                ${subjects.map(s => `<option value="${escAttr(String(s.id))}">${DOMPurify.sanitize(s.name)}</option>`).join('')}
               </select>
             </div>
           </div>
@@ -995,7 +995,7 @@ const StudentApp = {
                 <div class="d-flex justify-content-between align-items-start mb-1">
                   <div>
                     <span class="badge bg-light text-dark border me-1">${catIcon[item.category] || '📁'} ${catLabel[item.category] || item.category}</span>
-                    ${item.subject_name ? `<span class="badge bg-primary-subtle text-primary">${escHtml(item.subject_name)}</span>` : ''}
+                    ${item.subject_name ? `<span class="badge bg-primary-subtle text-primary">${DOMPurify.sanitize(item.subject_name)}</span>` : ''}
                   </div>
                   <button class="btn btn-sm btn-outline-danger pf-delete-btn" data-id="${escAttr(item.id)}"><i class="bi bi-trash"></i></button>
                 </div>

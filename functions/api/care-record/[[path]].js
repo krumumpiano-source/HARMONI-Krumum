@@ -6,7 +6,7 @@
 
 import {
   generateUUID, now, success, error, parseBody,
-  dbAll, dbRun, extractParam
+  dbAll, dbFirst, dbRun, extractParam
 } from '../../_helpers.js';
 
 export async function onRequest(context) {

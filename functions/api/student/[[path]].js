@@ -397,8 +397,8 @@ export async function onRequest(context) {
     // Award XP
     if (xpEarned > 0) {
       await dbRun(db,
-        'INSERT INTO student_xp (id, student_id, xp_amount, source, source_id, created_at) VALUES (?,?,?,?,?,?)',
-        [generateUUID(), studentId, xpEarned, 'live_quiz', sessionId, now()]
+        'INSERT INTO student_xp (id, student_id, source_type, source_id, xp_amount, created_at) VALUES (?,?,?,?,?,?)',
+        [generateUUID(), studentId, 'live_quiz', sessionId, xpEarned, now()]
       );
     }
 
@@ -715,8 +715,8 @@ export async function onRequest(context) {
     }
 
     // POST /board/:postId/like/:boardPostId — toggle like
-    if (method === 'POST' && action === 'like') {
-      const boardPostId = path.split('/').pop();
+    if (method === 'POST' && action?.startsWith('like/')) {
+      const boardPostId = action.slice(5); // extract boardPostId from 'like/:boardPostId'
       const existing = await dbFirst(db,
         'SELECT id FROM board_likes WHERE board_post_id = ? AND student_id = ?',
         [boardPostId, studentId]
@@ -854,11 +854,12 @@ export async function onRequest(context) {
 
     // 2) Fetch submissions for all those assignments
     if (assignments.length > 0) {
-      const postIds = assignments.map(a => `'${a.id.replace(/'/g,"''")}'`).join(',');
+      const placeholders = assignments.map(() => '?').join(',');
+      const postIds = assignments.map(a => a.id);
       const subs = await dbAll(db,
         `SELECT post_id, status, score, max_score, feedback, submitted_at, resubmitted_at, graded_at, is_late
-         FROM assignment_submissions WHERE post_id IN (${postIds}) AND student_id = ?`,
-        [studentId]
+         FROM assignment_submissions WHERE post_id IN (${placeholders}) AND student_id = ?`,
+        [...postIds, studentId]
       );
       const subMap = {};
       for (const s of subs) subMap[s.post_id] = s;
@@ -911,14 +912,15 @@ export async function onRequest(context) {
       [studentId]
     );
     if (!myClassrooms.length) return success([]);
-    const ids = myClassrooms.map(r => `'${r.classroom_id.replace(/'/g,"''")}'`).join(',');
+    const classroomIds = myClassrooms.map(r => r.classroom_id);
+    const sessPlaceholders = classroomIds.map(() => '?').join(',');
     const sessions = await dbAll(db,
       `SELECT s.*, c.name as classroom_name
        FROM attendance_sessions s
        JOIN classrooms c ON c.id = s.classroom_id
-       WHERE s.classroom_id IN (${ids}) AND s.is_open = 1
+       WHERE s.classroom_id IN (${sessPlaceholders}) AND s.is_open = 1
        ORDER BY s.opened_at DESC`,
-      []
+      classroomIds
     );
     return success(sessions);
   }

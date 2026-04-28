@@ -386,11 +386,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // AI Panel toggle
   document.getElementById('ai-fab').addEventListener('click', () => {
-    document.getElementById('ai-panel').classList.toggle('d-none');
-  });
-
-  document.getElementById('ai-panel-close').addEventListener('click', () => {
-    document.getElementById('ai-panel').classList.add('d-none');
+    AIPanel.open();
   });
 
   // Notification bell

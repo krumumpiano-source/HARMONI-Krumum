@@ -3654,30 +3654,96 @@ App.modules['classroom-materials'] = {
   async addVQ() {
     const ts = parseInt(document.getElementById('vq-ts').value) || 0;
     const qtype = document.getElementById('vq-qtype').value;
-    const text = prompt('พิมพ์คำถาม:');
-    if (!text) return;
-    let choices = null, correct = null;
+    const modalId = 'addVQModal';
+    const existing = document.getElementById(modalId);
+    if (existing) existing.remove();
+    const modal = document.createElement('div');
+    modal.id = modalId;
+    modal.className = 'modal fade';
+    let extraFields = '';
     if (qtype === 'multiple_choice') {
-      const input = prompt('ตัวเลือก (คั่นด้วย,):', 'A,B,C,D');
-      choices = input ? JSON.stringify(input.split(',').map(s=>s.trim())) : null;
-      correct = prompt('เฉลย (พิมพ์ตัวเลือกที่ถูก):') || null;
+      extraFields = `
+        <div class="mb-3">
+          <label class="form-label fw-semibold">ตัวเลือก (คั่นด้วย ,)</label>
+          <input type="text" class="form-control" id="vqChoices" value="A,B,C,D">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">เฉลย (พิมพ์ตัวเลือกที่ถูก)</label>
+          <input type="text" class="form-control" id="vqCorrect">
+        </div>`;
     } else if (qtype === 'true_false') {
-      correct = confirm('คำตอบที่ถูก: ถูก?') ? 'true' : 'false';
+      extraFields = `
+        <div class="mb-3">
+          <label class="form-label fw-semibold">คำตอบที่ถูก</label>
+          <div class="mt-1">
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="vqTF" id="vqTFTrue" value="true" checked>
+              <label class="form-check-label" for="vqTFTrue">ถูก</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" name="vqTF" id="vqTFFalse" value="false">
+              <label class="form-check-label" for="vqTFFalse">ผิด</label>
+            </div>
+          </div>
+        </div>`;
     } else {
-      correct = prompt('เฉลย:') || null;
+      extraFields = `
+        <div class="mb-3">
+          <label class="form-label fw-semibold">เฉลย</label>
+          <input type="text" class="form-control" id="vqCorrect">
+        </div>`;
     }
-    const res = await API.post(`/api/classroom-materials/${this._vqMatId}/vq`, {
-      timestamp_seconds: ts, question_type: qtype, question_text: text,
-      choices, correct_answer: correct
+    modal.innerHTML = `
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title"><i class="bi bi-question-circle me-2"></i>เพิ่มคำถาม Video Quiz</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label fw-semibold">คำถาม <span class="text-danger">*</span></label>
+              <textarea class="form-control" id="vqText" rows="2" placeholder="พิมพ์คำถาม..."></textarea>
+            </div>
+            ${extraFields}
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+            <button type="button" class="btn btn-primary" id="vqConfirm"><i class="bi bi-plus-lg me-1"></i>เพิ่มคำถาม</button>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    const bsModal = new bootstrap.Modal(modal);
+    bsModal.show();
+    document.getElementById('vqConfirm').addEventListener('click', async () => {
+      const text = document.getElementById('vqText').value.trim();
+      if (!text) { App.toast('กรุณาพิมพ์คำถาม', 'warning'); return; }
+      let choices = null, correct = null;
+      if (qtype === 'multiple_choice') {
+        const choicesInput = document.getElementById('vqChoices').value;
+        choices = choicesInput ? JSON.stringify(choicesInput.split(',').map(s => s.trim())) : null;
+        correct = document.getElementById('vqCorrect').value.trim() || null;
+      } else if (qtype === 'true_false') {
+        correct = document.querySelector('input[name="vqTF"]:checked')?.value || 'true';
+      } else {
+        correct = document.getElementById('vqCorrect').value.trim() || null;
+      }
+      bsModal.hide();
+      const res = await API.post(`/api/classroom-materials/${this._vqMatId}/vq`, {
+        timestamp_seconds: ts, question_type: qtype, question_text: text,
+        choices, correct_answer: correct
+      });
+      if (res.success) {
+        App.toast('เพิ่มคำถามสำเร็จ!');
+        const qRes = await API.get(`/api/classroom-materials/${this._vqMatId}/vq`);
+        this._vqQuestions = qRes.success ? qRes.data : [];
+        this.renderVQList();
+      } else {
+        App.toast(res.error || 'ไม่สำเร็จ', 'danger');
+      }
     });
-    if (res.success) {
-      App.toast('เพิ่มคำถามสำเร็จ!');
-      const qRes = await API.get(`/api/classroom-materials/${this._vqMatId}/vq`);
-      this._vqQuestions = qRes.success ? qRes.data : [];
-      this.renderVQList();
-    } else {
-      App.toast(res.error || 'ไม่สำเร็จ', 'danger');
-    }
+    modal.addEventListener('hidden.bs.modal', () => modal.remove(), { once: true });
   }
 };
 
@@ -3837,20 +3903,65 @@ App.modules['scores'] = {
   },
 
   addColumn() {
-    const label = prompt('ชื่อรายการคะแนน (เช่น "สอบย่อย 1", "การบ้าน 3"):');
-    if (!label) return;
-    const maxScore = parseFloat(prompt('คะแนนเต็ม:', '10'));
-    if (!maxScore || isNaN(maxScore)) return;
-    const typeSelect = prompt('ประเภท (assignment/quiz/midterm/final/practical/behavior/other):', 'assignment');
-    this._newCol = { label, max_score: maxScore, type: typeSelect || 'assignment' };
-
-    // Reload grid with extra column appended client-side
-    this._gridCols.push({ key: label, label, type: typeSelect || 'assignment', max_score: maxScore });
-    for (const row of this._gridData) {
-      row[label] = null;
-      row[`_id_${label}`] = null;
+    const modalId = 'addColModal';
+    let modal = document.getElementById(modalId);
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = modalId;
+      modal.className = 'modal fade';
+      modal.innerHTML = `
+        <div class="modal-dialog">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>เพิ่มคอลัมน์คะแนน</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <div class="mb-3">
+                <label class="form-label fw-semibold">ชื่อรายการคะแนน <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="addColLabel" placeholder='เช่น "สอบย่อย 1", "การบ้าน 3"'>
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-semibold">คะแนนเต็ม <span class="text-danger">*</span></label>
+                <input type="number" class="form-control" id="addColMax" value="10" min="1">
+              </div>
+              <div class="mb-3">
+                <label class="form-label fw-semibold">ประเภท</label>
+                <select class="form-select" id="addColType">
+                  ${this.scoreTypes.map(t => `<option value="${t.val}">${t.label}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+              <button type="button" class="btn btn-primary" id="addColConfirm"><i class="bi bi-plus-lg me-1"></i>เพิ่มคอลัมน์</button>
+            </div>
+          </div>
+        </div>`;
+      document.body.appendChild(modal);
     }
-    this.loadGrid(); // Re-render with new column
+    const bsModal = new bootstrap.Modal(modal);
+    document.getElementById('addColLabel').value = '';
+    document.getElementById('addColMax').value = '10';
+    bsModal.show();
+    const oldBtn = document.getElementById('addColConfirm');
+    const newBtn = oldBtn.cloneNode(true);
+    oldBtn.parentNode.replaceChild(newBtn, oldBtn);
+    newBtn.addEventListener('click', () => {
+      const label = document.getElementById('addColLabel').value.trim();
+      const maxScore = parseFloat(document.getElementById('addColMax').value);
+      const typeSelect = document.getElementById('addColType').value;
+      if (!label) { App.toast('กรุณาระบุชื่อรายการคะแนน', 'warning'); return; }
+      if (!maxScore || isNaN(maxScore) || maxScore <= 0) { App.toast('กรุณาระบุคะแนนเต็มที่ถูกต้อง', 'warning'); return; }
+      bsModal.hide();
+      this._newCol = { label, max_score: maxScore, type: typeSelect || 'assignment' };
+      this._gridCols.push({ key: label, label, type: typeSelect || 'assignment', max_score: maxScore });
+      for (const row of this._gridData) {
+        row[label] = null;
+        row[`_id_${label}`] = null;
+      }
+      this.loadGrid();
+    });
   },
 
   async saveGrid() {

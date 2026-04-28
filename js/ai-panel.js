@@ -1,4 +1,4 @@
-﻿$EF$BB$BF// HARMONI AI Panel — Quick AI (1-click) + Chat AI (interactive)
+﻿// HARMONI AI Panel — Quick AI (1-click) + Chat AI (interactive)
 const AIPanel = {
   isOpen: false,
   mode: null,

@@ -452,7 +452,7 @@ function addSubjectRow(container) {
     <div class="col-5"><input type="text" class="form-control form-control-sm" placeholder="ชื่อวิชา" data-field="name"></div>
     <div class="col-3">
       <select class="form-select form-select-sm" data-field="type">
-        <option value="required">พื้นฐาน</option>
+        <option value="regular">พื้นฐาน</option>
         <option value="elective">เพิ่มเติม</option>
         <option value="activity">กิจกรรม</option>
       </select>
@@ -1726,8 +1726,8 @@ App.modules['attendance'] = {
               ${!zones.length ? '<p class="text-muted small">ยังไม่มีโซน — เพิ่มโซนด้านบน</p>' :
                 zones.map(z => `
                 <div class="d-flex justify-content-between align-items-center border-bottom py-2">
-                  <span><i class="bi bi-geo-alt-fill text-success me-2"></i><strong>${escHtml(z.name || z.zone_name || 'Zone')}</strong> — ${z.lat.toFixed(5)}, ${z.lng.toFixed(5)} (${z.radius_meters}ม.)</span>
-                  <button class="btn btn-sm btn-outline-danger" data-del-zone="${escAttr(z.id)}"><i class="bi bi-trash"></i></button>
+                  <span><i class="bi bi-geo-alt-fill text-success me-2"></i><strong>${DOMPurify.sanitize(z.name || z.zone_name || 'Zone')}</strong> — ${z.lat.toFixed(5)}, ${z.lng.toFixed(5)} (${z.radius_meters}ม.)</span>
+                  <button class="btn btn-sm btn-outline-danger" data-del-zone="${App.esc(z.id)}"><i class="bi bi-trash"></i></button>
                 </div>`).join('')}
             </div>
           </div>
@@ -1907,7 +1907,7 @@ App.modules['attendance'] = {
                   const gpsBadge = s.check_in_method === 'student_app'
                     ? `<span class="badge bg-success ms-1" title="เช็คชื่อ GPS ${s.check_in_time ? new Date(s.check_in_time).toLocaleTimeString('th-TH') : ''}"><i class="bi bi-geo-alt-fill"></i> GPS</span>`
                     : (s.check_in_method === 'manual' ? `<span class="badge bg-secondary ms-1"><i class="bi bi-person-check"></i></span>` : '');
-                  return `<tr data-student-id="${escAttr(s.id)}">
+                  return `<tr data-student-id="${App.esc(s.id)}">
                     <td class="text-muted">${i + 1}</td>
                     <td>
                       <strong>${DOMPurify.sanitize(s.first_name)} ${DOMPurify.sanitize(s.last_name)}</strong>
@@ -1919,7 +1919,7 @@ App.modules['attendance'] = {
                         ${statusOptions.map(opt => `
                           <button type="button"
                             class="btn btn-sm btn-${s.status === opt.value ? opt.color : 'outline-' + opt.color} att-status-btn"
-                            data-student="${escAttr(s.id)}" data-status="${opt.value}">
+                            data-student="${App.esc(s.id)}" data-status="${opt.value}">
                             <i class="bi bi-${opt.icon} me-1 d-none d-sm-inline"></i>${opt.label}
                           </button>`).join('')}
                       </div>
@@ -6700,7 +6700,7 @@ App.modules['gamification'] = {
             <div class="card-body d-flex align-items-center gap-3 flex-wrap">
               <label class="fw-semibold mb-0">ห้องเรียน:</label>
               <select id="gf-class-sel" class="form-select form-select-sm" style="width:auto">
-                ${classrooms.map(c => `<option value="${escAttr(c.id)}" ${c.id == this._classId ? 'selected' : ''}>${escHtml(c.name)}</option>`).join('')}
+                ${classrooms.map(c => `<option value="${App.esc(c.id)}" ${c.id == this._classId ? 'selected' : ''}>${DOMPurify.sanitize(c.name)}</option>`).join('')}
               </select>
               <button class="btn btn-sm btn-primary" id="gf-load-btn"><i class="bi bi-arrow-clockwise me-1"></i>โหลด</button>
             </div>
@@ -6746,7 +6746,7 @@ App.modules['gamification'] = {
                   ['+3','ยอดเยี่ยม','primary'],
                   ['-1','ไม่ตั้งใจ','danger'],
                   ['-2','ก่อกวน','danger'],
-                ].map(([v,l,c]) => `<button class="btn btn-sm btn-${c} gf-quick-bp" data-pts="${v}" data-reason="${escAttr(l)}">${v} ${l}</button>`).join('')}
+                ].map(([v,l,c]) => `<button class="btn btn-sm btn-${c} gf-quick-bp" data-pts="${v}" data-reason="${App.esc(l)}">${v} ${l}</button>`).join('')}
               </div>
               <div class="input-group input-group-sm mb-2">
                 <input type="number" id="gf-bp-custom-pts" class="form-control" placeholder="คะแนน ±" style="width:80px">
@@ -6833,7 +6833,7 @@ App.modules['gamification'] = {
     // Populate student select
     const sel = area.querySelector('#gf-bp-student');
     sel.innerHTML = students.length
-      ? students.map(s => `<option value="${escAttr(String(s.id))}">${escHtml(s.name)}</option>`).join('')
+      ? students.map(s => `<option value="${App.esc(String(s.id))}">${DOMPurify.sanitize(s.name)}</option>`).join('')
       : '<option value="">ไม่มีนักเรียน</option>';
 
     // Overview table
@@ -6853,7 +6853,7 @@ App.modules['gamification'] = {
         </tr></thead>
         <tbody>
           ${students.map(s => `<tr>
-            <td class="fw-semibold">${escHtml(s.name)}</td>
+            <td class="fw-semibold">${DOMPurify.sanitize(s.name)}</td>
             <td class="text-center text-primary fw-bold">${s.total_xp}</td>
             <td class="text-center">${lvlBadge(s.level)}</td>
             <td class="text-center ${s.behavior_points >= 0 ? 'text-success' : 'text-danger'} fw-bold">${s.behavior_points >= 0 ? '+' : ''}${s.behavior_points}</td>
@@ -6876,7 +6876,7 @@ App.modules['gamification'] = {
       lbEl.innerHTML = board.slice(0, 10).map((s, i) => `
         <div class="d-flex align-items-center gap-2 py-1 border-bottom">
           <span class="fs-5 fw-bold" style="width:28px">${medalIcons[i] || (i + 1)}</span>
-          <span class="flex-fill small fw-semibold">${escHtml(s.name)}</span>
+          <span class="flex-fill small fw-semibold">${DOMPurify.sanitize(s.name)}</span>
           <span class="badge bg-primary">${s.total_xp + s.behavior_total} pt</span>
         </div>`).join('');
     }

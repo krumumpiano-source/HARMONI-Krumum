@@ -1006,6 +1006,19 @@ export async function onRequest(context) {
     return success({ checked_in: true, distance_m: Math.round(nearestDist), message: 'เช็คชื่อสำเร็จ!' });
   }
 
+  // ======================== STUDENT SUBJECTS ========================
+  if ((path === '/subjects' || path === '/subjects/') && method === 'GET') {
+    const subjects = await dbAll(db, `
+      SELECT DISTINCT s.id, s.name, s.code
+      FROM subject_classrooms sc
+      JOIN subjects s ON s.id = sc.subject_id
+      JOIN student_classrooms stc ON stc.classroom_id = sc.classroom_id
+      WHERE stc.student_id = ? AND stc.is_active = 1
+      ORDER BY s.name
+    `, [studentId]);
+    return success(subjects);
+  }
+
   return error('Not found', 404);
 }
 

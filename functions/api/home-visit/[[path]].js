@@ -36,7 +36,7 @@ export async function onRequest(context) {
        lat, lng, address_visited, photo_urls, family_present, raw_notes,
        official_notes, follow_up_needed, follow_up_notes, created_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [id, env.user.id, body.student_id, body.visit_date, body.visit_type || 'in_person',
+      [id, env.user.id, body.student_id, body.visit_date, body.visit_type || 'routine',
        body.lat || null, body.lng || null, body.address_visited || null,
        body.photo_urls || null, body.family_present || null, body.raw_notes || null,
        body.official_notes || null, body.follow_up_needed ? 1 : 0, body.follow_up_notes || null, now()]

@@ -5573,9 +5573,9 @@ App.modules['home-visit'] = {
           <div class="row g-2 mb-2">
             <div class="col-md-6"><input class="form-control" id="hv-addr" placeholder="ที่อยู่ที่เยี่ยม"></div>
             <div class="col-md-3"><select class="form-select" id="hv-type">
-              <option value="in_person">เยี่ยมจริง</option>
-              <option value="phone">โทรศัพท์</option>
-              <option value="online">ออนไลน์</option>
+              <option value="routine">เยี่ยมตามกำหนด</option>
+              <option value="urgent">เยี่ยมด่วน</option>
+              <option value="follow_up">ติดตาม</option>
             </select></div>
             <div class="col-md-3"><input class="form-control" id="hv-family" placeholder="ผู้ปกครองที่พบ"></div>
           </div>
@@ -5591,7 +5591,7 @@ App.modules['home-visit'] = {
               <strong>${DOMPurify.sanitize(v.first_name)} ${DOMPurify.sanitize(v.last_name)}</strong>
               <span class="text-muted small ms-2">${v.student_code}</span>
               <span class="text-muted small ms-2">${v.visit_date || ''}</span>
-              <span class="badge bg-${v.visit_type==='in_person'?'success':'info'} ms-2">${v.visit_type==='in_person'?'เยี่ยมจริง':v.visit_type==='phone'?'โทรฯ':'ออนไลน์'}</span>
+              <span class="badge bg-${v.visit_type==='routine'?'success':v.visit_type==='urgent'?'danger':'info'} ms-2">${v.visit_type==='routine'?'ปกติ':v.visit_type==='urgent'?'เยี่ยมด่วน':'ติดตาม'}</span>
               ${v.follow_up_needed ? '<span class="badge bg-warning text-dark ms-1">ต้องติดตาม</span>' : ''}
             </div>
             <button class="btn btn-sm btn-outline-danger" data-del="${v.id}"><i class="bi bi-trash"></i></button>
@@ -5599,7 +5599,7 @@ App.modules['home-visit'] = {
       </div>`;
 
     document.getElementById('hv-export')?.addEventListener('click', () => {
-      const typeLabels = { in_person: 'เยี่ยมจริง', phone: 'โทรศัพท์', online: 'ออนไลน์' };
+      const typeLabels = { routine: 'เยี่ยมตามกำหนด', urgent: 'เยี่ยมด่วน', follow_up: 'ติดตาม' };
       const data = visits.map(v => [v.student_code, `${v.first_name} ${v.last_name}`, v.visit_date || '', typeLabels[v.visit_type] || v.visit_type, v.family_present || '']);
       Exporter.showExportDialog('เยี่ยมบ้าน', data, { headers: ['code','name','date','type','family'], headerLabels: ['รหัส','ชื่อ-สกุล','วันที่','รูปแบบ','ผู้ปกครอง'] });
     });

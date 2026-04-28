@@ -1284,7 +1284,8 @@ const StudentApp = {
     container.innerHTML = '<div class="loading"></div>';
     const res = await API.get('/api/student/xp');
     if (!res.success) { container.innerHTML = '<div class="text-center text-muted py-4">ไม่สามารถโหลดข้อมูล XP</div>'; return; }
-    const { total_xp, level, streak, badges, league } = res.data;
+    const { total_xp, level, streak, badges, league: leagueData } = res.data;
+    const league = typeof leagueData === 'object' ? (leagueData?.league || 'bronze') : leagueData;
     const xpInLevel = total_xp % 100;
     const xpNeeded = 100;
     const progressPct = Math.min(100, Math.round((xpInLevel / xpNeeded) * 100));

@@ -4,6 +4,12 @@ const App = {
   currentModule: null,
   modules: {},
 
+  // HTML attribute escape helper (prevents attribute injection)
+  esc(s) {
+    return String(s == null ? '' : s).replace(/[&"'<>]/g, c =>
+      ({'&':'&amp;','"':'&quot;',"'":'&#39;','<':'&lt;','>':'&gt;'})[c]);
+  },
+
   async init() {
     // Check if already logged in
     if (API.token) {

@@ -25,7 +25,7 @@ export async function onRequest(context) {
   const clientSecret = env.GOOGLE_DRIVE_CLIENT_SECRET;
 
   if (!clientId || !clientSecret) {
-    return error('Google Drive ยังไม่ได้ตั้งค่า — ใส่ GOOGLE_DRIVE_CLIENT_ID/SECRET ใน wrangler.toml');
+    return success({ configured: false, root_folder_id: null, files: [] });
   }
 
   // GET /api/drive/auth — return auth URL for user to visit

@@ -17,7 +17,9 @@ const CDN_ASSETS = [
   'https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css',
   'https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap',
   'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js',
-  'https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js'
+  'https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js',
+  'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css',
+  'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js'
 ];
 
 // Install — cache static assets & skip waiting immediately
@@ -69,7 +71,7 @@ self.addEventListener('fetch', event => {
           }
           return response;
         })
-        .catch(() => caches.match(event.request))
+        .catch(() => caches.match(event.request).then(r => r || new Response('', { status: 503 })))
     );
     return;
   }
@@ -101,7 +103,7 @@ self.addEventListener('fetch', event => {
         }
         return response;
       })
-      .catch(() => caches.match(event.request))
+      .catch(() => caches.match(event.request).then(r => r || new Response('', { status: 503 })))
   );
 });
 

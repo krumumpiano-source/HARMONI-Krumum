@@ -1176,6 +1176,7 @@ App.modules['settings'] = {
   _renderSubjects(panel) {
     const subjects = this._subjects;
     const typeLabel = { regular: 'พื้นฐาน', elective: 'เพิ่มเติม', activity: 'กิจกรรม', homeroom: 'ที่ปรึกษา', ethics: 'จริยธรรม' };
+    const artsLabel = { visual: '🎨 ทัศนศิลป์', music: '🎵 ดนตรี', dance: '💃 นาฏศิลป์' };
     panel.innerHTML = `
       <div class="card border-0 shadow-sm">
         <div class="card-header bg-white d-flex justify-content-between align-items-center">
@@ -1184,18 +1185,19 @@ App.modules['settings'] = {
         </div>
         <div class="card-body p-0">
           <table class="table table-hover mb-0">
-            <thead class="table-light"><tr><th>รหัส</th><th>ชื่อวิชา</th><th>ประเภท</th><th>หน่วยกิต</th><th>ชม./สัปดาห์</th><th class="text-end"></th></tr></thead>
+            <thead class="table-light"><tr><th>รหัส</th><th>ชื่อวิชา</th><th>ประเภท</th><th>สาขาศิลปะ</th><th>หน่วยกิต</th><th>ชม./สัปดาห์</th><th class="text-end"></th></tr></thead>
             <tbody>
               ${subjects.map(sub => `<tr>
                 <td>${DOMPurify.sanitize(sub.code)}</td>
                 <td>${DOMPurify.sanitize(sub.name)}</td>
                 <td>${typeLabel[sub.subject_type] || sub.subject_type}</td>
+                <td>${artsLabel[sub.arts_area] || ''}</td>
                 <td>${sub.credits ?? ''}</td><td>${sub.hours_per_week ?? ''}</td>
                 <td class="text-end">
                   <button class="btn btn-sm btn-outline-primary me-1 btn-edit-sub" data-id="${sub.id}"><i class="bi bi-pencil"></i></button>
                   <button class="btn btn-sm btn-outline-danger btn-del-sub" data-id="${sub.id}"><i class="bi bi-trash"></i></button>
                 </td></tr>`).join('')}
-              ${!subjects.length ? '<tr><td colspan="6" class="text-center text-muted py-3">ยังไม่มีวิชา</td></tr>' : ''}
+              ${!subjects.length ? '<tr><td colspan="7" class="text-center text-muted py-3">ยังไม่มีวิชา</td></tr>' : ''}
             </tbody>
           </table>
         </div>
@@ -1205,10 +1207,18 @@ App.modules['settings'] = {
           <div class="row g-2 mb-2">
             <div class="col-md-3"><label class="form-label small mb-1">รหัสวิชา *</label><input class="form-control form-control-sm" id="sub-code" placeholder="ศ21101"></div>
             <div class="col-md-4"><label class="form-label small mb-1">ชื่อวิชา *</label><input class="form-control form-control-sm" id="sub-name" placeholder="ดนตรีสากล"></div>
-            <div class="col-md-3"><label class="form-label small mb-1">ประเภท</label>
+            <div class="col-md-2"><label class="form-label small mb-1">ประเภท</label>
               <select class="form-select form-select-sm" id="sub-type">
                 <option value="regular">พื้นฐาน</option><option value="elective">เพิ่มเติม</option>
                 <option value="activity">กิจกรรม</option><option value="homeroom">ที่ปรึกษา</option>
+              </select>
+            </div>
+            <div class="col-md-3"><label class="form-label small mb-1">สาขาศิลปะ</label>
+              <select class="form-select form-select-sm" id="sub-arts">
+                <option value="">— ไม่ระบุ —</option>
+                <option value="visual">🎨 ทัศนศิลป์</option>
+                <option value="music">🎵 ดนตรี</option>
+                <option value="dance">💃 นาฏศิลป์</option>
               </select>
             </div>
             <div class="col-md-2"><label class="form-label small mb-1">ระดับชั้น</label>
@@ -1237,6 +1247,7 @@ App.modules['settings'] = {
         panel.querySelector('#sub-code').value   = sub?.code || '';
         panel.querySelector('#sub-name').value   = sub?.name || '';
         panel.querySelector('#sub-type').value   = sub?.subject_type || 'regular';
+        panel.querySelector('#sub-arts').value   = sub?.arts_area || '';
         panel.querySelector('#sub-grade').value  = sub?.grade_level || '';
         panel.querySelector('#sub-credits').value = sub?.credits ?? 1;
         panel.querySelector('#sub-hours').value  = sub?.hours_per_week ?? 1;
@@ -1262,6 +1273,7 @@ App.modules['settings'] = {
       const body = {
         code, name,
         subject_type:  panel.querySelector('#sub-type').value,
+        arts_area:     panel.querySelector('#sub-arts').value || null,
         grade_level:   panel.querySelector('#sub-grade').value ? parseInt(panel.querySelector('#sub-grade').value) : null,
         credits:       parseFloat(panel.querySelector('#sub-credits').value) || 1,
         hours_per_week: parseFloat(panel.querySelector('#sub-hours').value) || 1,
@@ -2956,7 +2968,8 @@ App.modules['course-structure'] = {
     container.querySelector('#cs-ai').addEventListener('click', () => {
       const subEl = container.querySelector('#cs-subject');
       const subName = subEl.options[subEl.selectedIndex]?.text || '';
-      AIPanel.open('course_structure', { subject: subName }, 'chat');
+      const sub = this._subjects.find(s => s.id === subEl.value);
+      AIPanel.open('course_structure', { subject: subName, arts_area: sub?.arts_area || null }, 'chat');
     });
   },
 
@@ -3224,7 +3237,8 @@ App.modules['lesson-plan'] = {
     container.querySelector('#lp-ai').addEventListener('click', () => {
       const subEl = document.getElementById('lp-subject');
       const subName = subEl.options[subEl.selectedIndex]?.text || '';
-      AIPanel.open('lesson_plan', { subject: subName }, 'chat');
+      const sub = this._subjects.find(s => s.id === subEl.value);
+      AIPanel.open('lesson_plan', { subject: subName, arts_area: sub?.arts_area || null }, 'chat');
     });
     container.querySelector('#btn-print-plan').addEventListener('click', () => window.print());
   },
@@ -3379,6 +3393,7 @@ App.modules['lesson-plan'] = {
       AIPanel.open('lesson_plan', {
         subject:          subj?.name || '',
         subject_code:     subj?.code || '',
+        arts_area:        subj?.arts_area || null,
         unit_number:      unit?.unit_number || unitNum,
         unit_title:       unit?.title || '',
         indicators:       unit?.standard || '',

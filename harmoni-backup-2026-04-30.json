@@ -1,0 +1,239 @@
+{
+  "teacher_id": "test-admin-001",
+  "created_at": "2026-04-30T04:07:27.317Z",
+  "tables": {
+    "teaching_logs": [
+      {
+        "id": "8429f220-8042-40c3-87dc-06fb9d7e64da",
+        "teacher_id": "test-admin-001",
+        "classroom_id": "69c5c33d-b1e2-4431-8fbe-b0818729f111",
+        "subject_id": "26cb5539-7922-4ddc-8742-d6fec40908bd",
+        "semester_id": "ed4cac05-b8fb-493a-ad00-a18ea7225446",
+        "date": "2026-04-28",
+        "period": 1,
+        "topic": null,
+        "activities": "บทเพลงคลาสสิค จังหวะ 4/4 และการฝึกโน้ต",
+        "observations": "ให้นักเรียนตบจังหวะตามโน้ต ฝึกปฏิบัติเครื่องดนตรีพื้นฐาน",
+        "issues": "นักเรียนให้ความร่วมมือดี เข้าใจจังหวะได้ดี",
+        "next_plan": "นักเรียนบางคนจับจังหวะไม่ได้",
+        "created_at": "2026-04-28T12:21:37.770Z",
+        "updated_at": null
+      }
+    ],
+    "researches": [
+      {
+        "id": "c5631e0c-80bd-4a32-bb5d-07acd009df6f",
+        "teacher_id": "test-admin-001",
+        "semester_id": "ed4cac05-b8fb-493a-ad00-a18ea7225446",
+        "title": "วิจัยดนตรีบำบัดในชั้นเรียน",
+        "problem_statement": "นักเรียนขาดสมาธิในการเรียน",
+        "objectives": "เพื่อศึกษาผลของดนตรีต่อสมาธิ",
+        "hypothesis": null,
+        "methodology": null,
+        "population": null,
+        "sample": null,
+        "instruments": null,
+        "data_collection": null,
+        "data_analysis": null,
+        "results": null,
+        "conclusion": null,
+        "recommendations": null,
+        "status": "draft",
+        "ai_generated_sections": null,
+        "created_at": "2026-04-30T03:25:44.308Z",
+        "updated_at": "2026-04-30T03:25:44.308Z"
+      }
+    ],
+    "innovations": [
+      {
+        "id": "65374157-7ea4-4895-bcd4-d9592ebe24a9",
+        "teacher_id": "test-admin-001",
+        "semester_id": "ed4cac05-b8fb-493a-ad00-a18ea7225446",
+        "title": "สื่อดนตรีดิจิทัลสำหรับ ม.4",
+        "innovation_type": null,
+        "problem_addressed": "สื่อการเรียนรู้ดนตรีผ่านแอปพลิเคชัน",
+        "description": null,
+        "implementation": null,
+        "results": null,
+        "effectiveness_data": null,
+        "published_at": null,
+        "published_where": null,
+        "evidence_urls": null,
+        "status": "draft",
+        "ai_generated": 0,
+        "created_at": "2026-04-30T03:26:22.124Z"
+      }
+    ],
+    "plc_records": [
+      {
+        "id": "247dbdc8-61a7-4185-b172-ab01657c1b42",
+        "teacher_id": "test-admin-001",
+        "semester_id": "ed4cac05-b8fb-493a-ad00-a18ea7225446",
+        "session_date": "2026-04-30",
+        "topic": "พัฒนาเทคนิคการสอนดนตรี",
+        "participants": "ครูดนตรี 3 คน",
+        "objectives": null,
+        "activities": null,
+        "outcomes": "ได้เทคนิคใหม่ในการสอนจังหวะ",
+        "next_steps": null,
+        "evidence_urls": null,
+        "hours": 3,
+        "created_at": "2026-04-30T03:26:38.026Z"
+      }
+    ],
+    "log_entries": [
+      {
+        "id": "d1bd58f4-dd07-4ac5-9956-f77d6f95b133",
+        "teacher_id": "test-admin-001",
+        "semester_id": "ed4cac05-b8fb-493a-ad00-a18ea7225446",
+        "entry_date": "2026-04-30",
+        "category": "teaching",
+        "hours": 2,
+        "description": "สอนดนตรีพื้นฐาน ม.4/1 บทที่ 3",
+        "related_module": null,
+        "related_id": null,
+        "evidence_urls": null,
+        "created_at": "2026-04-30T03:29:41.905Z"
+      }
+    ],
+    "portfolio_items": [],
+    "attendance_records": [
+      {
+        "id": "0cab619e-09b0-47b1-ab1f-211c1cb06ead",
+        "teacher_id": "test-admin-001",
+        "student_id": "stu-001",
+        "classroom_id": "69c5c33d-b1e2-4431-8fbe-b0818729f111",
+        "semester_id": "ed4cac05-b8fb-493a-ad00-a18ea7225446",
+        "subject_id": null,
+        "date": "2026-04-28",
+        "period": null,
+        "status": "present",
+        "check_in_time": null,
+        "check_in_lat": null,
+        "check_in_lng": null,
+        "check_in_method": "manual",
+        "notes": null,
+        "created_at": "2026-04-28T12:14:27.367Z"
+      }
+    ],
+    "home_visits": [
+      {
+        "id": "77b6ce66-2c3a-4ba4-8c05-0b31841ef065",
+        "teacher_id": "test-admin-001",
+        "student_id": "stu-001",
+        "visit_date": "2026-04-30",
+        "visit_type": "routine",
+        "lat": null,
+        "lng": null,
+        "address_visited": null,
+        "photo_urls": null,
+        "family_present": null,
+        "raw_notes": "พบผู้ปกครอง รับทราบถึงการเรียน",
+        "official_notes": null,
+        "follow_up_needed": 0,
+        "follow_up_notes": null,
+        "created_at": "2026-04-30T03:24:40.816Z"
+      }
+    ],
+    "sdq_screenings": [
+      {
+        "id": "e7cdc89c-2a6c-4eaf-b1ce-608176184f65",
+        "teacher_id": "test-admin-001",
+        "student_id": "stu-001",
+        "semester_id": "sem-2568-1",
+        "screen_date": "2026-04-28",
+        "respondent_type": "teacher",
+        "emotional_score": 15,
+        "conduct_score": 0,
+        "hyperactivity_score": 0,
+        "peer_score": 0,
+        "prosocial_score": 0,
+        "total_difficulty": 15,
+        "risk_level": "borderline",
+        "ai_interpretation": null,
+        "created_at": "2026-04-28T13:03:01.350Z"
+      }
+    ],
+    "care_records": [
+      {
+        "id": "445c84d1-6048-4425-9690-01299799e320",
+        "teacher_id": "test-admin-001",
+        "student_id": "stu-001",
+        "semester_id": "sem-2568-1",
+        "care_step": 1,
+        "record_date": "2026-04-28",
+        "description": "นักเรียนขาดเรียนบ่อย ได้คุยให้กำลังใจ",
+        "action_taken": "โทรแจ้งผู้ปกครอง",
+        "outcome": null,
+        "referral_to": null,
+        "created_at": "2026-04-28T13:02:28.823Z"
+      }
+    ],
+    "calendar_events": [
+      {
+        "id": "48cb9777-171a-402e-b01c-a5779ae4e747",
+        "teacher_id": "test-admin-001",
+        "semester_id": "sem-2568-1",
+        "title": "สอบปลายภาค",
+        "event_type": null,
+        "date": "2026-05-01",
+        "end_date": null,
+        "all_day": 1,
+        "color": null,
+        "notes": null,
+        "created_at": "2026-04-30T03:45:03.151Z"
+      },
+      {
+        "id": "dc824e70-f656-46ac-98f4-db911308d38a",
+        "teacher_id": "test-admin-001",
+        "semester_id": "sem-2568-1",
+        "title": "สอบปลายภาค",
+        "event_type": null,
+        "date": "2026-05-01",
+        "end_date": null,
+        "all_day": 1,
+        "color": null,
+        "notes": null,
+        "created_at": "2026-04-30T03:45:12.516Z"
+      }
+    ],
+    "awards": [
+      {
+        "id": "378f7967-82bf-4948-bbd7-20e10364f4ef",
+        "teacher_id": "test-admin-001",
+        "award_type_id": "at-004",
+        "academic_year": 2569,
+        "status": "planning",
+        "application_date": null,
+        "result_date": null,
+        "result": null,
+        "level_achieved": null,
+        "evidence_ids": null,
+        "notes": "รางวัลครูดีเด่นสาขาดนตรี",
+        "created_at": "2026-04-30T03:30:12.257Z"
+      }
+    ],
+    "app_settings": [
+      {
+        "key": "school_name",
+        "value": "โรงเรียนทดสอบ HARMONI"
+      },
+      {
+        "key": "teacher_firstname",
+        "value": "ทดสอบ"
+      },
+      {
+        "key": "teacher_lastname",
+        "value": "ระบบ"
+      },
+      {
+        "key": "teacher_position",
+        "value": "ครู"
+      },
+      {
+        "key": "teacher_title",
+        "value": "นาย"
+      }
+    ]
+  }
+}

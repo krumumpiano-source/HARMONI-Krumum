@@ -5303,7 +5303,11 @@ App.modules['logbook'] = {
     const activeSem = semRes.success ? semRes.data.find(s => s.is_active) : null;
     const entries = logRes.success ? logRes.data : [];
     const summary = sumRes.success ? sumRes.data : [];
-    const categories = ['สอน','สนับสนุนการสอน','พัฒนาตนเอง','งานพิเศษ','อื่นๆ'];
+    const categories = [
+      { value: 'teaching', label: 'สอน' },
+      { value: 'support', label: 'สนับสนุนการสอน' },
+      { value: 'other', label: 'อื่นๆ' }
+    ];
 
     area.innerHTML = `
       <div class="d-flex justify-content-between align-items-center mb-4">
@@ -5326,7 +5330,7 @@ App.modules['logbook'] = {
           <div class="row g-2 mb-2">
             <div class="col-md-3"><input class="form-control" id="lg-date" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
             <div class="col-md-4"><select class="form-select" id="lg-cat">
-              ${categories.map(c => `<option value="${c}">${c}</option>`).join('')}
+              ${categories.map(c => `<option value="${c.value}">${c.label}</option>`).join('')}
             </select></div>
             <div class="col-md-2"><input class="form-control" id="lg-hours" type="number" step="0.5" placeholder="ชม."></div>
             <div class="col-md-3"><button class="btn btn-success w-100" id="lg-save"><i class="bi bi-check-lg me-1"></i>บันทึก</button></div>
@@ -5339,7 +5343,7 @@ App.modules['logbook'] = {
           entries.map(e => `
           <div class="card border-0 shadow-sm mb-2"><div class="card-body d-flex justify-content-between align-items-center">
             <div>
-              <span class="badge bg-secondary me-2">${DOMPurify.sanitize(e.category)}</span>
+              <span class="badge bg-secondary me-2">${DOMPurify.sanitize(categories.find(c=>c.value===e.category)?.label || e.category)}</span>
               <strong>${e.hours} ชม.</strong>
               <span class="text-muted small ms-2">${e.entry_date || ''}</span>
               ${e.description ? `<div class="text-muted small">${DOMPurify.sanitize(e.description).substring(0,80)}</div>` : ''}

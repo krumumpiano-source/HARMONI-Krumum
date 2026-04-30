@@ -122,13 +122,16 @@ export async function onRequestPost(context) {
 
     // Try Gemini first, then Groq fallback
     let result;
+    let geminiErr = '', groqErr = '';
     try {
       result = await callGemini(messages, env);
-    } catch {
+    } catch (e1) {
+      geminiErr = e1.message;
       try {
         result = await callGroq(messages, env);
-      } catch {
-        return error('AI unavailable - please set GEMINI_API_KEY or GROQ_API_KEY in Cloudflare dashboard', 503);
+      } catch (e2) {
+        groqErr = e2.message;
+        return error(`AI unavailable — Gemini: ${geminiErr} | Groq: ${groqErr}`, 503);
       }
     }
 
